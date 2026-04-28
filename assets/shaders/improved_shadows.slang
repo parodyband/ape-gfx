@@ -14,13 +14,13 @@ struct VS_Output
 	float4 shadow_position : TEXCOORD3;
 };
 
-cbuffer ObjectUniforms : register(b0)
+cbuffer ObjectUniforms
 {
 	row_major float4x4 ape_model;
 	row_major float4x4 ape_light_view_proj;
 };
 
-cbuffer FrameUniforms : register(b1)
+cbuffer FrameUniforms
 {
 	row_major float4x4 ape_view_proj;
 	float4 ape_light_pos;
@@ -28,10 +28,10 @@ cbuffer FrameUniforms : register(b1)
 	float4 ape_shadow_map_size;
 };
 
-Texture2D<float4> diffuse_texture : register(t0);
-Texture2D<float> shadow_map : register(t1);
-SamplerState diffuse_sampler : register(s0);
-SamplerState shadow_sampler : register(s1);
+Texture2D<float4> diffuse_texture;
+Texture2D<float> shadow_map;
+SamplerState diffuse_sampler;
+SamplerState shadow_sampler;
 
 static const float SHADOW_BIAS_MIN = 0.005;
 static const float SHADOW_BIAS_SLOPE = 0.05;

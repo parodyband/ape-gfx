@@ -10,7 +10,7 @@ struct VS_Output
 	float3 color : COLOR0;
 };
 
-cbuffer FrameUniforms : register(b0)
+cbuffer FrameUniforms
 {
 	float4 ape_frame;
 };

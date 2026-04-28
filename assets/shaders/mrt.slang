@@ -17,7 +17,7 @@ struct FS_Output
 	float4 color1 : SV_Target1;
 };
 
-cbuffer FrameUniforms : register(b0)
+cbuffer FrameUniforms
 {
 	float4 ape_frame;
 };

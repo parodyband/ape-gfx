@@ -24,7 +24,7 @@ Texture_Vertex :: struct {
 }
 
 Frame_Uniforms :: struct {
-	frame: [4]f32,
+	ape_frame: [4]f32,
 }
 
 Render_Target :: struct {
@@ -34,6 +34,7 @@ Render_Target :: struct {
 }
 
 #assert(size_of(Frame_Uniforms) == mrt_shader.SIZE_FrameUniforms)
+#assert(offset_of(Frame_Uniforms, ape_frame) == mrt_shader.OFFSET_FrameUniforms_ape_frame)
 #assert(u32(size_of(Color_Vertex)) == mrt_shader.VERTEX_STRIDE)
 #assert(offset_of(Color_Vertex, position) == mrt_shader.ATTR_POSITION_OFFSET)
 #assert(offset_of(Color_Vertex, color) == mrt_shader.ATTR_COLOR_OFFSET)
@@ -314,7 +315,7 @@ main :: proc() {
 			return
 		}
 		pulse := f32(0.82 + 0.18 * f32(frame % 120) / 119.0)
-		frame_uniforms := Frame_Uniforms{frame = {0, 0, pulse, 0}}
+		frame_uniforms := Frame_Uniforms{ape_frame = {0, 0, pulse, 0}}
 		if !mrt_shader.apply_uniform_FrameUniforms(&ctx, &frame_uniforms) {
 			fmt.eprintln("mrt apply_uniform failed: ", gfx.last_error(&ctx))
 			return

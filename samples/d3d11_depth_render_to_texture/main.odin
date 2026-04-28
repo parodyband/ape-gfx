@@ -25,10 +25,11 @@ Texture_Vertex :: struct {
 }
 
 Cube_Uniforms :: struct {
-	mvp: ape_math.Mat4,
+	ape_mvp: ape_math.Mat4,
 }
 
 #assert(size_of(Cube_Uniforms) == cube_shader_bindings.SIZE_FrameUniforms)
+#assert(offset_of(Cube_Uniforms, ape_mvp) == cube_shader_bindings.OFFSET_FrameUniforms_ape_mvp)
 #assert(u32(size_of(Cube_Vertex)) == cube_shader_bindings.VERTEX_STRIDE)
 #assert(offset_of(Cube_Vertex, position) == cube_shader_bindings.ATTR_POSITION_OFFSET)
 #assert(offset_of(Cube_Vertex, color) == cube_shader_bindings.ATTR_COLOR_OFFSET)
@@ -337,7 +338,7 @@ main :: proc() {
 		model := ape_math.mul(ape_math.rotation_y(angle), ape_math.rotation_x(angle * 0.71))
 		view_model := ape_math.mul(view, model)
 		cube_uniforms := Cube_Uniforms {
-			mvp = ape_math.mul(projection, view_model),
+			ape_mvp = ape_math.mul(projection, view_model),
 		}
 		if !cube_shader_bindings.apply_uniform_FrameUniforms(&ctx, &cube_uniforms) {
 			fmt.eprintln("offscreen apply_uniform failed: ", gfx.last_error(&ctx))

@@ -8,7 +8,7 @@ struct VS_Output
 	float4 position : SV_Position;
 };
 
-cbuffer ObjectUniforms : register(b0)
+cbuffer ObjectUniforms
 {
 	row_major float4x4 ape_model;
 	row_major float4x4 ape_light_view_proj;

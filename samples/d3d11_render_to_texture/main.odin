@@ -22,10 +22,11 @@ Texture_Vertex :: struct {
 }
 
 Frame_Uniforms :: struct {
-	frame: [4]f32,
+	ape_frame: [4]f32,
 }
 
 #assert(size_of(Frame_Uniforms) == triangle_shader.SIZE_FrameUniforms)
+#assert(offset_of(Frame_Uniforms, ape_frame) == triangle_shader.OFFSET_FrameUniforms_ape_frame)
 #assert(u32(size_of(Color_Vertex)) == triangle_shader.VERTEX_STRIDE)
 #assert(offset_of(Color_Vertex, position) == triangle_shader.ATTR_POSITION_OFFSET)
 #assert(offset_of(Color_Vertex, color) == triangle_shader.ATTR_COLOR_OFFSET)
@@ -266,7 +267,7 @@ main :: proc() {
 			fmt.eprintln("offscreen apply_bindings failed: ", gfx.last_error(&ctx))
 			return
 		}
-		color_uniforms := Frame_Uniforms{frame = {0, 0, 1, 0}}
+		color_uniforms := Frame_Uniforms{ape_frame = {0, 0, 1, 0}}
 		if !triangle_shader.apply_uniform_FrameUniforms(&ctx, &color_uniforms) {
 			fmt.eprintln("offscreen apply_uniform failed: ", gfx.last_error(&ctx))
 			return

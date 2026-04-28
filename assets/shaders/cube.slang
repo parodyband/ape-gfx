@@ -10,12 +10,9 @@ struct VS_Output
 	float3 color : COLOR0;
 };
 
-cbuffer FrameUniforms : register(b0)
+cbuffer FrameUniforms
 {
-	float4 ape_mvp_row0;
-	float4 ape_mvp_row1;
-	float4 ape_mvp_row2;
-	float4 ape_mvp_row3;
+	row_major float4x4 ape_mvp;
 };
 
 [shader("vertex")]
@@ -24,11 +21,7 @@ VS_Output vs_main(VS_Input input)
 	float4 world = float4(input.position, 1.0);
 
 	VS_Output output;
-	output.position = float4(
-		dot(ape_mvp_row0, world),
-		dot(ape_mvp_row1, world),
-		dot(ape_mvp_row2, world),
-		dot(ape_mvp_row3, world));
+	output.position = mul(ape_mvp, world);
 	output.color = input.color;
 	return output;
 }

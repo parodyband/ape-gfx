@@ -22,10 +22,11 @@ Vertex :: struct {
 }
 
 Frame_Uniforms :: struct {
-	mvp: ape_math.Mat4,
+	ape_mvp: ape_math.Mat4,
 }
 
 #assert(size_of(Frame_Uniforms) == textured_cube_shader.SIZE_FrameUniforms)
+#assert(offset_of(Frame_Uniforms, ape_mvp) == textured_cube_shader.OFFSET_FrameUniforms_ape_mvp)
 #assert(u32(size_of(Vertex)) == textured_cube_shader.VERTEX_STRIDE)
 #assert(offset_of(Vertex, position) == textured_cube_shader.ATTR_POSITION_OFFSET)
 #assert(offset_of(Vertex, uv) == textured_cube_shader.ATTR_TEXCOORD_OFFSET)
@@ -274,7 +275,7 @@ main :: proc() {
 		model := ape_math.mul(ape_math.rotation_y(angle), ape_math.rotation_x(angle * 0.71))
 		view_model := ape_math.mul(view, model)
 		uniforms := Frame_Uniforms {
-			mvp = ape_math.mul(projection, view_model),
+			ape_mvp = ape_math.mul(projection, view_model),
 		}
 		if !textured_cube_shader.apply_uniform_FrameUniforms(&ctx, &uniforms) {
 			fmt.eprintln("apply_uniform failed: ", gfx.last_error(&ctx))

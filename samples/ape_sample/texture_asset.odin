@@ -1,5 +1,6 @@
 package ape_sample
 
+import "core:fmt"
 import "core:os"
 
 TEXTURE_MAGIC :: u32(0x58545041) // "APTX"
@@ -60,6 +61,15 @@ unload_texture_asset :: proc(asset: ^Texture_Asset) {
 		delete(asset.bytes)
 	}
 	asset^ = {}
+}
+
+must_load_texture_asset :: proc(path: string) -> Texture_Asset {
+	asset, ok := load_texture_asset(path)
+	if !ok {
+		fmt.eprintln("failed to load ", path, "; run tools/convert_texture_rgba8.ps1 first")
+		os.exit(1)
+	}
+	return asset
 }
 
 read_u32 :: proc(bytes: []u8, offset: int) -> u32 {

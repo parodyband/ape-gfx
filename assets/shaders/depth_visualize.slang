@@ -10,8 +10,8 @@ struct VS_Output
 	float2 uv : TEXCOORD0;
 };
 
-Texture2D<float4> ape_texture : register(t0);
-SamplerState ape_sampler : register(s0);
+Texture2D<float4> ape_texture;
+SamplerState ape_sampler;
 
 [shader("vertex")]
 VS_Output vs_main(VS_Input input)
