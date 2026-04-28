@@ -202,8 +202,9 @@ These pieces exist, but should not be treated as long-term frozen yet:
 
 After v0.1, the next larger areas are:
 
-- design Slang-generated binding layout contracts
-- investigate optional binding groups and pipeline layouts
+- prioritize register-free Slang shader authoring, with reflected names and generated helpers owning the GFX slot contract
+- investigate `ParameterBlock<>`, optional binding groups, and pipeline layouts
+- design Slang-generated binding layout contracts for grouped resources and cross-stage reuse
 - improve storage and compute ergonomics beyond the current samples
 - add init-time required features and limits if the binding/layout design needs them
 - add structured shader diagnostics and scoped diagnostics

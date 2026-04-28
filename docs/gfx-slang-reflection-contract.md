@@ -149,6 +149,8 @@ UB_FrameUniforms :: 0
 
 Use logical constants and generated helper procedures in application code. Native constants exist for diagnostics and backend metadata.
 
+Near-term direction: shader authors should not need routine manual `register(...)` annotations for ordinary samples. `ape_shaderc` should reflect Slang-assigned native slots, assign stable GFX logical slots from reflected names, and generate the named Odin helpers used by samples and applications. Manual register annotations remain available for compatibility and targeted backend experiments, not as the preferred sample style.
+
 Logical slots are assigned per binding kind:
 
 | Kind | Prefix | Limit |

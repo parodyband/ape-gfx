@@ -181,9 +181,12 @@ The generated docs are tracked so API drift is visible in normal diffs. `tools/t
 
 The next useful work is post-v0.1 API design:
 
-1. design Slang-generated binding layout contracts
-2. investigate optional binding groups and pipeline layouts
-3. keep using `samples/d3d11_gfx_lab` to catch API awkwardness
+1. make register-free Slang source the preferred shader authoring path
+2. design Slang-generated binding layout contracts around reflected names and generated helpers
+3. investigate `ParameterBlock<>`, optional binding groups, and pipeline layouts
+4. keep using `samples/d3d11_gfx_lab` to catch API awkwardness
+
+The binding priority is to remove routine `register(b0)`, `register(t0)`, and `register(s0)` annotations from sample shaders. Shader source should express named resources and groups; `ape_shaderc` should assign and publish the GFX logical slots through generated Odin bindings.
 
 Vulkan should wait until the D3D11-backed API contract feels boring.
 
