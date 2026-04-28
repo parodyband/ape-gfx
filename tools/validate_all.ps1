@@ -66,6 +66,8 @@ $ShaderNames = @(
 	"textured_quad",
 	"textured_cube",
 	"depth_visualize",
+	"shadow_depth",
+	"improved_shadows",
 	"mrt"
 )
 
@@ -99,6 +101,7 @@ $D3D11BuildScripts = @(
 	"build_d3d11_depth_render_to_texture.ps1",
 	"build_d3d11_dynamic_texture.ps1",
 	"build_d3d11_gfx_lab.ps1",
+	"build_d3d11_improved_shadows.ps1",
 	"build_d3d11_mrt.ps1",
 	"build_d3d11_msaa.ps1",
 	"build_d3d11_render_to_texture.ps1",
@@ -114,6 +117,7 @@ $D3D11RunScripts = @(
 	"run_d3d11_depth_render_to_texture.ps1",
 	"run_d3d11_dynamic_texture.ps1",
 	"run_d3d11_gfx_lab.ps1",
+	"run_d3d11_improved_shadows.ps1",
 	"run_d3d11_mrt.ps1",
 	"run_d3d11_msaa.ps1",
 	"run_d3d11_render_to_texture.ps1",
