@@ -1,0 +1,31 @@
+﻿package shader
+	procedures
+		load :: proc(path: string) -> (: Package, : bool) {...}
+			load reads and parses an .ashader package from disk.
+
+		reflection_json :: proc(pkg: ^Package, target: Backend_Target, stage: Stage) -> (: string, : bool) {...}
+			reflection_json returns the embedded Slang reflection JSON for a target/stage pair.
+
+		shader_desc :: proc(pkg: ^Package, target: Backend_Target, label: string) -> (: gfx.Shader_Desc, : bool) {...}
+			shader_desc converts package bytecode and reflection metadata into a gfx.Shader_Desc.
+
+		unload :: proc(pkg: ^Package) {...}
+			unload frees package-owned slices created by load.
+
+
+	types
+		Backend_Target :: enum {D3D11_DXBC, Vulkan_SPIRV}
+			Backend_Target selects which compiled backend payload to read from an .ashader package.
+
+		Package :: struct {version: u32, bytes: []u8, stages: []Stage_Record, bindings: []Binding_Record, vertex_inputs: []Vertex_Input_Record}
+			Package owns bytes and parsed metadata loaded from one .ashader file.
+
+		Stage :: enum {Vertex, Fragment, Compute}
+			Stage selects a shader stage inside an .ashader package.
+
+
+
+	fullpath:
+		<repo>/engine/shader
+	files:
+		metadata.odin

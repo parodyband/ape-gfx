@@ -1,0 +1,18 @@
+build/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.dll
+*.so
+*.dylib
+*.tmp
+/*.odin-doc
+
+# Local planning and research notes
+docs/private/
+docs/archive/
+docs/**/*plan*.md
+docs/**/*roadmap*.md
+docs/**/*research*.md

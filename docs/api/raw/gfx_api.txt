@@ -1,0 +1,459 @@
+﻿package gfx
+	constants
+		Buffer_Invalid :: Buffer(0)
+			Invalid handle sentinels returned when resource creation fails.
+
+		COLOR_MASK_A :: u8(1 << 3)
+		COLOR_MASK_B :: u8(1 << 2)
+		COLOR_MASK_G :: u8(1 << 1)
+		COLOR_MASK_R :: u8(1 << 0)
+		COLOR_MASK_RGB :: COLOR_MASK_R | COLOR_MASK_G | COLOR_MASK_B
+		COLOR_MASK_RGBA :: COLOR_MASK_RGB | COLOR_MASK_A
+		Compute_Pipeline_Invalid :: Compute_Pipeline(0)
+		Image_Invalid :: Image(0)
+		MAX_COLOR_ATTACHMENTS :: 8
+		MAX_IMAGE_MIPS :: 16
+		MAX_RESOURCE_VIEWS :: 32
+		MAX_SAMPLERS :: 16
+		MAX_SHADER_BINDINGS :: 64
+		MAX_UNIFORM_BLOCKS :: 16
+		MAX_VERTEX_ATTRIBUTES :: 16
+		MAX_VERTEX_BUFFERS :: 8
+		Pipeline_Invalid :: Pipeline(0)
+		Sampler_Invalid :: Sampler(0)
+		Shader_Invalid :: Shader(0)
+		View_Invalid :: View(0)
+
+	procedures
+		apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {...}
+			apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
+
+		apply_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) -> bool {...}
+			apply_compute_pipeline binds a compute pipeline inside a compute pass.
+
+		apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {...}
+			apply_pipeline binds a graphics pipeline inside a render pass.
+
+		apply_uniform :: proc(ctx: ^Context, slot: int, value: ^$T) -> bool {...}
+			apply_uniform uploads a typed uniform value using size_of(T).
+
+		apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {...}
+			apply_uniforms uploads one reflected uniform block to the current pipeline.
+
+		backend_name :: proc(backend: Backend) -> string {...}
+			backend_name returns a stable lowercase display name for a Backend.
+
+		begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool {...}
+			begin_compute_pass starts a compute-only pass.
+
+		begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {...}
+			begin_pass starts a graphics render pass.
+
+		buffer_valid :: proc(buffer: Buffer) -> bool {...}
+			buffer_valid reports whether a Buffer handle is nonzero.
+
+		commit :: proc(ctx: ^Context) -> bool {...}
+			commit presents the frame and advances frame_index.
+
+		compute_pipeline_valid :: proc(pipeline: Compute_Pipeline) -> bool {...}
+			compute_pipeline_valid reports whether a Compute_Pipeline handle is nonzero.
+
+		create_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> (: Buffer, : bool) {...}
+			create_buffer creates a GPU buffer and reports whether creation succeeded.
+			On failure, the returned handle is Buffer_Invalid and last_error explains why.
+
+		create_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> (: Compute_Pipeline, : bool) {...}
+			create_compute_pipeline creates an immutable compute pipeline state object.
+			On failure, the returned handle is Compute_Pipeline_Invalid and last_error explains why.
+
+		create_image :: proc(ctx: ^Context, desc: Image_Desc) -> (: Image, : bool) {...}
+			create_image creates a texture, storage image, or attachment image.
+			On failure, the returned handle is Image_Invalid and last_error explains why.
+
+		create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (: Pipeline, : bool) {...}
+			create_pipeline creates an immutable graphics pipeline state object.
+			On failure, the returned handle is Pipeline_Invalid and last_error explains why.
+
+		create_sampler :: proc(ctx: ^Context, desc: Sampler_Desc) -> (: Sampler, : bool) {...}
+			create_sampler creates immutable texture sampling state.
+			On failure, the returned handle is Sampler_Invalid and last_error explains why.
+
+		create_shader :: proc(ctx: ^Context, desc: Shader_Desc) -> (: Shader, : bool) {...}
+			create_shader creates backend shader objects from compiled shader bytecode.
+			On failure, the returned handle is Shader_Invalid and last_error explains why.
+
+		create_view :: proc(ctx: ^Context, desc: View_Desc) -> (: View, : bool) {...}
+			create_view creates one sampled, storage, color, or depth-stencil view.
+			On failure, the returned handle is View_Invalid and last_error explains why.
+
+		default_pass_action :: proc() -> Pass_Action {...}
+			default_pass_action returns clear/store defaults for color, depth, and stencil attachments.
+
+		destroy_buffer :: proc(ctx: ^Context, buffer: Buffer) {...}
+			destroy_buffer releases a live buffer handle.
+
+		destroy_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) {...}
+			destroy_compute_pipeline releases a live compute pipeline handle.
+
+		destroy_image :: proc(ctx: ^Context, image: Image) {...}
+			destroy_image releases a live image handle.
+
+		destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {...}
+			destroy_pipeline releases a live graphics pipeline handle.
+
+		destroy_sampler :: proc(ctx: ^Context, sampler: Sampler) {...}
+			destroy_sampler releases a live sampler handle.
+
+		destroy_shader :: proc(ctx: ^Context, shader: Shader) {...}
+			destroy_shader releases a live shader handle.
+
+		destroy_view :: proc(ctx: ^Context, view: View) {...}
+			destroy_view releases a live view handle.
+
+		dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {...}
+			dispatch issues a compute dispatch with explicit thread-group counts.
+
+		draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {...}
+			draw issues a non-indexed or indexed draw depending on the active pipeline.
+
+		end_compute_pass :: proc(ctx: ^Context) -> bool {...}
+			end_compute_pass finishes the active compute pass.
+
+		end_pass :: proc(ctx: ^Context) -> bool {...}
+			end_pass finishes the active render pass.
+
+		image_valid :: proc(image: Image) -> bool {...}
+			image_valid reports whether an Image handle is nonzero.
+
+		init :: proc(desc: Desc) -> (: Context, : bool) {...}
+			init creates a graphics context for the requested backend and native window.
+
+		last_error :: proc(ctx: ^Context) -> string {...}
+			last_error returns the most recent validation or backend error for a context.
+
+		last_error_code :: proc(ctx: ^Context) -> Error_Code {...}
+			last_error_code returns the machine-readable code for the most recent context error.
+
+		last_error_info :: proc(ctx: ^Context) -> Error_Info {...}
+			last_error_info returns the most recent context error code and message together.
+
+		make_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> Buffer {...}
+			make_buffer is the Sokol-style handle-only compatibility alias for create_buffer.
+
+		make_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> Compute_Pipeline {...}
+			make_compute_pipeline is the Sokol-style handle-only compatibility alias for create_compute_pipeline.
+
+		make_image :: proc(ctx: ^Context, desc: Image_Desc) -> Image {...}
+			make_image is the Sokol-style handle-only compatibility alias for create_image.
+
+		make_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> Pipeline {...}
+			make_pipeline is the Sokol-style handle-only compatibility alias for create_pipeline.
+
+		make_sampler :: proc(ctx: ^Context, desc: Sampler_Desc) -> Sampler {...}
+			make_sampler is the Sokol-style handle-only compatibility alias for create_sampler.
+
+		make_shader :: proc(ctx: ^Context, desc: Shader_Desc) -> Shader {...}
+			make_shader is the Sokol-style handle-only compatibility alias for create_shader.
+
+		make_view :: proc(ctx: ^Context, desc: View_Desc) -> View {...}
+			make_view is the Sokol-style handle-only compatibility alias for create_view.
+
+		pipeline_valid :: proc(pipeline: Pipeline) -> bool {...}
+			pipeline_valid reports whether a Pipeline handle is nonzero.
+
+		query_backend_limits :: proc(ctx: ^Context) -> Limits {...}
+			query_backend_limits returns concrete limits reported by the active backend.
+
+		query_buffer_state :: proc(ctx: ^Context, buffer: Buffer) -> Buffer_State {...}
+			query_buffer_state returns read-only state for a live buffer, or zero if invalid.
+
+		query_features :: proc(ctx: ^Context) -> Features {...}
+			query_features returns optional features supported by the active backend.
+
+		query_image_state :: proc(ctx: ^Context, image: Image) -> Image_State {...}
+			query_image_state returns read-only state for a live image, or zero if invalid.
+
+		query_limits :: proc() -> Limits {...}
+			query_limits returns backend-independent public API limits.
+
+		query_view_buffer :: proc(ctx: ^Context, view: View) -> Buffer {...}
+			query_view_buffer returns the parent buffer for storage-buffer views.
+
+		query_view_compatible :: proc(ctx: ^Context, view: View, kind: View_Kind) -> bool {...}
+			query_view_compatible reports whether a view is live and has the requested kind.
+
+		query_view_image :: proc(ctx: ^Context, view: View) -> Image {...}
+			query_view_image returns the parent image for image-backed views.
+
+		query_view_state :: proc(ctx: ^Context, view: View) -> View_State {...}
+			query_view_state returns read-only state for a live view, or zero if invalid.
+
+		range_raw :: proc(ptr: rawptr, size: int) -> Range {...}
+			range_raw builds a byte Range from a raw pointer and byte size.
+
+		read_buffer :: proc(ctx: ^Context, desc: Buffer_Read_Desc) -> bool {...}
+			read_buffer synchronously copies GPU buffer data into CPU memory.
+
+		resize :: proc(ctx: ^Context, width, height: i32) -> bool {...}
+			resize recreates swapchain-dependent backend resources after a window resize.
+
+		resolve_image :: proc(ctx: ^Context, desc: Image_Resolve_Desc) -> bool {...}
+			resolve_image resolves a multisampled color image into a single-sampled image.
+
+		sampler_valid :: proc(sampler: Sampler) -> bool {...}
+			sampler_valid reports whether a Sampler handle is nonzero.
+
+		shader_valid :: proc(shader: Shader) -> bool {...}
+			shader_valid reports whether a Shader handle is nonzero.
+
+		shutdown :: proc(ctx: ^Context) {...}
+			shutdown releases backend state and reports leaked resources through last_error.
+
+		update_buffer :: proc(ctx: ^Context, desc: Buffer_Update_Desc) -> bool {...}
+			update_buffer writes CPU data into a Dynamic_Update or Stream_Update buffer.
+
+		update_image :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bool {...}
+			update_image writes CPU data into a dynamic image subregion.
+
+		view_valid :: proc(view: View) -> bool {...}
+			view_valid reports whether a View handle is nonzero.
+
+
+	proc_group
+		destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline}
+			destroy overloads the explicit destroy_* procedures for all public resource handles.
+
+		range :: proc{range_slice, range_fixed_array, range_raw}
+			range is an overload group for common upload/readback byte ranges.
+
+
+	types
+		Backend :: enum {Auto, Null, D3D11, Vulkan}
+			Backend selects the native graphics implementation used by a Context.
+
+		Bindings :: struct {vertex_buffers: [MAX_VERTEX_BUFFERS]Buffer_Binding, index_buffer: Buffer_Binding, views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
+			Bindings contains transient resources applied before draw or dispatch.
+
+		Blend_Factor :: enum {Default, Zero, One, Src_Color, One_Minus_Src_Color, Src_Alpha, One_Minus_Src_Alpha, Dst_Color, One_Minus_Dst_Color, Dst_Alpha, One_Minus_Dst_Alpha, Blend_Color, One_Minus_Blend_Color, Src_Alpha_Saturated}
+			Blend_Factor selects source/destination blend factors. Default uses backend default state.
+
+		Blend_Op :: enum {Default, Add, Subtract, Reverse_Subtract, Min, Max}
+			Blend_Op selects the color or alpha blend equation.
+
+		Blend_State :: struct {enabled: bool, src_factor: Blend_Factor, dst_factor: Blend_Factor, op: Blend_Op, src_alpha_factor: Blend_Factor, dst_alpha_factor: Blend_Factor, alpha_op: Blend_Op}
+			Blend_State configures color blending for one render target.
+
+		Buffer :: distinct u64
+			GPU resource handles are opaque generational IDs. Zero is always invalid.
+
+		Buffer_Binding :: struct {buffer: Buffer, offset: int}
+			Buffer_Binding binds a buffer handle with a byte offset.
+
+		Buffer_Desc :: struct {label: string, usage: Buffer_Usage, size: int, storage_stride: int, data: Range}
+			Buffer_Desc creates a Buffer. storage_stride > 0 creates a structured storage buffer.
+
+		Buffer_Read_Desc :: struct {buffer: Buffer, offset: int, data: Range}
+			Buffer_Read_Desc describes a synchronous GPU-to-CPU buffer readback.
+
+		Buffer_State :: struct {valid: bool, usage: Buffer_Usage, size: int, storage_stride: int}
+			Buffer_State is returned by query_buffer_state for validation and diagnostics.
+
+		Buffer_Update_Desc :: struct {buffer: Buffer, offset: int, data: Range}
+			Buffer_Update_Desc describes a CPU-to-GPU buffer update.
+
+		Buffer_Usage :: bit_set[Buffer_Usage_Flag]
+		Buffer_Usage_Flag :: enum {Vertex, Index, Uniform, Storage, Immutable, Dynamic_Update, Stream_Update}
+			Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
+
+		Color :: struct {r: f32, g: f32, b: f32, a: f32}
+			Color is a linear RGBA color value.
+
+		Color_Attachment_Action :: struct {load_action: Load_Action, store_action: Store_Action, clear_value: Color}
+			Color_Attachment_Action controls load/store behavior for one color attachment.
+
+		Color_Attachment_View_Desc :: struct {image: Image, format: Pixel_Format, mip_level: i32, layer: i32}
+			Color_Attachment_View_Desc creates a render-target attachment view.
+
+		Color_State :: struct {write_mask: u8, blend: Blend_State}
+			Color_State configures write mask and blending for one color attachment slot.
+
+		Compare_Func :: enum {Always, Never, Less, Less_Equal, Equal, Greater_Equal, Greater, Not_Equal}
+			Compare_Func selects depth comparison behavior.
+
+		Compute_Pass_Desc :: struct {label: string}
+			Compute_Pass_Desc begins a compute-only pass.
+
+		Compute_Pipeline :: distinct u64
+		Compute_Pipeline_Desc :: struct {label: string, shader: Shader}
+			Compute_Pipeline_Desc creates an immutable compute pipeline.
+
+		Context :: struct {...}
+			Context owns all GPU resources and current frame state for one backend instance.
+
+		Cull_Mode :: enum {None, Front, Back}
+			Cull_Mode selects which triangle faces are discarded.
+
+		Depth_Attachment_Action :: struct {load_action: Load_Action, store_action: Store_Action, clear_value: f32}
+			Depth_Attachment_Action controls load/store behavior for a depth attachment.
+
+		Depth_State :: struct {format: Pixel_Format, enabled: bool, write_enabled: bool, compare: Compare_Func}
+			Depth_State configures depth testing for a graphics pipeline.
+
+		Depth_Stencil_Attachment_View_Desc :: struct {image: Image, format: Pixel_Format, mip_level: i32, layer: i32}
+			Depth_Stencil_Attachment_View_Desc creates a depth-stencil attachment view.
+
+		Desc :: struct {backend: Backend, width: i32, height: i32, native_window: rawptr, swapchain_format: Pixel_Format, vsync: bool, debug: bool, label: string}
+			Desc configures a graphics Context.
+
+		Error_Code :: enum {None, Validation, Unsupported, Invalid_Handle, Wrong_Context, Stale_Handle, Backend, Device_Lost, Resource_Leak}
+			Error_Code classifies the most recent context error for programmatic handling.
+
+		Error_Info :: struct {code: Error_Code, message: string}
+			Error_Info groups the most recent context error code and human-readable message.
+
+		Face_Winding :: enum {Clockwise, Counter_Clockwise}
+			Face_Winding selects the front-face winding order.
+
+		Features :: struct {backend: Backend, render_to_texture: bool, multiple_render_targets: bool, msaa_render_targets: bool, depth_attachment: bool, depth_only_pass: bool, sampled_depth: bool, storage_images: bool, storage_buffers: bool, compute: bool, dynamic_textures: bool, mipmapped_textures: bool, buffer_updates: bool, buffer_readback: bool}
+			Features reports optional behavior supported by the active backend.
+
+		Fill_Mode :: enum {Solid, Wireframe}
+			Fill_Mode selects solid or wireframe rasterization.
+
+		Filter :: enum {Nearest, Linear}
+			Filter selects nearest or linear sampling for a Sampler.
+
+		Image :: distinct u64
+		Image_Desc :: struct {label: string, kind: Image_Kind, usage: Image_Usage, width: i32, height: i32, depth: i32, mip_count: i32, array_count: i32, sample_count: i32, format: Pixel_Format, data: Range, mips: [MAX_IMAGE_MIPS]Image_Subresource_Data}
+			Image_Desc creates an Image resource and optional immutable initial contents.
+
+		Image_Kind :: enum {Image_2D, Image_3D, Cube}
+			Image_Kind describes the dimensional shape of an image resource.
+
+		Image_Resolve_Desc :: struct {source: Image, destination: Image}
+			Image_Resolve_Desc resolves a multisampled color image into a single-sampled image.
+
+		Image_State :: struct {valid: bool, kind: Image_Kind, usage: Image_Usage, width: i32, height: i32, depth: i32, mip_count: i32, array_count: i32, sample_count: i32, format: Pixel_Format}
+			Image_State is returned by query_image_state for validation and diagnostics.
+
+		Image_Subresource_Data :: struct {data: Range, row_pitch: i32, slice_pitch: i32}
+			Image_Subresource_Data supplies initial data for one image mip level.
+
+		Image_Update_Desc :: struct {image: Image, mip_level: i32, array_layer: i32, x: i32, y: i32, width: i32, height: i32, data: Range, row_pitch: i32}
+			Image_Update_Desc describes a CPU-to-GPU image subregion update.
+
+		Image_Usage :: bit_set[Image_Usage_Flag]
+		Image_Usage_Flag :: enum {Texture, Storage_Image, Color_Attachment, Depth_Stencil_Attachment, Immutable, Dynamic_Update, Stream_Update}
+			Image_Usage_Flag describes sampled, storage, attachment, and CPU update roles for an image.
+
+		Index_Type :: enum {None, Uint16, Uint32}
+			Index_Type selects the element format for the bound index buffer.
+
+		Layout_Desc :: struct {buffers: [MAX_VERTEX_BUFFERS]Vertex_Buffer_Layout, attrs: [MAX_VERTEX_ATTRIBUTES]Vertex_Attribute_Desc}
+			Layout_Desc groups vertex buffer layouts and attributes for a graphics pipeline.
+
+		Limits :: struct {max_vertex_buffers: int, max_vertex_attributes: int, max_color_attachments: int, max_resource_views: int, max_samplers: int, max_uniform_blocks: int, max_shader_bindings: int, max_image_mips: int, max_image_dimension_2d: int, max_image_array_layers: int, max_image_sample_count: int, max_compute_thread_groups_per_dimension: int}
+			Limits reports public API limits plus backend-specific limits when queried from a Context.
+
+		Load_Action :: enum {Clear, Load, Dont_Care}
+			Load_Action selects how an attachment is initialized when a pass begins.
+
+		Pass_Action :: struct {colors: [MAX_COLOR_ATTACHMENTS]Color_Attachment_Action, depth: Depth_Attachment_Action, stencil: Stencil_Attachment_Action}
+			Pass_Action groups all attachment load/store actions for begin_pass.
+
+		Pass_Desc :: struct {label: string, color_attachments: [MAX_COLOR_ATTACHMENTS]View, depth_stencil_attachment: View, action: Pass_Action}
+			Pass_Desc begins a render pass. With no explicit attachments, the pass targets the context's implicit window swapchain.
+
+		Pipeline :: distinct u64
+		Pipeline_Desc :: struct {label: string, shader: Shader, primitive_type: Primitive_Type, index_type: Index_Type, layout: Layout_Desc, color_formats: [MAX_COLOR_ATTACHMENTS]Pixel_Format, depth_only: bool, colors: [MAX_COLOR_ATTACHMENTS]Color_State, depth: Depth_State, raster: Raster_State}
+			Pipeline_Desc creates an immutable graphics pipeline.
+
+		Pixel_Format :: enum {Invalid, RGBA8, BGRA8, RGBA16F, RGBA32F, R32F, D24S8, D32F}
+			Pixel_Format describes image, view, attachment, and storage image formats.
+
+		Primitive_Type :: enum {Triangles, Lines, Points}
+			Primitive_Type selects the topology used by a graphics pipeline.
+
+		Range :: struct {ptr: rawptr, size: int}
+			Range is a raw byte span used for uploads, readback, and shader bytecode.
+
+		Raster_State :: struct {fill_mode: Fill_Mode, cull_mode: Cull_Mode, winding: Face_Winding}
+			Raster_State configures rasterization for a graphics pipeline.
+
+		Sampler :: distinct u64
+		Sampler_Desc :: struct {label: string, min_filter: Filter, mag_filter: Filter, mip_filter: Filter, wrap_u: Wrap, wrap_v: Wrap, wrap_w: Wrap}
+			Sampler_Desc creates a texture sampler state.
+
+		Shader :: distinct u64
+		Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
+			Shader_Binding_Desc carries Slang-reflected binding metadata for runtime validation.
+
+		Shader_Binding_Kind :: enum {Uniform_Block, Resource_View, Sampler}
+			Shader_Binding_Kind identifies reflected shader binding categories.
+
+		Shader_Desc :: struct {label: string, stages: [3]Shader_Stage_Desc, has_binding_metadata: bool, bindings: [MAX_SHADER_BINDINGS]Shader_Binding_Desc, has_vertex_input_metadata: bool, vertex_inputs: [MAX_VERTEX_ATTRIBUTES]Shader_Vertex_Input_Desc}
+			Shader_Desc creates a backend shader object from compiled stage bytecode and metadata.
+
+		Shader_Resource_Access :: enum {Unknown, Read, Write, Read_Write}
+			Shader_Resource_Access describes reflected read/write intent for resource views.
+
+		Shader_Stage :: enum {Vertex, Fragment, Compute}
+			Shader_Stage identifies one compiled shader stage inside a Shader_Desc.
+
+		Shader_Stage_Desc :: struct {stage: Shader_Stage, entry: string, bytecode: Range}
+			Shader_Stage_Desc provides backend bytecode for one shader stage.
+
+		Shader_Vertex_Input_Desc :: struct {active: bool, semantic: string, semantic_index: u32, format: Vertex_Format}
+			Shader_Vertex_Input_Desc carries Slang-reflected vertex input metadata.
+
+		Stencil_Attachment_Action :: struct {load_action: Load_Action, store_action: Store_Action, clear_value: u8}
+			Stencil_Attachment_Action controls load/store behavior for a stencil attachment.
+
+		Storage_Buffer_View_Desc :: struct {buffer: Buffer, offset: int, size: int}
+			Storage_Buffer_View_Desc creates a storage buffer byte range view.
+
+		Storage_Image_View_Desc :: struct {image: Image, format: Pixel_Format, mip_level: i32, base_layer: i32, layer_count: i32}
+			Storage_Image_View_Desc creates a storage image view.
+
+		Store_Action :: enum {Store, Dont_Care}
+			Store_Action selects whether an attachment value is preserved when a pass ends.
+
+		Texture_View_Desc :: struct {image: Image, format: Pixel_Format, base_mip: i32, mip_count: i32, base_layer: i32, layer_count: i32}
+			Texture_View_Desc creates a sampled texture view.
+
+		Vertex_Attribute_Desc :: struct {semantic: cstring, semantic_index: u32, format: Vertex_Format, buffer_slot: u32, offset: u32}
+			Vertex_Attribute_Desc maps one shader vertex semantic to a buffer format and offset.
+
+		Vertex_Buffer_Layout :: struct {stride: u32, step_func: Vertex_Step_Function, step_rate: u32}
+			Vertex_Buffer_Layout describes stride and stepping for one vertex buffer slot.
+
+		Vertex_Format :: enum {Invalid, Float32, Float32x2, Float32x3, Float32x4, Uint8x4_Norm}
+			Vertex_Format describes one vertex attribute element.
+
+		Vertex_Step_Function :: enum {Per_Vertex, Per_Instance}
+			Vertex_Step_Function selects per-vertex or per-instance stepping for a vertex buffer.
+
+		View :: distinct u64
+		View_Desc :: struct {label: string, texture: Texture_View_Desc, storage_image: Storage_Image_View_Desc, storage_buffer: Storage_Buffer_View_Desc, color_attachment: Color_Attachment_View_Desc, depth_stencil_attachment: Depth_Stencil_Attachment_View_Desc}
+			View_Desc creates exactly one view flavor over a parent image or buffer.
+
+		View_Kind :: enum {Sampled, Storage_Image, Storage_Buffer, Color_Attachment, Depth_Stencil_Attachment}
+			View_Kind describes how a View interprets its parent image or buffer.
+
+		View_State :: struct {valid: bool, kind: View_Kind, image: Image, buffer: Buffer, width: i32, height: i32, offset: int, size: int, mip_level: i32, base_layer: i32, layer_count: i32, format: Pixel_Format, sample_count: i32, storage_stride: int}
+			View_State is returned by query_view_state for validation and diagnostics.
+
+		Wrap :: enum {Repeat, Clamp_To_Edge, Mirrored_Repeat}
+			Wrap selects texture-coordinate behavior outside the [0, 1] range.
+
+
+
+	fullpath:
+		<repo>/engine/gfx
+	files:
+		backend_d3d11.odin
+		backend_null.odin
+		backend_vulkan.odin
+		context.odin
+		helpers.odin
+		types.odin
