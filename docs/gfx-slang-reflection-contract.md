@@ -49,6 +49,12 @@ Compile one shader with:
 .\tools\compile_shaders.ps1 -ShaderName triangle
 ```
 
+Compile all checked-in sample shaders with one `ape_shaderc` invocation:
+
+```powershell
+.\tools\compile_shaders.ps1 -All
+```
+
 Compile a compute shader with:
 
 ```powershell
@@ -454,9 +460,9 @@ Near-term compiler work comes first. `ape_shaderc` should move from the older co
 
 Planned order:
 
-- Add an `ape_shaderc` batch mode so one tool invocation can compile all sample shaders.
-- Keep PowerShell scripts as thin wrappers around the Odin tool.
-- Bind the modern Slang API surface needed for `IGlobalSession`, `ISession`, modules, entry points, component composition, linked programs, generated code blobs, and entry-point metadata.
+- [x] Add an `ape_shaderc` batch mode so one tool invocation can compile all sample shaders.
+- [x] Keep PowerShell scripts as thin wrappers around the Odin tool for normal sample shader compilation.
+- [ ] Next: bind the modern Slang API surface needed for `IGlobalSession`, `ISession`, modules, entry points, component composition, linked programs, generated code blobs, and entry-point metadata.
 - Preserve the current `.ashader` and generated Odin output while the new compiler path reaches parity.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
 
@@ -474,7 +480,7 @@ The rule stays the same for samples: use register-free Slang source, let `ape_sh
 Current shader reflection validation is covered by:
 
 ```powershell
-.\tools\compile_shaders.ps1
+.\tools\compile_shaders.ps1 -All
 .\tools\test_shaderc_register_free_samples.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1

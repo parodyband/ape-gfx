@@ -141,6 +141,11 @@ Compute_Thread_Group_Size :: struct {
 	z: u32,
 }
 
+Shader_Job :: struct {
+	name: string,
+	kind: Shader_Kind,
+}
+
 Options :: struct {
 	shader_name: string,
 	source_path: string,
@@ -148,6 +153,18 @@ Options :: struct {
 	package_path: string,
 	generated_path: string,
 	kind: Shader_Kind,
+	all: bool,
+}
+
+SAMPLE_SHADER_JOBS :: [?]Shader_Job {
+	{name = "triangle", kind = .Graphics},
+	{name = "cube", kind = .Graphics},
+	{name = "textured_quad", kind = .Graphics},
+	{name = "textured_cube", kind = .Graphics},
+	{name = "depth_visualize", kind = .Graphics},
+	{name = "shadow_depth", kind = .Graphics},
+	{name = "improved_shadows", kind = .Graphics},
+	{name = "mrt", kind = .Graphics},
 }
 
 main :: proc() {
@@ -157,7 +174,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	if !pack_shader(options) {
+	if !pack(options) {
 		os.exit(1)
 	}
 }
@@ -167,10 +184,13 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 		build_dir = "build/shaders",
 		kind = .Graphics,
 	}
+	kind_set := false
 
 	for i := 0; i < len(args); i += 1 {
 		arg := args[i]
-		if arg == "-shader-name" {
+		if arg == "-all" {
+			options.all = true
+		} else if arg == "-shader-name" {
 			i += 1
 			if i >= len(args) {
 				return {}, false
@@ -205,6 +225,7 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 			if i >= len(args) {
 				return {}, false
 			}
+			kind_set = true
 			switch args[i] {
 			case "graphics":
 				options.kind = .Graphics
@@ -218,9 +239,27 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 		}
 	}
 
+	if options.all {
+		if options.shader_name != "" ||
+		   kind_set ||
+		   options.source_path != "" ||
+		   options.package_path != "" ||
+		   options.generated_path != "" {
+			return {}, false
+		}
+
+		return options, true
+	}
+
 	if options.shader_name == "" {
 		return {}, false
 	}
+	complete_default_paths(&options)
+
+	return options, true
+}
+
+complete_default_paths :: proc(options: ^Options) {
 	if options.source_path == "" {
 		options.source_path = filepath.join({"assets/shaders", fmt.tprintf("%s.slang", options.shader_name)})
 	}
@@ -230,15 +269,14 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 	if options.generated_path == "" {
 		options.generated_path = filepath.join({"assets/shaders/generated", options.shader_name, "bindings.odin"})
 	}
-
-	return options, true
 }
 
 print_usage :: proc() {
 	fmt.eprintln("usage: ape_shaderc -shader-name <name> [-kind graphics|compute] [-source <path>] [-build-dir <dir>] [-package <path>] [-generated <path>]")
+	fmt.eprintln("       ape_shaderc -all [-build-dir <dir>]")
 }
 
-pack_shader :: proc(options: Options) -> bool {
+pack :: proc(options: Options) -> bool {
 	slang: Slang_API
 	if !load_slang_api(&slang) {
 		return false
@@ -252,6 +290,29 @@ pack_shader :: proc(options: Options) -> bool {
 	}
 	defer slang.spDestroySession(session)
 
+	if options.all {
+		for job in SAMPLE_SHADER_JOBS {
+			job_options := options
+			job_options.all = false
+			job_options.shader_name = job.name
+			job_options.kind = job.kind
+			job_options.source_path = ""
+			job_options.package_path = ""
+			job_options.generated_path = ""
+			complete_default_paths(&job_options)
+			if !pack_shader(&slang, session, job_options) {
+				return false
+			}
+		}
+
+		fmt.println("Packed", len(SAMPLE_SHADER_JOBS), "shader packages to", options.build_dir)
+		return true
+	}
+
+	return pack_shader(&slang, session, options)
+}
+
+pack_shader :: proc(slang: ^Slang_API, session: rawptr, options: Options) -> bool {
 	stages: [dynamic]Stage_Desc
 	defer delete(stages)
 	append_stage_descs(&stages, options)
@@ -273,7 +334,7 @@ pack_shader :: proc(options: Options) -> bool {
 
 	for stage in stages {
 		compiled_stage, compile_ok := compile_stage(
-			&slang,
+			slang,
 			session,
 			options,
 			stage,

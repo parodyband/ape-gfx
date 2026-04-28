@@ -60,17 +60,6 @@ function Invoke-GitDiffCheck {
 	}
 }
 
-$ShaderNames = @(
-	"triangle",
-	"cube",
-	"textured_quad",
-	"textured_cube",
-	"depth_visualize",
-	"shadow_depth",
-	"improved_shadows",
-	"mrt"
-)
-
 $PublicValidationScripts = @(
 	"build_smoke.ps1",
 	"test_api_docs_public_surface.ps1",
@@ -134,10 +123,8 @@ Write-Host "Root: $($Root.Path)"
 Write-Host "AutoExitFrames: $AutoExitFrames"
 
 if (-not $SkipShaderCompile) {
-	foreach ($ShaderName in $ShaderNames) {
-		Invoke-ValidationStep "compile shader: $ShaderName" {
-			Invoke-RepoScript "compile_shaders.ps1" -Arguments @("-ShaderName", $ShaderName)
-		}
+	Invoke-ValidationStep "compile sample shaders" {
+		Invoke-RepoScript "compile_shaders.ps1" -Arguments @("-All")
 	}
 }
 
