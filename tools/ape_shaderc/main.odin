@@ -1689,6 +1689,23 @@ odin_type_for_uniform_field :: proc(slang: ^Slang_API, type_layout: rawptr) -> (
 			return "", 0, false
 		}
 		return fmt.aprintf("[%d]%s", count, scalar_type), count * scalar_size, true
+	case .Matrix:
+		element_type := slang.spReflectionType_GetElementType(typ)
+		if element_type == nil {
+			return "", 0, false
+		}
+
+		scalar_type, scalar_size, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(element_type))
+		if !scalar_ok {
+			return "", 0, false
+		}
+
+		row_count := slang.spReflectionType_GetRowCount(typ)
+		column_count := slang.spReflectionType_GetColumnCount(typ)
+		if row_count == 0 || column_count == 0 {
+			return "", 0, false
+		}
+		return fmt.aprintf("[%d][%d]%s", row_count, column_count, scalar_type), row_count * column_count * scalar_size, true
 	}
 
 	return "", 0, false

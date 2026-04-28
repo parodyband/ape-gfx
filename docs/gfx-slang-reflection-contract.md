@@ -191,12 +191,14 @@ Supported uniform field shapes:
 | `floatN` | `[N]f32` |
 | `intN` | `[N]i32` |
 | `uintN` | `[N]u32` |
+| `floatRxC` | `[R][C]f32` |
+| `intRxC` | `[R][C]i32` |
+| `uintRxC` | `[R][C]u32` |
 
 Generated structs include explicit padding fields when reflected offsets require gaps. `#assert` checks keep generated Odin layout aligned with Slang reflection.
 
 Unsupported uniform field shapes:
 
-- matrices
 - arrays
 - nested structs as uniform fields
 - booleans

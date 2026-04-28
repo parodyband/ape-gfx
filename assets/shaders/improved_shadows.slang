@@ -16,22 +16,13 @@ struct VS_Output
 
 cbuffer ObjectUniforms : register(b0)
 {
-	float4 ape_model_row0;
-	float4 ape_model_row1;
-	float4 ape_model_row2;
-	float4 ape_model_row3;
-	float4 ape_light_view_proj_row0;
-	float4 ape_light_view_proj_row1;
-	float4 ape_light_view_proj_row2;
-	float4 ape_light_view_proj_row3;
+	row_major float4x4 ape_model;
+	row_major float4x4 ape_light_view_proj;
 };
 
 cbuffer FrameUniforms : register(b1)
 {
-	float4 ape_view_proj_row0;
-	float4 ape_view_proj_row1;
-	float4 ape_view_proj_row2;
-	float4 ape_view_proj_row3;
+	row_major float4x4 ape_view_proj;
 	float4 ape_light_pos;
 	float4 ape_view_pos;
 	float4 ape_shadow_map_size;
@@ -45,35 +36,21 @@ SamplerState shadow_sampler : register(s1);
 static const float SHADOW_BIAS_MIN = 0.005;
 static const float SHADOW_BIAS_SLOPE = 0.05;
 
-float4 transform_rows(float4 row0, float4 row1, float4 row2, float4 row3, float4 value)
-{
-	return float4(
-		dot(row0, value),
-		dot(row1, value),
-		dot(row2, value),
-		dot(row3, value));
-}
-
 [shader("vertex")]
 VS_Output vs_main(VS_Input input)
 {
 	float4 local = float4(input.position, 1.0);
-	float4 world = transform_rows(ape_model_row0, ape_model_row1, ape_model_row2, ape_model_row3, local);
+	float4 world = mul(ape_model, local);
 
 	VS_Output output;
-	output.position = transform_rows(ape_view_proj_row0, ape_view_proj_row1, ape_view_proj_row2, ape_view_proj_row3, world);
+	output.position = mul(ape_view_proj, world);
 	output.world_position = world.xyz;
 	output.normal = normalize(float3(
-		dot(ape_model_row0.xyz, input.normal),
-		dot(ape_model_row1.xyz, input.normal),
-		dot(ape_model_row2.xyz, input.normal)));
+		dot(ape_model[0].xyz, input.normal),
+		dot(ape_model[1].xyz, input.normal),
+		dot(ape_model[2].xyz, input.normal)));
 	output.uv = input.uv;
-	output.shadow_position = transform_rows(
-		ape_light_view_proj_row0,
-		ape_light_view_proj_row1,
-		ape_light_view_proj_row2,
-		ape_light_view_proj_row3,
-		world);
+	output.shadow_position = mul(ape_light_view_proj, world);
 	return output;
 }
 
