@@ -385,7 +385,7 @@
 			Sampler_Desc creates a texture sampler state.
 
 		Shader :: distinct u64
-		Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
+		Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, native_space: u32, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
 			Shader_Binding_Desc carries Slang-reflected binding metadata for runtime validation.
 
 		Shader_Binding_Kind :: enum {Uniform_Block, Resource_View, Sampler}

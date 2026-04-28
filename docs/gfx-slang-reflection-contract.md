@@ -92,10 +92,10 @@ The `.ashader` binary package starts with:
 Current writer version:
 
 ```text
-PACKAGE_VERSION = 7
+PACKAGE_VERSION = 8
 ```
 
-`engine/shader` currently reads package versions `1` through `7` and rejects versions newer than the runtime knows about.
+`engine/shader` currently reads package versions `1` through `8` and rejects versions newer than the runtime knows about.
 
 Version policy for v0.1:
 
@@ -134,9 +134,13 @@ Native constants include target and stage:
 
 ```odin
 D3D11_FS_VIEW_ape_texture :: 0
+D3D11_FS_VIEW_ape_texture_SPACE :: 0
 VK_FS_VIEW_ape_texture :: 32
+VK_FS_VIEW_ape_texture_SPACE :: 0
 D3D11_FS_SMP_ape_sampler :: 0
+D3D11_FS_SMP_ape_sampler_SPACE :: 0
 VK_FS_SMP_ape_sampler :: 64
+VK_FS_SMP_ape_sampler_SPACE :: 0
 ```
 
 Logical constants are target-independent:
@@ -150,6 +154,31 @@ UB_FrameUniforms :: 0
 Use logical constants and generated helper procedures in application code. Native constants exist for diagnostics and backend metadata.
 
 Near-term direction: shader authors should not need routine manual `register(...)` annotations for ordinary samples. `ape_shaderc` should reflect Slang-assigned native slots, assign stable GFX logical slots from reflected names, and generate the named Odin helpers used by samples and applications. Manual register annotations remain available for compatibility and targeted backend experiments, not as the preferred sample style.
+
+Generated packages also expose a binding contract helper for tools, tests, and future higher-level binding APIs:
+
+```odin
+BINDING_RECORD_COUNT :: 6
+
+Binding_Record_Desc :: struct {
+	target: gfx.Backend,
+	stage: gfx.Shader_Stage,
+	kind: gfx.Shader_Binding_Kind,
+	name: cstring,
+	logical_slot: u32,
+	native_slot: u32,
+	native_space: u32,
+	size: u32,
+	view_kind: gfx.View_Kind,
+	access: gfx.Shader_Resource_Access,
+	storage_image_format: gfx.Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
+binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
+```
+
+This is the first explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical slots, native slots, and native spaces available for later binding group and pipeline layout design.
 
 Logical slots are assigned per binding kind:
 
@@ -413,8 +442,22 @@ It fills:
 - storage view metadata when package version is at least `5`
 - storage image format metadata when package version is at least `6`
 - storage buffer stride metadata when package version is at least `7`
+- native binding space metadata when package version is at least `8`
 
 `gfx.create_shader` and `gfx.create_pipeline` validate that reflected metadata matches runtime descriptors and bindings.
+
+## Post-v0.1 Binding Group Direction
+
+The current contract deliberately stops at reflected binding metadata and named helper procedures. The next design pass should build optional binding groups on top of this data instead of replacing `gfx.Bindings`.
+
+Open questions:
+
+- Whether generated `Binding_Record_Desc` arrays are enough to derive a `Binding_Group_Layout`.
+- How `ParameterBlock<>` should map to logical binding groups when Slang assigns target-specific native groups or spaces.
+- Whether a `Pipeline_Layout` object should exist only when it enables reuse across multiple generated shader packages.
+- How D3D11 should emulate groups by flattening reflected group entries into stage slots while Vulkan later maps them to descriptor sets.
+
+The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
 ## Validation
 
@@ -422,6 +465,7 @@ Current shader reflection validation is covered by:
 
 ```powershell
 .\tools\compile_shaders.ps1
+.\tools\test_shaderc_register_free_samples.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1
 .\tools\test_d3d11_invalid_pipeline_layout.ps1
@@ -459,8 +503,14 @@ These generated names are intended to stay stable through v0.1:
 | `VIEW_<name>` | Logical resource view slot. |
 | `SMP_<name>` | Logical sampler slot. |
 | `<TARGET>_<STAGE>_UB_<name>` | Native uniform slot. |
+| `<TARGET>_<STAGE>_UB_<name>_SPACE` | Native uniform binding space. |
 | `<TARGET>_<STAGE>_VIEW_<name>` | Native resource view slot. |
+| `<TARGET>_<STAGE>_VIEW_<name>_SPACE` | Native resource view binding space. |
 | `<TARGET>_<STAGE>_SMP_<name>` | Native sampler slot. |
+| `<TARGET>_<STAGE>_SMP_<name>_SPACE` | Native sampler binding space. |
+| `BINDING_RECORD_COUNT` | Number of generated target/stage binding records. |
+| `Binding_Record_Desc` | Generated binding contract record type. |
+| `binding_records` | Helper returning the generated binding contract records. |
 | `VIEW_KIND_<name>` | Reflected `gfx.View_Kind`. |
 | `VIEW_ACCESS_<name>` | Reflected `gfx.Shader_Resource_Access`. |
 | `VIEW_FORMAT_<name>` | Reflected storage image format when relevant. |

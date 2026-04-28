@@ -8,7 +8,7 @@ PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
 @(private)
 PACKAGE_VERSION_MIN :: u32(1)
 @(private)
-PACKAGE_VERSION :: u32(7)
+PACKAGE_VERSION :: u32(8)
 @(private)
 PACKAGE_HEADER_SIZE_V1 :: 16
 @(private)
@@ -23,6 +23,8 @@ PACKAGE_BINDING_RECORD_SIZE_V4 :: 40
 PACKAGE_BINDING_RECORD_SIZE_V5 :: 48
 @(private)
 PACKAGE_BINDING_RECORD_SIZE_V7 :: 52
+@(private)
+PACKAGE_BINDING_RECORD_SIZE_V8 :: 56
 @(private)
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
 
@@ -79,6 +81,7 @@ Binding_Record :: struct {
 	stage: Stage,
 	kind: Binding_Kind,
 	slot: u32,
+	native_space: u32,
 	logical_slot: u32,
 	name_offset: u32,
 	name_size: u32,
@@ -217,6 +220,7 @@ shader_desc :: proc(pkg: ^Package, target: Backend_Target, label: string) -> (gf
 			kind = kind,
 			slot = record.logical_slot,
 			native_slot = record.slot,
+			native_space = record.native_space,
 			name = name,
 			size = record.size,
 			view_kind = record.view_kind,
@@ -384,6 +388,9 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 			if version >= 7 {
 				record.storage_buffer_stride = read_u32(bytes, offset + 48)
 			}
+			if version >= 8 {
+				record.native_space = read_u32(bytes, offset + 52)
+			}
 
 			if !range_valid(bytes, u64(record.name_offset), u64(record.name_size)) ||
 			   !binding_record_metadata_valid(record) {
@@ -442,6 +449,9 @@ package_header_size :: proc(version: u32) -> int {
 @(private)
 package_binding_record_size :: proc(version: u32) -> int {
 	if version >= 5 {
+		if version >= 8 {
+			return PACKAGE_BINDING_RECORD_SIZE_V8
+		}
 		if version >= 7 {
 			return PACKAGE_BINDING_RECORD_SIZE_V7
 		}

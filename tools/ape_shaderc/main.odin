@@ -8,10 +8,10 @@ import "core:path/filepath"
 import "core:strings"
 
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
-PACKAGE_VERSION :: u32(7)
+PACKAGE_VERSION :: u32(8)
 PACKAGE_HEADER_SIZE :: 20
 PACKAGE_STAGE_RECORD_SIZE :: 48
-PACKAGE_BINDING_RECORD_SIZE :: 52
+PACKAGE_BINDING_RECORD_SIZE :: 56
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
 
 Target :: enum u32 {
@@ -87,6 +87,7 @@ Binding_Record :: struct {
 	stage: Stage,
 	kind: Binding_Kind,
 	slot: u32,
+	space: u32,
 	logical_slot: u32,
 	name: string,
 	name_offset: u32,
@@ -647,6 +648,7 @@ collect_bindings_from_reflection :: proc(
 			stage = stage.stage,
 			kind = kind,
 			slot = slot,
+			space = space,
 			name = name,
 			size = binding_size,
 			view_kind = view_kind,
@@ -1900,9 +1902,10 @@ write_generated_bindings :: proc(
 		stage_prefix := stage_prefix(binding.stage)
 		name := odin_identifier(binding.name)
 		native_constant_name := fmt.tprintf("%s_%s_%s_%s", target_prefix, stage_prefix, prefix, name)
-		native_key := fmt.tprintf("%s:%d", native_constant_name, binding.slot)
+		native_key := fmt.tprintf("%s:%d:%d", native_constant_name, binding.slot, binding.space)
 		if !(native_key in emitted_native) {
 			append_string(&out, fmt.tprintf("%s :: %d\n", native_constant_name, binding.slot))
+			append_string(&out, fmt.tprintf("%s_SPACE :: %d\n", native_constant_name, binding.space))
 			emitted_native[native_key] = true
 		}
 
@@ -1931,8 +1934,13 @@ write_generated_bindings :: proc(
 
 	if len(bindings) == 0 {
 		append_string(&out, "// This shader currently has no reflected resource bindings.\n")
-	} else if !append_binding_helpers_odin(&out, bindings, uniform_blocks) {
-		return false
+	} else {
+		if !append_binding_contract_odin(&out, bindings) {
+			return false
+		}
+		if !append_binding_helpers_odin(&out, bindings, uniform_blocks) {
+			return false
+		}
 	}
 
 	trim_trailing_blank_lines(&out)
@@ -1981,6 +1989,49 @@ trim_trailing_blank_lines :: proc(out: ^[dynamic]byte) {
 	if len(out^) == 0 || out^[len(out^) - 1] != byte('\n') {
 		append(out, byte('\n'))
 	}
+}
+
+append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Record) -> bool {
+	append_string(out, "\n")
+	append_string(out, fmt.tprintf("BINDING_RECORD_COUNT :: %d\n\n", len(bindings)))
+	append_string(out, "Binding_Record_Desc :: struct {\n")
+	append_string(out, "\ttarget: gfx.Backend,\n")
+	append_string(out, "\tstage: gfx.Shader_Stage,\n")
+	append_string(out, "\tkind: gfx.Shader_Binding_Kind,\n")
+	append_string(out, "\tname: cstring,\n")
+	append_string(out, "\tlogical_slot: u32,\n")
+	append_string(out, "\tnative_slot: u32,\n")
+	append_string(out, "\tnative_space: u32,\n")
+	append_string(out, "\tsize: u32,\n")
+	append_string(out, "\tview_kind: gfx.View_Kind,\n")
+	append_string(out, "\taccess: gfx.Shader_Resource_Access,\n")
+	append_string(out, "\tstorage_image_format: gfx.Pixel_Format,\n")
+	append_string(out, "\tstorage_buffer_stride: u32,\n")
+	append_string(out, "}\n\n")
+
+	append_string(out, "binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {\n")
+	append_string(out, "\trecords: [BINDING_RECORD_COUNT]Binding_Record_Desc\n")
+	for binding, index in bindings {
+		append_string(out, fmt.tprintf("\trecords[%d] = ", index))
+		append_string(out, "{\n")
+		append_string(out, fmt.tprintf("\t\ttarget = gfx.Backend.%s,\n", backend_odin(binding.target)))
+		append_string(out, fmt.tprintf("\t\tstage = gfx.Shader_Stage.%s,\n", stage_odin(binding.stage)))
+		append_string(out, fmt.tprintf("\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(binding.kind)))
+		append_string(out, fmt.tprintf("\t\tname = cstring(\"%s\"),\n", binding.name))
+		append_string(out, fmt.tprintf("\t\tlogical_slot = %d,\n", binding.logical_slot))
+		append_string(out, fmt.tprintf("\t\tnative_slot = %d,\n", binding.slot))
+		append_string(out, fmt.tprintf("\t\tnative_space = %d,\n", binding.space))
+		append_string(out, fmt.tprintf("\t\tsize = %d,\n", binding.size))
+		append_string(out, fmt.tprintf("\t\tview_kind = gfx.View_Kind.%s,\n", resource_view_kind_odin(binding.view_kind)))
+		append_string(out, fmt.tprintf("\t\taccess = gfx.Shader_Resource_Access.%s,\n", resource_access_odin(binding.access)))
+		append_string(out, fmt.tprintf("\t\tstorage_image_format = gfx.Pixel_Format.%s,\n", storage_image_format_odin(binding.storage_image_format)))
+		append_string(out, fmt.tprintf("\t\tstorage_buffer_stride = %d,\n", binding.storage_buffer_stride))
+		append_string(out, "\t}\n")
+	}
+	append_string(out, "\treturn records\n")
+	append_string(out, "}\n\n")
+
+	return true
 }
 
 append_binding_helpers_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Record, uniform_blocks: []Uniform_Block) -> bool {
@@ -2213,6 +2264,7 @@ write_package :: proc(
 		write_u32(&output, u32(record.access))
 		write_u32(&output, u32(record.storage_image_format))
 		write_u32(&output, record.storage_buffer_stride)
+		write_u32(&output, record.space)
 	}
 
 	for attr, index in vertex_layout.attrs {
@@ -2343,6 +2395,43 @@ storage_image_format_odin :: proc(format: Storage_Image_Format) -> string {
 	}
 
 	return "Invalid"
+}
+
+binding_kind_odin :: proc(kind: Binding_Kind) -> string {
+	switch kind {
+	case .Uniform_Block:
+		return "Uniform_Block"
+	case .Resource_View:
+		return "Resource_View"
+	case .Sampler:
+		return "Sampler"
+	}
+
+	return "Uniform_Block"
+}
+
+backend_odin :: proc(target: Target) -> string {
+	switch target {
+	case .D3D11_DXBC:
+		return "D3D11"
+	case .Vulkan_SPIRV:
+		return "Vulkan"
+	}
+
+	return "Auto"
+}
+
+stage_odin :: proc(stage: Stage) -> string {
+	switch stage {
+	case .Vertex:
+		return "Vertex"
+	case .Fragment:
+		return "Fragment"
+	case .Compute:
+		return "Compute"
+	}
+
+	return "Vertex"
 }
 
 target_prefix :: proc(target: Target) -> string {

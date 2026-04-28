@@ -529,6 +529,7 @@ Shader_Binding_Desc :: struct {
 	kind: Shader_Binding_Kind,
 	slot: u32,
 	native_slot: u32,
+	native_space: u32,
 	name: string,
 	size: u32,
 	view_kind: View_Kind,

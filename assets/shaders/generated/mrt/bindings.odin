@@ -50,10 +50,93 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 }
 
 D3D11_VS_UB_FrameUniforms :: 0
+D3D11_VS_UB_FrameUniforms_SPACE :: 0
 UB_FrameUniforms :: 0
 D3D11_FS_UB_FrameUniforms :: 0
+D3D11_FS_UB_FrameUniforms_SPACE :: 0
 VK_VS_UB_FrameUniforms :: 0
+VK_VS_UB_FrameUniforms_SPACE :: 0
 VK_FS_UB_FrameUniforms :: 0
+VK_FS_UB_FrameUniforms_SPACE :: 0
+
+BINDING_RECORD_COUNT :: 4
+
+Binding_Record_Desc :: struct {
+	target: gfx.Backend,
+	stage: gfx.Shader_Stage,
+	kind: gfx.Shader_Binding_Kind,
+	name: cstring,
+	logical_slot: u32,
+	native_slot: u32,
+	native_space: u32,
+	size: u32,
+	view_kind: gfx.View_Kind,
+	access: gfx.Shader_Resource_Access,
+	storage_image_format: gfx.Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
+binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
+	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
+	records[0] = {
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Vertex,
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		name = cstring("FrameUniforms"),
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		size = 16,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Unknown,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	records[1] = {
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		name = cstring("FrameUniforms"),
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		size = 16,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Unknown,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	records[2] = {
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Vertex,
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		name = cstring("FrameUniforms"),
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		size = 16,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Unknown,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	records[3] = {
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		name = cstring("FrameUniforms"),
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		size = 16,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Unknown,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	return records
+}
+
 
 apply_uniform_FrameUniforms :: proc(ctx: ^gfx.Context, value: ^$T) -> bool {
 	#assert(size_of(T) == SIZE_FrameUniforms)

@@ -39,13 +39,96 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 }
 
 D3D11_FS_VIEW_ape_texture :: 0
+D3D11_FS_VIEW_ape_texture_SPACE :: 0
 VIEW_ape_texture :: 0
 VIEW_KIND_ape_texture :: gfx.View_Kind.Sampled
 VIEW_ACCESS_ape_texture :: gfx.Shader_Resource_Access.Read
 D3D11_FS_SMP_ape_sampler :: 0
+D3D11_FS_SMP_ape_sampler_SPACE :: 0
 SMP_ape_sampler :: 0
 VK_FS_VIEW_ape_texture :: 32
+VK_FS_VIEW_ape_texture_SPACE :: 0
 VK_FS_SMP_ape_sampler :: 64
+VK_FS_SMP_ape_sampler_SPACE :: 0
+
+BINDING_RECORD_COUNT :: 4
+
+Binding_Record_Desc :: struct {
+	target: gfx.Backend,
+	stage: gfx.Shader_Stage,
+	kind: gfx.Shader_Binding_Kind,
+	name: cstring,
+	logical_slot: u32,
+	native_slot: u32,
+	native_space: u32,
+	size: u32,
+	view_kind: gfx.View_Kind,
+	access: gfx.Shader_Resource_Access,
+	storage_image_format: gfx.Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
+binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
+	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
+	records[0] = {
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		name = cstring("ape_texture"),
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		size = 0,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Read,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	records[1] = {
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		name = cstring("ape_sampler"),
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		size = 0,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Unknown,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	records[2] = {
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		name = cstring("ape_texture"),
+		logical_slot = 0,
+		native_slot = 32,
+		native_space = 0,
+		size = 0,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Read,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	records[3] = {
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		name = cstring("ape_sampler"),
+		logical_slot = 0,
+		native_slot = 64,
+		native_space = 0,
+		size = 0,
+		view_kind = gfx.View_Kind.Sampled,
+		access = gfx.Shader_Resource_Access.Unknown,
+		storage_image_format = gfx.Pixel_Format.Invalid,
+		storage_buffer_stride = 0,
+	}
+	return records
+}
+
 
 set_view_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	if bindings == nil {
