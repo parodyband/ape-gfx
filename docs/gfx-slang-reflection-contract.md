@@ -450,6 +450,16 @@ It fills:
 
 The current contract deliberately stops at reflected binding metadata and named helper procedures. The next design pass should build optional binding groups on top of this data instead of replacing `gfx.Bindings`.
 
+Near-term compiler work comes first. `ape_shaderc` should move from the older compile-request API and command-line-style arguments to Slang's modern session/component API before binding groups become a public `gfx` contract.
+
+Planned order:
+
+- Add an `ape_shaderc` batch mode so one tool invocation can compile all sample shaders.
+- Keep PowerShell scripts as thin wrappers around the Odin tool.
+- Bind the modern Slang API surface needed for `IGlobalSession`, `ISession`, modules, entry points, component composition, linked programs, generated code blobs, and entry-point metadata.
+- Preserve the current `.ashader` and generated Odin output while the new compiler path reaches parity.
+- Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
+
 Open questions:
 
 - Whether generated `Binding_Record_Desc` arrays are enough to derive a `Binding_Group_Layout`.
