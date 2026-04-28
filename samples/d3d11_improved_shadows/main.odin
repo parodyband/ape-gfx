@@ -1,6 +1,5 @@
 package main
 
-import "core:math"
 import ape_math "ape:samples/ape_math"
 import ape_sample "ape:samples/ape_sample"
 import app "ape:engine/app"
@@ -16,12 +15,6 @@ Scene_Pass :: enum {
 	Lit,
 }
 
-Scene_Vertex :: struct {
-	position: [3]f32,
-	normal:   [3]f32,
-	uv:       [2]f32,
-}
-
 Object_Uniforms :: struct {
 	ape_model:           ape_math.Mat4,
 	ape_light_view_proj: ape_math.Mat4,
@@ -33,23 +26,6 @@ Frame_Uniforms :: struct {
 	ape_view_pos:        [4]f32,
 	ape_shadow_map_size: [4]f32,
 }
-
-#assert(size_of(Object_Uniforms) == shadow_depth_shader.SIZE_ObjectUniforms)
-#assert(size_of(Object_Uniforms) == improved_shadows_shader.SIZE_ObjectUniforms)
-#assert(size_of(Frame_Uniforms) == improved_shadows_shader.SIZE_FrameUniforms)
-#assert(offset_of(Object_Uniforms, ape_model) == shadow_depth_shader.OFFSET_ObjectUniforms_ape_model)
-#assert(offset_of(Object_Uniforms, ape_light_view_proj) == shadow_depth_shader.OFFSET_ObjectUniforms_ape_light_view_proj)
-#assert(offset_of(Object_Uniforms, ape_model) == improved_shadows_shader.OFFSET_ObjectUniforms_ape_model)
-#assert(offset_of(Object_Uniforms, ape_light_view_proj) == improved_shadows_shader.OFFSET_ObjectUniforms_ape_light_view_proj)
-#assert(offset_of(Frame_Uniforms, ape_view_proj) == improved_shadows_shader.OFFSET_FrameUniforms_ape_view_proj)
-#assert(offset_of(Frame_Uniforms, ape_light_pos) == improved_shadows_shader.OFFSET_FrameUniforms_ape_light_pos)
-#assert(offset_of(Frame_Uniforms, ape_view_pos) == improved_shadows_shader.OFFSET_FrameUniforms_ape_view_pos)
-#assert(offset_of(Frame_Uniforms, ape_shadow_map_size) == improved_shadows_shader.OFFSET_FrameUniforms_ape_shadow_map_size)
-#assert(offset_of(Scene_Vertex, position) == shadow_depth_shader.ATTR_POSITION_OFFSET)
-#assert(u32(size_of(Scene_Vertex)) == improved_shadows_shader.VERTEX_STRIDE)
-#assert(offset_of(Scene_Vertex, position) == improved_shadows_shader.ATTR_POSITION_OFFSET)
-#assert(offset_of(Scene_Vertex, normal) == improved_shadows_shader.ATTR_NORMAL_OFFSET)
-#assert(offset_of(Scene_Vertex, uv) == improved_shadows_shader.ATTR_TEXCOORD_OFFSET)
 
 main :: proc() {
 	ape_sample.must(app.init(), "app init failed")
@@ -76,69 +52,7 @@ main :: proc() {
 	})
 	defer gfx.shutdown(&ctx)
 
-	light_pos := ape_math.Vec3{-2, 4, -1}
-	camera_pos := ape_math.Vec3{0, 3.2, -7.2}
-	light_projection := ape_math.orthographic_lh(-10, 10, -10, 10, 1, 7.5)
-	light_view := ape_math.look_at_lh(light_pos, ape_math.Vec3{0, 0, 0}, ape_math.Vec3{0, 1, 0})
-	light_view_proj := ape_math.mul(light_projection, light_view)
-	cube_models := [?]ape_math.Mat4 {
-		ape_math.mul(ape_math.translation(0, 1.5, 0), ape_math.scale(0.5, 0.5, 0.5)),
-		ape_math.mul(ape_math.translation(2, 0, 1), ape_math.scale(0.5, 0.5, 0.5)),
-		ape_math.mul(
-			ape_math.mul(
-				ape_math.translation(-1, 0, 2),
-				ape_math.rotation_axis(math.to_radians_f32(60), ape_math.Vec3{1, 0, 1}),
-			),
-			ape_math.scale(0.25, 0.25, 0.25),
-		),
-	}
-
-	cube_vertices := [?]Scene_Vertex {
-		{position = {-1, -1, -1}, normal = { 0,  0, -1}, uv = {0, 0}},
-		{position = { 1,  1, -1}, normal = { 0,  0, -1}, uv = {1, 1}},
-		{position = { 1, -1, -1}, normal = { 0,  0, -1}, uv = {1, 0}},
-		{position = { 1,  1, -1}, normal = { 0,  0, -1}, uv = {1, 1}},
-		{position = {-1, -1, -1}, normal = { 0,  0, -1}, uv = {0, 0}},
-		{position = {-1,  1, -1}, normal = { 0,  0, -1}, uv = {0, 1}},
-		{position = {-1, -1,  1}, normal = { 0,  0,  1}, uv = {0, 0}},
-		{position = { 1, -1,  1}, normal = { 0,  0,  1}, uv = {1, 0}},
-		{position = { 1,  1,  1}, normal = { 0,  0,  1}, uv = {1, 1}},
-		{position = { 1,  1,  1}, normal = { 0,  0,  1}, uv = {1, 1}},
-		{position = {-1,  1,  1}, normal = { 0,  0,  1}, uv = {0, 1}},
-		{position = {-1, -1,  1}, normal = { 0,  0,  1}, uv = {0, 0}},
-		{position = {-1,  1,  1}, normal = {-1,  0,  0}, uv = {1, 0}},
-		{position = {-1,  1, -1}, normal = {-1,  0,  0}, uv = {1, 1}},
-		{position = {-1, -1, -1}, normal = {-1,  0,  0}, uv = {0, 1}},
-		{position = {-1, -1, -1}, normal = {-1,  0,  0}, uv = {0, 1}},
-		{position = {-1, -1,  1}, normal = {-1,  0,  0}, uv = {0, 0}},
-		{position = {-1,  1,  1}, normal = {-1,  0,  0}, uv = {1, 0}},
-		{position = { 1,  1,  1}, normal = { 1,  0,  0}, uv = {1, 0}},
-		{position = { 1, -1, -1}, normal = { 1,  0,  0}, uv = {0, 1}},
-		{position = { 1,  1, -1}, normal = { 1,  0,  0}, uv = {1, 1}},
-		{position = { 1, -1, -1}, normal = { 1,  0,  0}, uv = {0, 1}},
-		{position = { 1,  1,  1}, normal = { 1,  0,  0}, uv = {1, 0}},
-		{position = { 1, -1,  1}, normal = { 1,  0,  0}, uv = {0, 0}},
-		{position = {-1, -1, -1}, normal = { 0, -1,  0}, uv = {0, 1}},
-		{position = { 1, -1, -1}, normal = { 0, -1,  0}, uv = {1, 1}},
-		{position = { 1, -1,  1}, normal = { 0, -1,  0}, uv = {1, 0}},
-		{position = { 1, -1,  1}, normal = { 0, -1,  0}, uv = {1, 0}},
-		{position = {-1, -1,  1}, normal = { 0, -1,  0}, uv = {0, 0}},
-		{position = {-1, -1, -1}, normal = { 0, -1,  0}, uv = {0, 1}},
-		{position = {-1,  1, -1}, normal = { 0,  1,  0}, uv = {0, 1}},
-		{position = { 1,  1,  1}, normal = { 0,  1,  0}, uv = {1, 0}},
-		{position = { 1,  1, -1}, normal = { 0,  1,  0}, uv = {1, 1}},
-		{position = { 1,  1,  1}, normal = { 0,  1,  0}, uv = {1, 0}},
-		{position = {-1,  1, -1}, normal = { 0,  1,  0}, uv = {0, 1}},
-		{position = {-1,  1,  1}, normal = { 0,  1,  0}, uv = {0, 0}},
-	}
-	plane_vertices := [?]Scene_Vertex {
-		{position = { 25, -0.5,  25}, normal = {0, 1, 0}, uv = {25,  0}},
-		{position = {-25, -0.5,  25}, normal = {0, 1, 0}, uv = { 0,  0}},
-		{position = {-25, -0.5, -25}, normal = {0, 1, 0}, uv = { 0, 25}},
-		{position = { 25, -0.5,  25}, normal = {0, 1, 0}, uv = {25,  0}},
-		{position = {-25, -0.5, -25}, normal = {0, 1, 0}, uv = { 0, 25}},
-		{position = { 25, -0.5, -25}, normal = {0, 1, 0}, uv = {25, 25}},
-	}
+	scene := make_scene()
 
 	shadow_image := ape_sample.must_create_image(&ctx, {
 		label = "shadow map",
@@ -213,14 +127,14 @@ main :: proc() {
 	cube_buffer := ape_sample.must_create_buffer(&ctx, {
 		label = "cube vertices",
 		usage = {.Vertex, .Immutable},
-		data = gfx.range(cube_vertices[:]),
+		data = gfx.range(scene.cube_vertices[:]),
 	})
 	defer gfx.destroy(&ctx, cube_buffer)
 
 	plane_buffer := ape_sample.must_create_buffer(&ctx, {
 		label = "plane vertices",
 		usage = {.Vertex, .Immutable},
-		data = gfx.range(plane_vertices[:]),
+		data = gfx.range(scene.plane_vertices[:]),
 	})
 	defer gfx.destroy(&ctx, plane_buffer)
 
@@ -286,15 +200,15 @@ main :: proc() {
 		shadow_action.depth.clear_value = 1
 		ape_sample.begin_pass(&ctx, {label = "shadow map pass", depth_stencil_attachment = shadow_depth_view, action = shadow_action})
 		ape_sample.apply_pipeline(&ctx, depth_program.pipeline)
-		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, light_view_proj, cube_models[:], i32(len(plane_vertices)), i32(len(cube_vertices)))
+		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
 		ape_sample.end_pass(&ctx)
 
-		view := ape_math.look_at_lh(camera_pos, ape_math.Vec3{0, 0.45, 0.35}, ape_math.Vec3{0, 1, 0})
+		view := ape_math.look_at_lh(scene.camera_pos, ape_math.Vec3{0, 0.45, 0.35}, ape_math.Vec3{0, 1, 0})
 		projection := ape_math.cube_projection(render_width, render_height)
 		frame_uniforms := Frame_Uniforms {
 			ape_view_proj = ape_math.mul(projection, view),
-			ape_light_pos = {light_pos[0], light_pos[1], light_pos[2], 0},
-			ape_view_pos = {camera_pos[0], camera_pos[1], camera_pos[2], 0},
+			ape_light_pos = {scene.light_pos[0], scene.light_pos[1], scene.light_pos[2], 0},
+			ape_view_pos = {scene.camera_pos[0], scene.camera_pos[1], scene.camera_pos[2], 0},
 			ape_shadow_map_size = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, 0},
 		}
 
@@ -304,7 +218,7 @@ main :: proc() {
 		ape_sample.begin_pass(&ctx, {label = "shadows pass", action = pass_action})
 		ape_sample.apply_pipeline(&ctx, shadows_program.pipeline)
 		apply_frame_uniforms(&ctx, &frame_uniforms)
-		draw_scene(&ctx, .Lit, shadows_plane_bindings, shadows_cube_bindings, light_view_proj, cube_models[:], i32(len(plane_vertices)), i32(len(cube_vertices)))
+		draw_scene(&ctx, .Lit, shadows_plane_bindings, shadows_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
 		ape_sample.end_pass(&ctx)
 		ape_sample.commit(&ctx)
 
