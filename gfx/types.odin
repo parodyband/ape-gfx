@@ -616,6 +616,20 @@ DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indexed_Indirect_Args)
 // consecutive `Dispatch_Indirect_Args` records in an indirect buffer.
 DISPATCH_INDIRECT_ARGS_STRIDE :: size_of(Dispatch_Indirect_Args)
 
+// INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
+// `offset` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect` /
+// `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
+// backends (D3D11 indirect-args buffers; D3D12 / Vulkan are looser) so a
+// value that satisfies this constant is valid everywhere.
+INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
+
+// MAX_INDIRECT_DRAW_COUNT is the upper bound the validator enforces on the
+// `draw_count` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect`.
+// A million records per call is several orders of magnitude beyond any
+// realistic GPU-driven workload; the cap exists to catch uninitialized or
+// negative-as-unsigned counts before they reach the backend.
+MAX_INDIRECT_DRAW_COUNT :: 1 << 20
+
 // Image_Desc creates an Image resource and optional immutable initial contents.
 //
 // Zero-count default (AAA roadmap item 34): leave `mip_count`, `array_count`,

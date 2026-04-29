@@ -101,6 +101,18 @@ DRAW_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indirect_Args)
 DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
 consecutive `Draw_Indirect_Args` records in an indirect buffer.
 
+### `INDIRECT_ARGS_OFFSET_ALIGNMENT`
+
+```odin
+INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
+```
+
+INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
+`offset` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect` /
+`gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
+backends (D3D11 indirect-args buffers; D3D12 / Vulkan are looser) so a
+value that satisfies this constant is valid everywhere.
+
 ### `Image_Invalid`
 
 ```odin
@@ -151,6 +163,18 @@ MAX_COLOR_ATTACHMENTS :: 8
 ```odin
 MAX_IMAGE_MIPS :: 16
 ```
+
+### `MAX_INDIRECT_DRAW_COUNT`
+
+```odin
+MAX_INDIRECT_DRAW_COUNT :: 1 << 20
+```
+
+MAX_INDIRECT_DRAW_COUNT is the upper bound the validator enforces on the
+`draw_count` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect`.
+A million records per call is several orders of magnitude beyond any
+realistic GPU-driven workload; the cap exists to catch uninitialized or
+negative-as-unsigned counts before they reach the backend.
 
 ### `MAX_RESOURCE_VIEWS`
 

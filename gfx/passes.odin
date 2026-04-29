@@ -373,16 +373,24 @@ validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buf
 		set_validation_errorf(ctx, "%s: offset must be non-negative", op)
 		return false
 	}
+	if offset % INDIRECT_ARGS_OFFSET_ALIGNMENT != 0 {
+		set_validation_errorf(ctx, "%s: offset must be aligned to INDIRECT_ARGS_OFFSET_ALIGNMENT (%d bytes)", op, INDIRECT_ARGS_OFFSET_ALIGNMENT)
+		return false
+	}
 	if draw_count == 0 {
 		set_validation_errorf(ctx, "%s: draw_count must be positive", op)
+		return false
+	}
+	if draw_count > MAX_INDIRECT_DRAW_COUNT {
+		set_validation_errorf(ctx, "%s: draw_count %d exceeds MAX_INDIRECT_DRAW_COUNT (%d)", op, draw_count, MAX_INDIRECT_DRAW_COUNT)
 		return false
 	}
 	effective_stride := stride
 	if effective_stride == 0 {
 		effective_stride = default_stride
 	}
-	if effective_stride < default_stride || effective_stride % 4 != 0 {
-		set_validation_errorf(ctx, "%s: stride must be 4-byte aligned and at least %d bytes", op, default_stride)
+	if effective_stride != default_stride {
+		set_validation_errorf(ctx, "%s: stride must be 0 or exactly %d bytes (the canonical args size)", op, default_stride)
 		return false
 	}
 
@@ -395,12 +403,9 @@ validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buf
 		set_validation_errorf(ctx, "%s: indirect buffer requires Buffer_Usage_Flag.Indirect", op)
 		return false
 	}
-	required := offset + default_stride
-	if draw_count > 1 {
-		required = offset + effective_stride * int(draw_count - 1) + default_stride
-	}
+	required := offset + effective_stride * int(draw_count)
 	if required > buffer_state.size {
-		set_validation_errorf(ctx, "%s: offset + stride * draw_count exceeds buffer size", op)
+		set_validation_errorf(ctx, "%s: offset + stride * draw_count (%d) exceeds buffer size (%d)", op, required, buffer_state.size)
 		return false
 	}
 

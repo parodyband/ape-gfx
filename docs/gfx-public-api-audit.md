@@ -51,12 +51,14 @@ Composite statuses are comma-separated.
 | `DISPATCH_INDIRECT_ARGS_STRIDE` | keep | APE-7 indirect dispatch arg stride (`size_of(Dispatch_Indirect_Args)`). |
 | `DRAW_INDEXED_INDIRECT_ARGS_STRIDE` | keep | APE-7 indexed indirect arg stride (`size_of(Draw_Indexed_Indirect_Args)`). |
 | `DRAW_INDIRECT_ARGS_STRIDE` | keep | APE-7 non-indexed indirect arg stride (`size_of(Draw_Indirect_Args)`). |
+| `INDIRECT_ARGS_OFFSET_ALIGNMENT` | keep | APE-10 required byte alignment for indirect args buffer offsets (16 bytes — strictest of supported backends). |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
 | `MAX_BINDING_GROUPS` | keep | Public logical binding group limit. |
 | `MAX_BINDING_GROUP_ARRAYS` | keep | APE-24 public limit on binding-group runtime/fixed array entries. |
 | `MAX_BINDING_GROUP_ENTRIES` | keep | Generated binding group layout entry limit. |
 | `MAX_BINDING_HEAPS` | defer | APE-23 public bindless heap concurrency cap. Stays public when bindless ships. |
 | `MAX_COLOR_ATTACHMENTS` | keep | Public fixed array limit. |
+| `MAX_INDIRECT_DRAW_COUNT` | keep | APE-10 upper bound on `draw_count` for `draw_indirect` / `draw_indexed_indirect` (1<<20). |
 | `MAX_IMAGE_MIPS` | keep | Public fixed array limit. |
 | `MAX_RESOURCE_VIEWS` | keep | Public fixed array limit. |
 | `MAX_SAMPLERS` | keep | Public fixed array limit. |
