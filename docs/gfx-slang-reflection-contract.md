@@ -166,6 +166,17 @@ Generated packages also expose a binding contract helper for tools, tests, and f
 ```odin
 BINDING_RECORD_COUNT :: 6
 
+Binding_Uniform_Block_Desc :: struct {
+	size: u32,
+}
+
+Binding_Resource_View_Desc :: struct {
+	view_kind: gfx.View_Kind,
+	access: gfx.Shader_Resource_Access,
+	storage_image_format: gfx.Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
 Binding_Record_Desc :: struct {
 	target: gfx.Backend,
 	stage: gfx.Shader_Stage,
@@ -174,11 +185,8 @@ Binding_Record_Desc :: struct {
 	logical_slot: u32,
 	native_slot: u32,
 	native_space: u32,
-	size: u32,
-	view_kind: gfx.View_Kind,
-	access: gfx.Shader_Resource_Access,
-	storage_image_format: gfx.Pixel_Format,
-	storage_buffer_stride: u32,
+	uniform_block: Binding_Uniform_Block_Desc,
+	resource_view: Binding_Resource_View_Desc,
 }
 
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
@@ -186,7 +194,13 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
 
 This is the first explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical slots, native slots, and native spaces available for later binding group and pipeline layout design.
 
-`Binding_Record_Desc` is currently a flat record. `view_kind`, `access`, `storage_image_format`, and `storage_buffer_stride` are meaningful only when `kind == .Resource_View`; consumers must ignore those fields for uniform-block and sampler records. Before a generated binding-group API becomes public, decide whether the group contract should keep this flat shape with stricter validation or split into per-kind records.
+`Binding_Record_Desc` uses explicit payload structs for kind-specific metadata:
+
+- `uniform_block` is valid when `kind == .Uniform_Block`.
+- `resource_view` is valid when `kind == .Resource_View`.
+- `Sampler` records have no payload today.
+
+The outer record stays common so tools can sort or match by backend, stage, reflected name, logical slot, native slot, and native space without switching on the payload first.
 
 Logical slots are assigned per binding kind:
 
@@ -469,20 +483,23 @@ Planned order:
 - [x] Read reflection JSON from modern `ProgramLayout` and used-binding data from entry-point metadata.
 - [x] Add focused descriptor-table validation for register-free constant buffers, sampled textures, samplers, storage images, and storage buffers across D3D11 and Vulkan records.
 - [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
-- [ ] Next: settle descriptor slot validation and kind-conditional binding record semantics before the generated binding-group contract.
-- [ ] Then design the first generated binding-group contract on top of reflected names, logical slots, native slots, and native spaces.
+- [x] Settle generated binding record payload semantics before the generated binding-group contract.
+- [ ] Next: design the first generated binding-group contract on top of reflected names, logical slots, native slots, and native spaces.
+- [ ] Then settle descriptor slot validation rules that binding groups should enforce before runtime calls.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
 
 Open questions:
 
-- Whether generated `Binding_Record_Desc` arrays are enough to derive a `Binding_Group_Layout`.
+- Whether generated `Binding_Record_Desc` arrays should directly produce a `Binding_Group_Layout_Desc` helper, or whether the generated package should expose a smaller intermediate group contract first.
 - How `ParameterBlock<>` should map to logical binding groups when Slang assigns target-specific native groups or spaces.
 - Whether a `Pipeline_Layout` object should exist only when it enables reuse across multiple generated shader packages.
 - How D3D11 should emulate groups by flattening reflected group entries into stage slots while Vulkan later maps them to descriptor sets.
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
+
+Next implementation breadcrumb: generate a first single-group `Binding_Group_Layout_Desc` helper from `binding_records()` for one sample, then use `d3d11_gfx_lab` to decide whether the helper shape feels better than hand-authored binding arrays.
 
 ## Validation
 
@@ -536,6 +553,8 @@ These generated names are intended to stay stable through v0.1:
 | `<TARGET>_<STAGE>_SMP_<name>` | Native sampler slot. |
 | `<TARGET>_<STAGE>_SMP_<name>_SPACE` | Native sampler binding space. |
 | `BINDING_RECORD_COUNT` | Number of generated target/stage binding records. |
+| `Binding_Uniform_Block_Desc` | Generated uniform-block record payload. |
+| `Binding_Resource_View_Desc` | Generated resource-view record payload. |
 | `Binding_Record_Desc` | Generated binding contract record type. |
 | `binding_records` | Helper returning the generated binding contract records. |
 | `VIEW_KIND_<name>` | Reflected `gfx.View_Kind`. |

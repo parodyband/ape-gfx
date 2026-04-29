@@ -69,6 +69,17 @@ VK_FS_SMP_ape_sampler_SPACE :: 0
 
 BINDING_RECORD_COUNT :: 6
 
+Binding_Uniform_Block_Desc :: struct {
+	size: u32,
+}
+
+Binding_Resource_View_Desc :: struct {
+	view_kind: gfx.View_Kind,
+	access: gfx.Shader_Resource_Access,
+	storage_image_format: gfx.Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
 Binding_Record_Desc :: struct {
 	target: gfx.Backend,
 	stage: gfx.Shader_Stage,
@@ -77,11 +88,8 @@ Binding_Record_Desc :: struct {
 	logical_slot: u32,
 	native_slot: u32,
 	native_space: u32,
-	size: u32,
-	view_kind: gfx.View_Kind,
-	access: gfx.Shader_Resource_Access,
-	storage_image_format: gfx.Pixel_Format,
-	storage_buffer_stride: u32,
+	uniform_block: Binding_Uniform_Block_Desc,
+	resource_view: Binding_Resource_View_Desc,
 }
 
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
@@ -94,11 +102,9 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
-		size = 64,
-		view_kind = gfx.View_Kind.Sampled,
-		access = gfx.Shader_Resource_Access.Unknown,
-		storage_image_format = gfx.Pixel_Format.Invalid,
-		storage_buffer_stride = 0,
+		uniform_block = {
+			size = 64,
+		},
 	}
 	records[1] = {
 		target = gfx.Backend.D3D11,
@@ -108,11 +114,12 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
-		size = 0,
-		view_kind = gfx.View_Kind.Sampled,
-		access = gfx.Shader_Resource_Access.Read,
-		storage_image_format = gfx.Pixel_Format.Invalid,
-		storage_buffer_stride = 0,
+		resource_view = {
+			view_kind = gfx.View_Kind.Sampled,
+			access = gfx.Shader_Resource_Access.Read,
+			storage_image_format = gfx.Pixel_Format.Invalid,
+			storage_buffer_stride = 0,
+		},
 	}
 	records[2] = {
 		target = gfx.Backend.D3D11,
@@ -122,11 +129,6 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
-		size = 0,
-		view_kind = gfx.View_Kind.Sampled,
-		access = gfx.Shader_Resource_Access.Unknown,
-		storage_image_format = gfx.Pixel_Format.Invalid,
-		storage_buffer_stride = 0,
 	}
 	records[3] = {
 		target = gfx.Backend.Vulkan,
@@ -136,11 +138,9 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
-		size = 64,
-		view_kind = gfx.View_Kind.Sampled,
-		access = gfx.Shader_Resource_Access.Unknown,
-		storage_image_format = gfx.Pixel_Format.Invalid,
-		storage_buffer_stride = 0,
+		uniform_block = {
+			size = 64,
+		},
 	}
 	records[4] = {
 		target = gfx.Backend.Vulkan,
@@ -150,11 +150,12 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 1,
 		native_space = 0,
-		size = 0,
-		view_kind = gfx.View_Kind.Sampled,
-		access = gfx.Shader_Resource_Access.Read,
-		storage_image_format = gfx.Pixel_Format.Invalid,
-		storage_buffer_stride = 0,
+		resource_view = {
+			view_kind = gfx.View_Kind.Sampled,
+			access = gfx.Shader_Resource_Access.Read,
+			storage_image_format = gfx.Pixel_Format.Invalid,
+			storage_buffer_stride = 0,
+		},
 	}
 	records[5] = {
 		target = gfx.Backend.Vulkan,
@@ -164,11 +165,6 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 2,
 		native_space = 0,
-		size = 0,
-		view_kind = gfx.View_Kind.Sampled,
-		access = gfx.Shader_Resource_Access.Unknown,
-		storage_image_format = gfx.Pixel_Format.Invalid,
-		storage_buffer_stride = 0,
 	}
 	return records
 }

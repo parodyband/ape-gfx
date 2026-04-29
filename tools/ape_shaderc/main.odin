@@ -2344,6 +2344,15 @@ trim_trailing_blank_lines :: proc(out: ^[dynamic]byte) {
 append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Record) -> bool {
 	append_string(out, "\n")
 	append_string(out, fmt.tprintf("BINDING_RECORD_COUNT :: %d\n\n", len(bindings)))
+	append_string(out, "Binding_Uniform_Block_Desc :: struct {\n")
+	append_string(out, "\tsize: u32,\n")
+	append_string(out, "}\n\n")
+	append_string(out, "Binding_Resource_View_Desc :: struct {\n")
+	append_string(out, "\tview_kind: gfx.View_Kind,\n")
+	append_string(out, "\taccess: gfx.Shader_Resource_Access,\n")
+	append_string(out, "\tstorage_image_format: gfx.Pixel_Format,\n")
+	append_string(out, "\tstorage_buffer_stride: u32,\n")
+	append_string(out, "}\n\n")
 	append_string(out, "Binding_Record_Desc :: struct {\n")
 	append_string(out, "\ttarget: gfx.Backend,\n")
 	append_string(out, "\tstage: gfx.Shader_Stage,\n")
@@ -2352,11 +2361,8 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 	append_string(out, "\tlogical_slot: u32,\n")
 	append_string(out, "\tnative_slot: u32,\n")
 	append_string(out, "\tnative_space: u32,\n")
-	append_string(out, "\tsize: u32,\n")
-	append_string(out, "\tview_kind: gfx.View_Kind,\n")
-	append_string(out, "\taccess: gfx.Shader_Resource_Access,\n")
-	append_string(out, "\tstorage_image_format: gfx.Pixel_Format,\n")
-	append_string(out, "\tstorage_buffer_stride: u32,\n")
+	append_string(out, "\tuniform_block: Binding_Uniform_Block_Desc,\n")
+	append_string(out, "\tresource_view: Binding_Resource_View_Desc,\n")
 	append_string(out, "}\n\n")
 
 	append_string(out, "binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {\n")
@@ -2371,11 +2377,20 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 		append_string(out, fmt.tprintf("\t\tlogical_slot = %d,\n", binding.logical_slot))
 		append_string(out, fmt.tprintf("\t\tnative_slot = %d,\n", binding.slot))
 		append_string(out, fmt.tprintf("\t\tnative_space = %d,\n", binding.space))
-		append_string(out, fmt.tprintf("\t\tsize = %d,\n", binding.size))
-		append_string(out, fmt.tprintf("\t\tview_kind = gfx.View_Kind.%s,\n", resource_view_kind_odin(binding.view_kind)))
-		append_string(out, fmt.tprintf("\t\taccess = gfx.Shader_Resource_Access.%s,\n", resource_access_odin(binding.access)))
-		append_string(out, fmt.tprintf("\t\tstorage_image_format = gfx.Pixel_Format.%s,\n", storage_image_format_odin(binding.storage_image_format)))
-		append_string(out, fmt.tprintf("\t\tstorage_buffer_stride = %d,\n", binding.storage_buffer_stride))
+		switch binding.kind {
+		case .Uniform_Block:
+			append_string(out, "\t\tuniform_block = {\n")
+			append_string(out, fmt.tprintf("\t\t\tsize = %d,\n", binding.size))
+			append_string(out, "\t\t},\n")
+		case .Resource_View:
+			append_string(out, "\t\tresource_view = {\n")
+			append_string(out, fmt.tprintf("\t\t\tview_kind = gfx.View_Kind.%s,\n", resource_view_kind_odin(binding.view_kind)))
+			append_string(out, fmt.tprintf("\t\t\taccess = gfx.Shader_Resource_Access.%s,\n", resource_access_odin(binding.access)))
+			append_string(out, fmt.tprintf("\t\t\tstorage_image_format = gfx.Pixel_Format.%s,\n", storage_image_format_odin(binding.storage_image_format)))
+			append_string(out, fmt.tprintf("\t\t\tstorage_buffer_stride = %d,\n", binding.storage_buffer_stride))
+			append_string(out, "\t\t},\n")
+		case .Sampler:
+		}
 		append_string(out, "\t}\n")
 	}
 	append_string(out, "\treturn records\n")

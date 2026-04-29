@@ -71,7 +71,12 @@ $ExpectedSnippets = @(
 	"VIEW_FORMAT_output_image :: gfx.Pixel_Format.RGBA32F",
 	"VIEW_KIND_output_buffer :: gfx.View_Kind.Storage_Buffer",
 	"VIEW_ACCESS_output_buffer :: gfx.Shader_Resource_Access.Read_Write",
-	"VIEW_STRIDE_output_buffer :: 0"
+	"VIEW_STRIDE_output_buffer :: 0",
+	"Binding_Resource_View_Desc :: struct",
+	"resource_view: Binding_Resource_View_Desc",
+	"resource_view = {",
+	"storage_image_format = gfx.Pixel_Format.RGBA32F",
+	"storage_buffer_stride = 0"
 )
 
 foreach ($Snippet in $ExpectedSnippets) {
@@ -113,7 +118,9 @@ $StructuredGenerated = Get-Content -LiteralPath $StructuredGeneratedPath -Raw
 $StructuredExpectedSnippets = @(
 	"VIEW_KIND_output_items :: gfx.View_Kind.Storage_Buffer",
 	"VIEW_ACCESS_output_items :: gfx.Shader_Resource_Access.Read_Write",
-	"VIEW_STRIDE_output_items :: 20"
+	"VIEW_STRIDE_output_items :: 20",
+	"resource_view = {",
+	"storage_buffer_stride = 20"
 )
 
 foreach ($Snippet in $StructuredExpectedSnippets) {

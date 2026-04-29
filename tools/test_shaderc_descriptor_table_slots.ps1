@@ -106,6 +106,13 @@ $ExpectedSnippets = @(
 	"VIEW_KIND_output_items :: gfx.View_Kind.Storage_Buffer",
 	"VIEW_ACCESS_output_items :: gfx.Shader_Resource_Access.Read_Write",
 	"VIEW_STRIDE_output_items :: 20",
+	"Binding_Uniform_Block_Desc :: struct",
+	"Binding_Resource_View_Desc :: struct",
+	"uniform_block: Binding_Uniform_Block_Desc",
+	"resource_view: Binding_Resource_View_Desc",
+	"uniform_block = {",
+	"resource_view = {",
+	"storage_buffer_stride = 20",
 	"target = gfx.Backend.D3D11",
 	"target = gfx.Backend.Vulkan",
 	"native_slot = 4"
@@ -113,6 +120,10 @@ $ExpectedSnippets = @(
 
 foreach ($Snippet in $ExpectedSnippets) {
 	Assert-Contains -Text $Generated -Snippet $Snippet
+}
+
+if ($Generated -match "native_space: u32,\s*size: u32,") {
+	Write-Error "Generated binding records still expose flat uniform-block payload fields"
 }
 
 Write-Host "Shaderc descriptor-table slot reflection test passed"
