@@ -457,6 +457,13 @@
 		backend_vulkan.odin
 		buffers.odin
 		context.odin
+		d3d11_buffers.odin
+		d3d11_images.odin
+		d3d11_passes.odin
+		d3d11_pipelines.odin
+		d3d11_samplers.odin
+		d3d11_shaders.odin
+		d3d11_views.odin
 		helpers.odin
 		images.odin
 		passes.odin
