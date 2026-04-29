@@ -451,9 +451,17 @@
 	fullpath:
 		<repo>/gfx
 	files:
+		backend.odin
 		backend_d3d11.odin
 		backend_null.odin
 		backend_vulkan.odin
+		buffers.odin
 		context.odin
 		helpers.odin
+		images.odin
+		passes.odin
+		pipelines.odin
+		samplers.odin
+		shaders.odin
 		types.odin
+		views.odin
