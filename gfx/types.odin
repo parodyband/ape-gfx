@@ -698,6 +698,13 @@ Shader_Stage_Desc :: struct {
 }
 
 // Shader_Binding_Desc carries Slang-reflected binding metadata for runtime validation.
+//
+// `array_count` carries the descriptor-array element count reflected from
+// Slang (AAA roadmap item 28 / APE-24). `0` and `1` both mean "scalar
+// binding"; a value `> 1` declares a fixed-size descriptor array. The runtime
+// cross-checks this against the matching `Binding_Group_Layout_Entry_Desc`
+// when a pipeline binds against the layout. `unsized = true` reserves the
+// binding for the runtime / bindless `Binding_Heap` path.
 Shader_Binding_Desc :: struct {
 	active: bool,
 	stage: Shader_Stage,
@@ -706,6 +713,8 @@ Shader_Binding_Desc :: struct {
 	slot: u32,
 	native_slot: u32,
 	native_space: u32,
+	array_count: u32,
+	unsized: bool,
 	name: string,
 	size: u32,
 	view_kind: View_Kind,
@@ -728,11 +737,23 @@ Binding_Group_Resource_View_Layout_Desc :: struct {
 }
 
 // Binding_Group_Layout_Entry_Desc describes one logical entry in a generated binding group.
+//
+// `array_count` is the descriptor-array element count reflected from Slang
+// (AAA roadmap item 28 / APE-24). `0` and `1` both mean "scalar binding"; a
+// value `> 1` declares a fixed-size descriptor array that occupies the slot
+// range `[slot, slot + array_count)` in the entry's per-kind slot space.
+//
+// `unsized = true` reserves the entry for the runtime / bindless `Binding_Heap`
+// path (see `gfx/bindless.odin` and gfx-bindless-note.md §5.3). Item 28 ships
+// fixed arrays only; `unsized = true` is rejected at layout creation until the
+// `Binding_Heap` backend lands.
 Binding_Group_Layout_Entry_Desc :: struct {
 	active: bool,
 	stages: Shader_Stage_Set,
 	kind: Shader_Binding_Kind,
 	slot: u32,
+	array_count: u32,
+	unsized: bool,
 	name: string,
 	uniform_block: Binding_Group_Uniform_Block_Layout_Desc,
 	resource_view: Binding_Group_Resource_View_Layout_Desc,

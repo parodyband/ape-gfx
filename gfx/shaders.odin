@@ -153,6 +153,22 @@ validate_shader_binding_desc :: proc(ctx: ^Context, binding: Shader_Binding_Desc
 		set_validation_errorf(ctx, "gfx.create_shader: binding metadata index %d has an invalid kind", index)
 		return false
 	}
+	if binding.unsized {
+		set_validation_errorf(
+			ctx,
+			"gfx.create_shader: binding metadata index %d declares an unsized array; runtime / bindless arrays use Binding_Heap (item 28 ships fixed arrays only)",
+			index,
+		)
+		return false
+	}
+	if binding.array_count > 1 {
+		switch binding.kind {
+		case .Resource_View, .Sampler:
+		case .Uniform_Block:
+			set_validation_errorf(ctx, "gfx.create_shader: binding metadata index %d uniform blocks do not support fixed arrays", index)
+			return false
+		}
+	}
 	if binding.group >= MAX_BINDING_GROUPS {
 		set_validation_errorf(ctx, "gfx.create_shader: binding group %d is out of range", binding.group)
 		return false

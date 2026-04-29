@@ -120,6 +120,7 @@ validate_core :: proc(options: Validate_Core_Options) -> bool {
 		"test_gfx_descriptor_contracts.ps1",
 		"test_gfx_image_transfer_contracts.ps1",
 		"test_gfx_state_descriptor_contracts.ps1",
+		"test_gfx_binding_group_arrays.ps1",
 		"test_gfx_range_helpers.ps1",
 		"test_gfx_handle_lifecycle.ps1",
 	}
@@ -199,6 +200,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"test_gfx_descriptor_contracts.ps1",
 		"test_gfx_image_transfer_contracts.ps1",
 		"test_gfx_state_descriptor_contracts.ps1",
+		"test_gfx_binding_group_arrays.ps1",
 		"test_gfx_range_helpers.ps1",
 		"test_gfx_handle_lifecycle.ps1",
 		"test_d3d11_backend_limits.ps1",
