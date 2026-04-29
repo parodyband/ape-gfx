@@ -38,7 +38,7 @@ package shader
 			make_test_package fabricates a Package with the supplied axes and variants.
 			The returned package owns its own byte buffer; pass it through `unload` (or
 			hand it to `register_package` with `take_ownership = true`) to free it.
-			
+
 			Intended for runtime-library tests; production code should load packages
 			emitted by `ape_shaderc`.
 
@@ -75,7 +75,7 @@ package shader
 		resolve :: proc(lib: ^Library, ctx: ^gfx.Context, id: Shader_Id, key: Permutation_Key) -> (: gfx.Shader, : bool) {...}
 			resolve maps (id, key) to a backend gfx.Shader, materialising it on first
 			use. Subsequent calls with the same key return the cached handle.
-			
+
 			On a miss, the library:
 			  1. Loads the `.ashader` package if it has not been loaded yet.
 			  2. If the package is missing on disk, invokes the source compiler.
@@ -89,7 +89,7 @@ package shader
 			state_hash). The first call creates the underlying shader (via `resolve`)
 			and the pipeline; later calls re-use the same Pipeline handle so reflection
 			bindings and pipeline state are not recomputed each frame.
-			
+
 			The caller is responsible for the state_hash — anything that affects the
 			pipeline state (vertex layout, render formats, depth/raster/blend, label)
 			must contribute. The library treats `state_hash` as opaque.
@@ -127,7 +127,7 @@ package shader
 			misses both the live cache and the on-disk `.ashader`, the library invokes
 			the compiler to produce a fresh package at `out_path`. Returning false
 			surfaces as a Library lookup failure.
-			
+
 			The default contract is one-shot: produce `out_path` synchronously. The
 			runtime owns no policy about caching that file; the user controls where it
 			lands and whether to retain it across runs.
@@ -140,7 +140,7 @@ package shader
 
 		Package :: struct {version: u32, bytes: []u8, stages: []Stage_Record, bindings: []Binding_Record, vertex_inputs: []Vertex_Input_Record, axes: []Permutation_Axis, variants: []Permutation_Variant}
 			Package owns bytes and parsed metadata loaded from one .ashader file.
-			
+
 			`axes` and `variants` describe the permutation key space declared by the
 			shader package. Pre-v10 packages synthesize a single default variant that
 			covers every stage and binding so existing shaders keep loading without
@@ -185,7 +185,7 @@ package shader
 			implementation that shells out to `ape_shaderc.exe`. Only `executable_path`
 			is required; the rest pick up reasonable defaults relative to the source
 			file the compiler is invoked for.
-			
+
 			This is the default APE-28 source-compile fallback path: when `resolve`
 			misses both the in-memory cache and the on-disk `.ashader`, the runtime
 			asks `ape_shaderc` to produce one. Production callers can substitute their
@@ -201,7 +201,7 @@ package shader
 			synthetic fixture builder used by the runtime-library test harness. Each
 			stage is built into the resulting Package as if it had been packaged from
 			disk, so it survives the same `byte_range` validation real packages do.
-			
+
 			This API exists so the runtime-lookup test can exercise multi-variant
 			resolution without depending on `ape_shaderc` to emit a permutation-bearing
 			package. It is intentionally narrow and not part of the production

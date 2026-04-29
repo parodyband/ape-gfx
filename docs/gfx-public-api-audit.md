@@ -63,6 +63,7 @@ Composite statuses are comma-separated.
 | `Queue_Invalid` | defer | APE-17 queue/timeline sketch sentinel. Stays public when the submission API lands. |
 | `Sampler_Invalid` | keep | Stable invalid sentinel. |
 | `Shader_Invalid` | keep | Stable invalid sentinel. |
+| `SUBRESOURCE_RANGE_WHOLE` | keep | APE-15 explicit name for the zero-init "whole image" `Subresource_Range`. |
 | `Timeline_Semaphore_Invalid` | defer | APE-17 queue/timeline sketch sentinel. Stays public when the submission API lands. |
 | `TRANSIENT_INDEX_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Index` slices. |
 | `TRANSIENT_INDIRECT_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Indirect` slices. |
@@ -85,7 +86,11 @@ Composite statuses are comma-separated.
 | `apply_compute_pipeline` | keep, needs_test | Core compute command. Keep if compute is v0.1-stable. |
 | `apply_pipeline` | keep, needs_test | Core render command. |
 | `apply_uniform` | keep, needs_docs | Ergonomic typed wrapper over `apply_uniforms`. |
+| `apply_uniform_at` | keep, needs_test | Offset-aware uniform binding (APE-21) that binds a `Transient_Slice` as a constant buffer at a slot. |
+| `apply_uniform_at_typed` | keep, needs_docs | Ergonomic typed wrapper over `apply_uniform_at`. |
 | `apply_uniforms` | keep, needs_test | Core uniform upload. |
+| `barrier_buffer_target` | defer | APE-15 helper that builds a whole-buffer `Barrier_Target`. |
+| `barrier_image_target` | defer | APE-15 helper that builds an image `Barrier_Target` with optional `Subresource_Range`. |
 | `backend_name` | keep | Small diagnostic helper. |
 | `begin_compute_pass` | keep, needs_test | Core compute command. |
 | `begin_pass` | keep, needs_test | Core render command. |
@@ -96,6 +101,7 @@ Composite statuses are comma-separated.
 | `cmd_apply_compute_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_apply_pipeline` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_apply_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_barrier` | defer | APE-15 explicit barrier sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_begin_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_begin_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_dispatch` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
@@ -191,6 +197,9 @@ Composite statuses are comma-separated.
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
 | `Backend` | keep | Stable backend selector. `Auto` behavior needs docs. |
+| `Barrier_Desc` | defer | APE-15 explicit barrier description (lists of `Image_Transition` / `Buffer_Transition`). Settled with the recording-path implementation. |
+| `Barrier_Target` | defer | APE-15 barrier addressee: `Image` or `Buffer` handle plus image `Subresource_Range`. |
+| `Barrier_Target_Kind` | defer | APE-15 tag for `Barrier_Target` (Image vs Buffer). |
 | `Binding_Group` | keep | Stable binding group handle. |
 | `Binding_Group_Desc` | keep | Binding group creation descriptor for generated resource views and samplers. Uniforms are still applied separately. |
 | `Binding_Group_Layout` | keep | Stable binding group layout handle. |
@@ -209,6 +218,7 @@ Composite statuses are comma-separated.
 | `Buffer_Read_Desc` | keep, needs_docs, needs_test | Blocking readback descriptor. |
 | `Buffer_State` | keep, needs_docs | Query result. |
 | `Buffer_Update_Desc` | keep, needs_docs, needs_test | Dynamic/stream update descriptor. |
+| `Buffer_Transition` | defer | APE-15 buffer-side transition (whole-buffer `from -> to`). |
 | `Buffer_Usage` | keep | Public bit set. |
 | `Buffer_Usage_Flag` | keep, needs_docs | Public bit set values. |
 | `Color` | keep | Basic pass clear color type. |
@@ -241,6 +251,7 @@ Composite statuses are comma-separated.
 | `Image_Resolve_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_image_transfer_contracts.ps1`. |
 | `Image_State` | keep, needs_docs | Query result. |
 | `Image_Subresource_Data` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_image_transfer_contracts.ps1`. |
+| `Image_Transition` | defer | APE-15 image-side transition (handle, `Subresource_Range`, `from -> to`). |
 | `Image_Update_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_image_transfer_contracts.ps1`. |
 | `Image_Usage` | keep | Public bit set. |
 | `Image_Usage_Flag` | keep, needs_docs | Public bit set values. |
@@ -282,6 +293,9 @@ Composite statuses are comma-separated.
 | `Storage_Buffer_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Storage_Image_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Store_Action` | keep, needs_docs | Pass action enum. |
+| `Subresource_Aspect` | defer | APE-15 image-aspect bit set. Empty means "every aspect this image owns". |
+| `Subresource_Aspect_Flag` | defer | APE-15 image-aspect enum (Color, Depth, Stencil). |
+| `Subresource_Range` | defer | APE-15 mip/layer/aspect range carried by image barriers. Zero-init means "whole image". |
 | `Submit_Info` | defer | APE-17 submission descriptor sketch. |
 | `Texture_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Timeline_Semaphore` | defer | APE-17 timeline semaphore handle sketch. |

@@ -26,6 +26,11 @@ package gfx
 		Pipeline_Invalid :: Pipeline(0)
 		Pipeline_Layout_Invalid :: Pipeline_Layout(0)
 		Queue_Invalid :: Queue(0)
+		SUBRESOURCE_RANGE_WHOLE :: Subresource_Range{}
+			SUBRESOURCE_RANGE_WHOLE is the explicit name for the zero-init "whole
+			resource" range. Functionally identical to `Subresource_Range{}`; preferred
+			at call sites that read more clearly with a name than with `{}`.
+
 		Sampler_Invalid :: Sampler(0)
 		Shader_Invalid :: Shader(0)
 		TRANSIENT_INDEX_ALIGNMENT :: 4
@@ -43,7 +48,7 @@ package gfx
 		TRANSIENT_UNIFORM_ALIGNMENT :: 256
 			TRANSIENT_UNIFORM_ALIGNMENT is the public alignment for slices returned
 			with `Transient_Usage.Uniform`.
-			
+
 			256 is the strictest of the three target backends (D3D12 CB offset);
 			using it on D3D11 too keeps per-frame heap usage portable across
 			builds. See gfx-transient-allocator-note.md §4.
@@ -59,20 +64,20 @@ package gfx
 	procedures
 		acquire_compute_queue :: proc(ctx: ^Context) -> Queue {...}
 			acquire_compute_queue returns the Queue handle for the async-compute family.
-			
+
 			On D3D11 this returns the same Queue as `acquire_graphics_queue` and the
 			runtime serializes; on D3D12/Vulkan this is a distinct queue when the
 			adapter exposes one.
 
 		acquire_graphics_queue :: proc(ctx: ^Context) -> Queue {...}
 			acquire_graphics_queue returns the Queue handle for the graphics family.
-			
+
 			Stable for the life of the Context. Returns `Queue_Invalid` if the backend
 			does not expose a graphics queue (shouldn't happen for a valid Context).
 
 		acquire_transfer_queue :: proc(ctx: ^Context) -> Queue {...}
 			acquire_transfer_queue returns the Queue handle for the copy-only family.
-			
+
 			Same fold-to-graphics rule as `acquire_compute_queue` on D3D11.
 
 		apply_binding_group :: proc(ctx: ^Context, group: Binding_Group, base_bindings: Bindings = {}) -> bool {...}
@@ -83,7 +88,7 @@ package gfx
 
 		apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {...}
 			apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
-			
+
 			example:
 			  bindings: gfx.Bindings
 			  bindings.vertex_buffers[0] = {buffer = vertex_buffer}
@@ -95,16 +100,37 @@ package gfx
 
 		apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {...}
 			apply_pipeline binds a graphics pipeline inside a render pass.
-			
+
 			example:
 			  gfx.apply_pipeline(&ctx, pipeline)
 
 		apply_uniform :: proc(ctx: ^Context, group: u32, slot: int, value: ^$T) -> bool {...}
 			apply_uniform uploads a typed uniform value using size_of(T).
 
+		apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {...}
+			apply_uniform_at binds a `Transient_Slice` as a uniform/constant buffer at a slot.
+
+			The caller is expected to have already written `byte_size` bytes through
+			`slice.mapped`. `byte_size` must match the reflected uniform block size;
+			`slice.size` is the slot's alignment-padded size and is at least `byte_size`.
+
+			Composes with the transient allocator (APE-20): allocate a slice from a
+			`Transient_Allocator` with `Transient_Usage.Uniform`, write into
+			`slice.mapped`, then bind it here. The slot is rebound on every call, so the
+			usual draw-time required-uniform check is satisfied.
+
+			example:
+			  slice, _ := gfx.transient_alloc(allocator, size_of(Frame_Uniforms), .Uniform)
+			  (^Frame_Uniforms)(slice.mapped)^ = uniforms
+			  gfx.apply_uniform_at(&ctx, 0, 0, slice, size_of(Frame_Uniforms))
+
+		apply_uniform_at_typed :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, $T: typeid) -> bool {...}
+			apply_uniform_at_typed binds a typed uniform value already written through
+			`slice.mapped`. Equivalent to `apply_uniform_at` with `byte_size = size_of(T)`.
+
 		apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {...}
 			apply_uniforms uploads one reflected uniform block to the current pipeline.
-			
+
 			example:
 			  frame := FrameUniforms{view_proj = view_proj}
 			  gfx.apply_uniforms(&ctx, 0, 0, gfx.range_raw(&frame, size_of(frame)))
@@ -112,9 +138,18 @@ package gfx
 		backend_name :: proc(backend: Backend) -> string {...}
 			backend_name returns a stable lowercase display name for a Backend.
 
+		barrier_buffer_target :: proc(buffer: Buffer) -> Barrier_Target {...}
+			barrier_buffer_target builds a `Barrier_Target` for a whole-buffer
+			transition.
+
+		barrier_image_target :: proc(image: Image, range: Subresource_Range = SUBRESOURCE_RANGE_WHOLE) -> Barrier_Target {...}
+			barrier_image_target builds a `Barrier_Target` for an image and range.
+
+			Pass `SUBRESOURCE_RANGE_WHOLE` (or `{}`) for whole-resource transitions.
+
 		begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool {...}
 			begin_compute_pass starts a compute-only pass.
-			
+
 			example:
 			  gfx.begin_compute_pass(&ctx, {label = "simulate"})
 			  gfx.apply_compute_pipeline(&ctx, compute_pipeline)
@@ -123,10 +158,10 @@ package gfx
 
 		begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {...}
 			begin_pass starts a graphics render pass.
-			
+
 			A fully zero-init `Pass_Desc.action` defaults to the framework clear/store
 			behavior; see `Pass_Action`. Set only the fields you want to override.
-			
+
 			example:
 			  gfx.begin_pass(&ctx, {
 			      label  = "main",
@@ -167,15 +202,28 @@ package gfx
 			cmd_apply_uniforms uploads one reflected uniform block on a render pass
 			encoder.
 
+		cmd_barrier :: proc(list: ^Command_List, desc: Barrier_Desc) -> bool {...}
+			cmd_barrier records one set of explicit transitions on a Command_List.
+
+			Recorded between encoder scopes (§9.2 of the barriers note); calling it
+			while a `Render_Pass_Encoder` or `Compute_Pass_Encoder` is open is a
+			validation error. The runtime emits one backend barrier record
+			(`vkCmdPipelineBarrier2` / `ResourceBarrier`) covering all transitions in
+			`desc`; D3D11 routes through the item-20 validation policy and otherwise
+			no-ops.
+
+			Returns false on validation/backend failure; per-list error follows
+			recording-note §7.3.
+
 		cmd_begin_compute_pass :: proc(list: ^Command_List, desc: Compute_Pass_Desc = {}) -> (: Compute_Pass_Encoder, : bool) {...}
 			cmd_begin_compute_pass opens a compute pass on a Command_List.
-			
+
 			Returns the encoder for subsequent `cmd_apply_compute_*` and `cmd_dispatch`
 			calls. The list must be in state `Recording` with no other encoder open.
 
 		cmd_begin_render_pass :: proc(list: ^Command_List, desc: Pass_Desc) -> (: Render_Pass_Encoder, : bool) {...}
 			cmd_begin_render_pass opens a render pass on a Command_List.
-			
+
 			Returns the encoder that subsequent `cmd_apply_*` and `cmd_draw` calls
 			take. The list must be in state `Recording` and have no other encoder open.
 
@@ -184,7 +232,7 @@ package gfx
 
 		cmd_draw :: proc(encoder: ^Render_Pass_Encoder, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {...}
 			cmd_draw issues one indexed or non-indexed draw on a render pass encoder.
-			
+
 			Index vs vertex interpretation follows the active pipeline's `index_type`,
 			matching the existing immediate-mode `gfx.draw`.
 
@@ -193,13 +241,13 @@ package gfx
 
 		cmd_end_render_pass :: proc(encoder: ^Render_Pass_Encoder) -> bool {...}
 			cmd_end_render_pass closes the render pass owned by `encoder`.
-			
+
 			After this returns true the encoder is no longer usable; the parent list
 			may open a new encoder or be finished.
 
 		command_list_last_error :: proc(list: ^Command_List) -> string {...}
 			command_list_last_error returns the most recent record-time error.
-			
+
 			Use this from the worker thread before `finish_command_list` to surface
 			validation failures detected during recording.
 
@@ -222,7 +270,7 @@ package gfx
 		create_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> (: Buffer, : bool) {...}
 			create_buffer creates a GPU buffer and reports whether creation succeeded.
 			On failure, the returned handle is Buffer_Invalid and last_error explains why.
-			
+
 			example:
 			  vertices := [?]Vertex{ ... }
 			  vbuf, ok := gfx.create_buffer(&ctx, {
@@ -233,14 +281,14 @@ package gfx
 
 		create_command_list :: proc(ctx: ^Context) -> (: Command_List, : bool) {...}
 			create_command_list allocates a new Command_List bound to `ctx`.
-			
+
 			Must be called on the Context thread; the returned list's initial owner is
 			the caller and may be moved to a worker before recording begins.
 
 		create_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> (: Compute_Pipeline, : bool) {...}
 			create_compute_pipeline creates an immutable compute pipeline state object.
 			On failure, the returned handle is Compute_Pipeline_Invalid and last_error explains why.
-			
+
 			example:
 			  pipeline, ok := gfx.create_compute_pipeline(&ctx, {
 			      label           = "simulate",
@@ -251,7 +299,7 @@ package gfx
 		create_image :: proc(ctx: ^Context, desc: Image_Desc) -> (: Image, : bool) {...}
 			create_image creates a texture, storage image, or attachment image.
 			On failure, the returned handle is Image_Invalid and last_error explains why.
-			
+
 			example:
 			  image, ok := gfx.create_image(&ctx, {
 			      label  = "diffuse",
@@ -265,7 +313,7 @@ package gfx
 		create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (: Pipeline, : bool) {...}
 			create_pipeline creates an immutable graphics pipeline state object.
 			On failure, the returned handle is Pipeline_Invalid and last_error explains why.
-			
+
 			example:
 			  pipeline, ok := gfx.create_pipeline(&ctx, {
 			      label           = "triangle",
@@ -289,7 +337,7 @@ package gfx
 		create_shader :: proc(ctx: ^Context, desc: Shader_Desc) -> (: Shader, : bool) {...}
 			create_shader creates backend shader objects from compiled shader bytecode.
 			On failure, the returned handle is Shader_Invalid and last_error explains why.
-			
+
 			example:
 			  pkg, _ := shader_assets.load("build/shaders/triangle.ashader")
 			  desc, _ := shader_assets.shader_desc(&pkg, .D3D11_DXBC, "triangle")
@@ -297,18 +345,18 @@ package gfx
 
 		create_timeline_semaphore :: proc(ctx: ^Context, initial_value: u64 = 0) -> Timeline_Semaphore {...}
 			create_timeline_semaphore allocates a Timeline_Semaphore with `initial_value`.
-			
+
 			Returns `Timeline_Semaphore_Invalid` on failure; check `last_error(ctx)`.
 
 		create_transient_allocator :: proc(ctx: ^Context, desc: Transient_Allocator_Desc) -> (: Transient_Allocator, : bool) {...}
 			create_transient_allocator allocates a new per-frame linear allocator.
-			
+
 			Must be called on the Context thread. The returned allocator's owning
 			thread is the caller and may be moved to a worker before the first
 			`transient_alloc`, mirroring `Command_List` ownership. Returns
 			`Transient_Allocator_Invalid` and `false` on validation/backend
 			failure; check `last_error(ctx)`.
-			
+
 			example:
 			  allocator, ok := gfx.create_transient_allocator(&ctx, {
 			      label    = "frame uniforms",
@@ -322,7 +370,7 @@ package gfx
 
 		default_pass_action :: proc() -> Pass_Action {...}
 			default_pass_action returns clear/store defaults for color, depth, and stencil attachments.
-			
+
 			Equivalent to `pass_action_with_defaults({})`. A zero-init `Pass_Action` passed
 			to `begin_pass` produces the same rendering — see the `Pass_Action` doc.
 
@@ -337,7 +385,7 @@ package gfx
 
 		destroy_command_list :: proc(list: ^Command_List) {...}
 			destroy_command_list releases backend resources held by a list.
-			
+
 			Safe to call on a `Recording`, `Finished`, or `Submitted` list. Lists must
 			be destroyed before their owning Context shuts down.
 
@@ -364,13 +412,13 @@ package gfx
 
 		destroy_timeline_semaphore :: proc(ctx: ^Context, semaphore: Timeline_Semaphore) {...}
 			destroy_timeline_semaphore releases a Timeline_Semaphore.
-			
+
 			All in-flight submits that wait on or signal the semaphore must have
 			completed (or be cancelled by Context shutdown) before destruction.
 
 		destroy_transient_allocator :: proc(ctx: ^Context, allocator: Transient_Allocator) {...}
 			destroy_transient_allocator releases backing storage held by an allocator.
-			
+
 			All in-flight submits that read from the allocator's backing buffer
 			must have completed before destruction; the allocator does not block
 			on its own storage. `reset_transient_allocator` is the place to wait
@@ -381,7 +429,7 @@ package gfx
 
 		dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {...}
 			dispatch issues a compute dispatch with explicit thread-group counts.
-			
+
 			example:
 			  gfx.apply_compute_pipeline(&ctx, simulate_pipeline)
 			  gfx.apply_bindings(&ctx, sim_bindings)
@@ -391,7 +439,7 @@ package gfx
 			draw issues a non-indexed or indexed draw depending on the active pipeline.
 			When the active pipeline declares an index_type, base_element and num_elements
 			are indices; otherwise they are vertices.
-			
+
 			example:
 			  gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
 			  gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
@@ -404,7 +452,7 @@ package gfx
 
 		finish_command_list :: proc(list: ^Command_List) -> bool {...}
 			finish_command_list seals a Command_List for submission.
-			
+
 			Called on the recording thread after the last `cmd_end_*_pass`. After this
 			returns true the list is in state `Finished` and may transfer to another
 			thread for submission.
@@ -426,7 +474,7 @@ package gfx
 
 		pass_action_with_defaults :: proc(action: Pass_Action) -> Pass_Action {...}
 			pass_action_with_defaults applies the zero-init defaulting rule to a Pass_Action.
-			
+
 			`begin_pass` calls this internally before validation and dispatch; it is
 			exposed so that callers and tests can inspect the resolved action without
 			reaching into private helpers. See the `Pass_Action` doc for the contract.
@@ -439,13 +487,13 @@ package gfx
 
 		present :: proc(ctx: ^Context, info: Present_Info = {}) -> bool {...}
 			present queues the current swapchain image for display.
-			
+
 			Always targets the graphics queue acquired from `ctx`; there is no
 			`Queue` parameter because cross-queue present is not on the roadmap.
 			Advances `ctx.frame_index` after the swapchain returns. The
 			acquire-next-image binary semaphore for the *following* frame is
 			scheduled internally.
-			
+
 			Per barrier-note §9.4 the `Color_Target -> Present` transition has already
 			been emitted by the render pass that wrote the swapchain image; `present`
 			only consumes the timeline waits in `info` and forwards to the swapchain.
@@ -492,17 +540,17 @@ package gfx
 		reset_transient_allocator :: proc(ctx: ^Context, allocator: Transient_Allocator, frame_done: Semaphore_Wait) -> bool {...}
 			reset_transient_allocator returns the bump pointer to zero after the
 			previous frame's GPU work has retired.
-			
+
 			`frame_done` names a `Timeline_Semaphore` value that must be reached
 			before the reset proceeds; the call blocks the calling thread until
 			then. Pass `{Timeline_Semaphore_Invalid, 0}` to assert that the caller
 			has already waited (e.g. via `timeline_semaphore_wait` for its own
 			frame pacing) and skip the wait.
-			
+
 			After the reset the persistently mapped pointer remains valid; only
 			`Transient_Slice` offsets returned by the previous frame are stale.
 			Returns false on validation or backend failure; check `last_error(ctx)`.
-			
+
 			Note: The timeline semaphore primitive is itself a sketch (see queue.odin).
 			Until APE-3 / APE-17 stand up real submits, callers must pass the no-wait
 			sentinel `{Timeline_Semaphore_Invalid, 0}` and serialize frame pacing
@@ -525,36 +573,36 @@ package gfx
 
 		submit :: proc(ctx: ^Context, queue: Queue, info: Submit_Info) -> bool {...}
 			submit hands an ordered batch of finished command lists to a Queue.
-			
+
 			Must be called on the Context thread. Drains per-list error slots onto
 			`ctx` (recording-note §7.3) and transitions each list to `Submitted`.
 			Returns false on validation/backend failure; check `last_error(ctx)`.
-			
+
 			Validation rules (sketch — refined as items 18-20 land):
-			
+
 			  - every list is in state `Finished`
 			  - every list's recorded `queue` matches `queue_kind(queue)`
 			  - every signal value is strictly greater than its semaphore's current
 			    pending-max (no out-of-order signals on one semaphore)
 			  - lists already submitted are rejected (`.Stale_Handle`-equivalent)
-			
+
 			The single-queue / single-list shape is `submit(queue, { command_lists = {&list} })`.
 
 		submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Queue = .Graphics) -> bool {...}
 			submit_command_list hands a single finished list to the named queue family.
-			
+
 			Convenience wrapper over `submit` (queue.odin) for the no-semaphore single-
 			list case. Acquires the appropriate Queue from `ctx`, builds a one-element
 			`Submit_Info`, and forwards. Drains `list.last_error` onto `ctx` and
 			transitions the list to state `Submitted`. Today only `.Graphics` is
 			honored by the D3D11 backend; other queues are reserved for future work.
-			
+
 			Use `gfx.submit` directly when the submit needs timeline waits, signals,
 			or more than one list.
 
 		timeline_semaphore_signal :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, value: u64) -> bool {...}
 			timeline_semaphore_signal advances the semaphore from the CPU side.
-			
+
 			`value` must be strictly greater than the current value.
 
 		timeline_semaphore_value :: proc(ctx: ^Context, semaphore: Timeline_Semaphore) -> u64 {...}
@@ -562,23 +610,23 @@ package gfx
 
 		timeline_semaphore_wait :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, value: u64, timeout_ns: u64) -> bool {...}
 			timeline_semaphore_wait blocks the calling thread until `value` is reached.
-			
+
 			`timeout_ns` of 0 polls; ~max u64 is "wait forever". Returns false on
 			timeout or backend error; check `last_error(ctx)` to disambiguate.
 
 		transient_alloc :: proc(allocator: Transient_Allocator, size: int, usage: Transient_Usage) -> (: Transient_Slice, : bool) {...}
 			transient_alloc carves a frame-scoped slice out of an allocator's
 			backing buffer.
-			
+
 			`usage` selects alignment (TRANSIENT_*_ALIGNMENT) and must be a member
 			of the allocator's `Transient_Usage_Set`. `size` is in bytes; the
 			returned `Transient_Slice.size` is `size` rounded up to the role's
 			alignment. Returns `Transient_Slice{}` and `false` on out-of-capacity
 			or validation failure.
-			
+
 			The call must run on the allocator's owning thread; allocators are
 			not internally thread-safe (note §2).
-			
+
 			example:
 			  slice, ok := gfx.transient_alloc(allocator, size_of(Per_Frame_Uniforms), .Uniform)
 			  if ok {
@@ -587,14 +635,14 @@ package gfx
 
 		transient_allocator_capacity :: proc(allocator: Transient_Allocator) -> int {...}
 			transient_allocator_capacity reports the configured byte capacity per role.
-			
+
 			Useful for OOM diagnostics from the recorder thread. Returns 0 for an
 			invalid handle.
 
 		transient_allocator_used :: proc(allocator: Transient_Allocator) -> int {...}
 			transient_allocator_used reports how many bytes have been handed out
 			since the last `reset_transient_allocator`, summed across roles.
-			
+
 			Includes alignment padding. Returns 0 for an invalid handle.
 
 		update_buffer :: proc(ctx: ^Context, desc: Buffer_Update_Desc) -> bool {...}
@@ -624,6 +672,46 @@ package gfx
 	types
 		Backend :: enum {Auto, Null, D3D11, Vulkan}
 			Backend selects the native graphics implementation used by a Context.
+
+		Barrier_Desc :: struct {image_transitions: []Image_Transition, buffer_transitions: []Buffer_Transition}
+			Barrier_Desc is the description for one `cmd_barrier` call.
+
+			Both arrays may be empty (the call no-ops); both may be populated (one
+			barrier per record on Vulkan / D3D12, freely batched). Arrays are read by
+			the runtime during the call and may be reused or freed immediately after.
+
+			Future fields (deferred):
+
+			  - queue ownership transfer (release / acquire) — APE-21.
+			  - memory-only barriers without a state move — covered today by the
+			    in-pass UAV auto-path (§9.1, case 4.5); a public verb is not on the
+			    roadmap.
+
+		Barrier_Target :: struct {kind: Barrier_Target_Kind, image: Image, buffer: Buffer, range: Subresource_Range}
+			Barrier_Target names the addressee of one explicit barrier transition.
+
+			Barriers always name resources (Image / Buffer handles) — never views,
+			render-target aggregates, or pass-resource aliases. See barriers-note §10
+			for the rejected alternatives. `range` is meaningful only when
+			`kind == .Image`; for buffers it is ignored and zero-init.
+
+			Swapchain images are named by their `Image` handle, like any other image.
+			The typical `Color_Target -> Present` move rides the §9.4 attachment
+			auto-path and never appears here; use `cmd_barrier` only when the swapchain
+			image is touched in a non-attachment role.
+
+			Transient/aliased resources (frame-graph style "the color target of pass
+			X") are explicitly out of scope; a future render-graph layer will project
+			onto this same `Barrier_Target` shape (§10.5 of the note).
+
+		Barrier_Target_Kind :: enum {Image, Buffer}
+			Barrier_Target_Kind tags which resource handle a `Barrier_Target` carries.
+
+			The default zero value is `Image` so a zero-init `Barrier_Target` plus a
+			nonzero `image` field reads as a "whole image" transition without an
+			explicit kind setter. Construction helpers (`barrier_image_target`,
+			`barrier_buffer_target`) populate the tag and the matching handle in one
+			step.
 
 		Binding_Group :: distinct u64
 		Binding_Group_Desc :: struct {label: string, layout: Binding_Group_Layout, views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
@@ -672,6 +760,14 @@ package gfx
 		Buffer_State :: struct {valid: bool, usage: Buffer_Usage, size: int, storage_stride: int}
 			Buffer_State is returned by query_buffer_state for validation and diagnostics.
 
+		Buffer_Transition :: struct {buffer: Buffer, from: Resource_Usage, to: Resource_Usage}
+			Buffer_Transition names one buffer-side state move.
+
+			Buffers always transition whole-resource today; `Subresource_Range` is not
+			part of the buffer transition shape. When sparse / suballocated buffer
+			states arrive, the new range field lands here without changing the verb
+			signature.
+
 		Buffer_Update_Desc :: struct {buffer: Buffer, offset: int, data: Range}
 			Buffer_Update_Desc describes a CPU-to-GPU buffer update.
 
@@ -684,7 +780,7 @@ package gfx
 
 		Color_Attachment_Action :: struct {load_action: Load_Action, store_action: Store_Action, clear_value: Color}
 			Color_Attachment_Action controls load/store behavior for one color attachment.
-			
+
 			A fully zero-init Color_Attachment_Action means "use the framework default":
 			clear to opaque black `{0, 0, 0, 1}`, store the result. Setting any field
 			(including `clear_value`) opts the slot out of defaulting and uses the
@@ -698,11 +794,11 @@ package gfx
 
 		Command_List :: struct {ctx: ^Context, frame_index: u64, state: Command_List_State, open_pass_kind: Pass_Kind, queue: Command_Queue, last_error: string, last_error_code: Error_Code, last_error_storage: [256]u8, backend_data: rawptr}
 			Command_List is the unit of recorded GPU work.
-			
+
 			Owned by exactly one thread at a time (see command-recording-note §6.1).
 			The owning thread records passes into the list, calls `finish_command_list`,
 			and may then transfer ownership to the Context thread for `submit_command_list`.
-			
+
 			Per command-recording-note §7, the list carries the per-recorder error slot
 			(drained onto Context at submit) and the backend-private recording state
 			(a D3D11 deferred context, a Vulkan VkCommandBuffer + VkCommandPool checkout,
@@ -710,7 +806,7 @@ package gfx
 
 		Command_List_State :: enum {Recording, Finished, Submitted}
 			Command_List_State tracks the recording -> finished -> submitted lifecycle.
-			
+
 			`Recording`  — accepts begin_*_pass and per-encoder calls.
 			`Finished`   — sealed by `finish_command_list`; may be moved across threads
 			               and handed to the submission thread.
@@ -719,7 +815,7 @@ package gfx
 
 		Command_Queue :: enum {Graphics, Compute, Transfer}
 			Command_Queue selects the queue submit_command_list targets.
-			
+
 			Today only `Graphics` is honored by the D3D11 backend. The enum exists so
 			async compute and explicit transfer (items 21, 22 of the AAA roadmap) do
 			not require a parallel API later.
@@ -732,7 +828,7 @@ package gfx
 
 		Compute_Pass_Encoder :: struct {list: ^Command_List, open: bool, current_pipeline: Compute_Pipeline, current_bindings: Bindings, resource_writes: [MAX_COMPUTE_PASS_RESOURCE_WRITES]View_State, resource_write_count: int}
 			Compute_Pass_Encoder records dispatch work inside one compute pass.
-			
+
 			Opened by `cmd_begin_compute_pass`, closed by `cmd_end_compute_pass`.
 			Same thread-affinity rule as `Render_Pass_Encoder`. Carries the per-pass
 			resource-write tracking that lives on `^Context` today.
@@ -749,7 +845,7 @@ package gfx
 
 		Depth_Attachment_Action :: struct {load_action: Load_Action, store_action: Store_Action, clear_value: f32}
 			Depth_Attachment_Action controls load/store behavior for a depth attachment.
-			
+
 			A fully zero-init Depth_Attachment_Action means "use the framework default":
 			clear to `1.0`, store the result. Setting any field (including a
 			`clear_value` of 0) opts out of defaulting and uses the supplied values.
@@ -784,7 +880,7 @@ package gfx
 		Image :: distinct u64
 		Image_Desc :: struct {label: string, kind: Image_Kind, usage: Image_Usage, width: i32, height: i32, depth: i32, mip_count: i32, array_count: i32, sample_count: i32, format: Pixel_Format, data: Range, mips: [MAX_IMAGE_MIPS]Image_Subresource_Data}
 			Image_Desc creates an Image resource and optional immutable initial contents.
-			
+
 			Zero-count default (AAA roadmap item 34): leave `mip_count`, `array_count`,
 			`sample_count`, and `depth` at zero to mean "1". A descriptor that omits all
 			counts produces a single-mip, single-layer, single-sample image — the most
@@ -802,6 +898,18 @@ package gfx
 
 		Image_Subresource_Data :: struct {data: Range, row_pitch: i32, slice_pitch: i32}
 			Image_Subresource_Data supplies initial data for one image mip level.
+
+		Image_Transition :: struct {image: Image, range: Subresource_Range, from: Resource_Usage, to: Resource_Usage}
+			Image_Transition names one image-side state move.
+
+			`range` defaults to `SUBRESOURCE_RANGE_WHOLE`; non-zero fields restrict the
+			move to a subresource (mip range, layer range, or a specific aspect). The
+			runtime widens the range to "all aspects of this image" when the bit set
+			is empty — so a depth-only or color-only image needs no explicit aspect.
+
+			`from` and `to` use `Resource_Usage` from types.odin. Validation rules
+			(item 20 / APE-16) own which `from -> to` pairs are legal on which
+			backends.
 
 		Image_Update_Desc :: struct {image: Image, mip_level: i32, array_layer: i32, x: i32, y: i32, width: i32, height: i32, data: Range, row_pitch: i32}
 			Image_Update_Desc describes a CPU-to-GPU image subregion update.
@@ -824,7 +932,7 @@ package gfx
 
 		Pass_Action :: struct {colors: [MAX_COLOR_ATTACHMENTS]Color_Attachment_Action, depth: Depth_Attachment_Action, stencil: Stencil_Attachment_Action}
 			Pass_Action groups all attachment load/store actions for begin_pass.
-			
+
 			Zero-init contract (AAA roadmap item 35): a fully zero-init `Pass_Action`
 			produces the same rendering as `default_pass_action()` — clear color to
 			opaque black, clear depth to 1.0, clear stencil to 0, store every
@@ -852,12 +960,12 @@ package gfx
 
 		Present_Info :: struct {waits: []Semaphore_Wait}
 			Present_Info is the description for a single `present` call.
-			
+
 			`waits` is the set of timeline values that must be reached before the
 			swapchain image is handed to the display engine. The typical caller puts
 			the per-frame "render done" signal here; `present` already waits internally
 			on the swapchain's acquire-binary semaphore.
-			
+
 			Per barrier-note §9.4 the swapchain image's `Color_Target -> Present`
 			transition is emitted inside the render pass that targets it; `present`
 			itself does not transition resources.
@@ -867,7 +975,7 @@ package gfx
 
 		Queue :: distinct u64
 			Queue is the opaque handle for a GPU work submission target.
-			
+
 			`Context` exposes one Queue per Queue_Kind it supports (see
 			`acquire_graphics_queue` / `acquire_compute_queue` / `acquire_transfer_queue`).
 			Multiple queues of the same kind are not on the public roadmap; if a backend
@@ -876,7 +984,7 @@ package gfx
 
 		Queue_Kind :: enum {Graphics, Compute, Transfer}
 			Queue_Kind classifies what work a Queue accepts.
-			
+
 			Mirrors `Command_Queue` from command_list.odin and is used at queue
 			acquisition time. The two enums are kept distinct so `Command_List`'s
 			recorded affinity (which family it was *built for*) is not conflated with
@@ -890,7 +998,7 @@ package gfx
 
 		Render_Pass_Encoder :: struct {list: ^Command_List, open: bool, current_pipeline: Pipeline, current_bindings: Bindings, color_attachments: [MAX_COLOR_ATTACHMENTS]View, depth_stencil_attachment: View}
 			Render_Pass_Encoder records draw work inside one render pass.
-			
+
 			Opened by `cmd_begin_render_pass`, closed by `cmd_end_render_pass`. Single-
 			thread-affine for the life of the pass: never transfer an open encoder
 			(command-recording-note §6.3). All per-pass mutable state that the current
@@ -901,7 +1009,7 @@ package gfx
 
 		Render_Target_Desc :: struct {label: string, width: i32, height: i32, sample_count: i32, color_format: Pixel_Format, depth_format: Pixel_Format, sampled_color: bool, sampled_depth: bool}
 			Render_Target_Desc creates the common image/view bundle for one offscreen render target.
-			
+
 			`sample_count` follows the Image_Desc zero-count convention: 0 means 1.
 
 		Resource_Usage :: enum {None, Sampled, Storage_Read, Storage_Write, Color_Target, Depth_Target_Read, Depth_Target_Write, Copy_Source, Copy_Dest, Indirect_Argument, Present}
@@ -911,27 +1019,27 @@ package gfx
 			`final_usage`, binding-group entry usage, and the `from` / `to` fields of
 			future explicit barrier verbs all use this enum. See
 			docs/private/gfx-barriers-note.md §2 and §9 for the model.
-			
+
 			One usage per subresource at a time. The hybrid barrier model picked in
 			APE-13 (auto inside a pass, explicit between passes/queues) keeps the user
 			writing usages while the runtime translates to backend states.
-			
+
 			Backend mapping per value:
-			
+
 			  None
 			    D3D11   no-op (D3D11 has no public state).
 			    D3D12   D3D12_RESOURCE_STATE_COMMON.
 			    Vulkan  VK_IMAGE_LAYOUT_UNDEFINED, no access mask.
 			    Meaning: pre-first-use. The first transition out of None is auto-emitted
 			    by §9.1 attachments or by the first barrier that names the resource.
-			
+
 			  Sampled
 			    D3D11   SRV bind (informational).
 			    D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
 			            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.
 			    Vulkan  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT.
-			
+
 			  Storage_Read
 			    D3D11   SRV bind on a structured/byteaddress buffer or storage image
 			            (informational; D3D11 does not split UAV read from write).
@@ -940,7 +1048,7 @@ package gfx
 			            resources used read-only this pass.
 			    Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
 			            VK_ACCESS_2_SHADER_STORAGE_READ_BIT.
-			
+
 			  Storage_Write
 			    D3D11   UAV bind (informational).
 			    D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
@@ -948,13 +1056,13 @@ package gfx
 			            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
 			            the same view across two dispatches in one compute pass triggers
 			            an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
-			
+
 			  Color_Target
 			    D3D11   OMSetRenderTargets (informational).
 			    D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
 			    Vulkan  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 			            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT.
-			
+
 			  Depth_Target_Read
 			    D3D11   OMSetRenderTargets with read-only DSV (informational).
 			    D3D12   D3D12_RESOURCE_STATE_DEPTH_READ.
@@ -962,33 +1070,33 @@ package gfx
 			            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT. Used for early-Z
 			            passes that bind the depth image as both attachment and sampled
 			            texture (gfx-barriers-note.md case 4.6).
-			
+
 			  Depth_Target_Write
 			    D3D11   OMSetRenderTargets with read/write DSV (informational).
 			    D3D12   D3D12_RESOURCE_STATE_DEPTH_WRITE.
 			    Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 			            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT.
-			
+
 			  Copy_Source
 			    D3D11   CopyResource / CopySubresourceRegion source (informational).
 			    D3D12   D3D12_RESOURCE_STATE_COPY_SOURCE.
 			    Vulkan  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			            VK_ACCESS_2_TRANSFER_READ_BIT.
-			
+
 			  Copy_Dest
 			    D3D11   CopyResource / CopySubresourceRegion destination, UpdateSubresource
 			            target (informational).
 			    D3D12   D3D12_RESOURCE_STATE_COPY_DEST.
 			    Vulkan  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			            VK_ACCESS_2_TRANSFER_WRITE_BIT.
-			
+
 			  Indirect_Argument
 			    D3D11   ExecuteIndirect-style argument buffer bind (informational).
 			    D3D12   D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT.
 			    Vulkan  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT (buffers only — there is
 			            no image layout for this state). Read by draw_indirect /
 			            dispatch_indirect (AAA roadmap items 11-15).
-			
+
 			  Present
 			    D3D11   IDXGISwapChain::Present source (informational).
 			    D3D12   D3D12_RESOURCE_STATE_PRESENT (alias of COMMON).
@@ -1002,13 +1110,13 @@ package gfx
 
 		Semaphore_Signal :: struct {semaphore: Timeline_Semaphore, value: u64}
 			Semaphore_Signal names a signal-after-execute edge for a submission.
-			
+
 			`value` must be strictly greater than the semaphore's current value. The
 			signal happens after every command list in the submit completes.
 
 		Semaphore_Wait :: struct {semaphore: Timeline_Semaphore, value: u64}
 			Semaphore_Wait names a wait-before-execute edge for a submission.
-			
+
 			`value` is the timeline value the semaphore must reach before the submitted
 			command lists may begin executing. Multiple waits on the same submit are
 			AND-ed: every named value must be reached.
@@ -1040,7 +1148,7 @@ package gfx
 
 		Stencil_Attachment_Action :: struct {load_action: Load_Action, store_action: Store_Action, clear_value: u8}
 			Stencil_Attachment_Action controls load/store behavior for a stencil attachment.
-			
+
 			The framework default is clear-to-zero, store. Because every default field
 			is the enum/integer zero value, the zero-init form already matches the
 			default; no explicit defaulting is needed.
@@ -1056,35 +1164,78 @@ package gfx
 
 		Submit_Info :: struct {command_lists: []^Command_List, waits: []Semaphore_Wait, signals: []Semaphore_Signal}
 			Submit_Info is the description for a single `submit` call.
-			
+
 			`command_lists` are submitted in array order on `queue`. Every list must be
 			in state `Finished` (see command_list.odin) and built for a Queue_Kind that
 			matches the target queue. Empty `command_lists` is allowed when the submit
 			only signals — useful for CPU-driven timeline progress.
-			
+
 			Per-list error slots are drained onto `Context.last_error` during `submit`
 			(see command-recording-note §7.3); a non-empty slot does not by itself
 			fail the submit.
+
+		Subresource_Aspect :: bit_set[Subresource_Aspect_Flag]
+			Subresource_Aspect is a bit set of `Subresource_Aspect_Flag` values.
+
+			A zero-init (`{}`) bit set means "every aspect the resource owns" — color
+			for color formats, depth for depth-only formats, depth and stencil for
+			combined formats. Naming aspects explicitly is only required when a
+			transition must move depth and stencil through different states or in
+			different barriers (§10.4 of the barriers note).
+
+		Subresource_Aspect_Flag :: enum {Color, Depth, Stencil}
+			Subresource_Aspect_Flag selects which planes of an image a barrier names.
+
+			Color images carry only the `Color` aspect. Depth-only formats carry only
+			`Depth`. Combined depth/stencil formats (e.g. `D24S8`) carry both `Depth`
+			and `Stencil`; the two planes can transition independently on Vulkan
+			(`VK_IMAGE_ASPECT_DEPTH_BIT` vs `VK_IMAGE_ASPECT_STENCIL_BIT`) and on
+			D3D12 (separate states are not addressable, but separate barriers are).
+
+		Subresource_Range :: struct {base_mip: u32, mip_count: u32, base_layer: u32, layer_count: u32, aspect: Subresource_Aspect}
+			Subresource_Range names a contiguous range of mip levels and array layers
+			within an image, plus the aspects to transition.
+
+			Zero-init means "the whole image": all mip levels, all array layers, every
+			aspect. The runtime fills the zero counts from the image's `mip_count` and
+			`array_count` at barrier emission time. This matches the zero-count default
+			already used by `Image_Desc` (AAA roadmap item 34).
+
+			Buffers do not use `Subresource_Range` today; whole-buffer transitions are
+			the only shape on the roadmap. When sparse buffers or buffer suballocators
+			arrive, this struct grows a buffer-range variant or a sibling struct does;
+			`Barrier_Target.range` keeps its current shape for images.
+
+			Field semantics:
+
+			  base_mip      — first mip level. 0 is valid and common.
+			  mip_count     — number of mip levels. 0 means "from base_mip to the last
+			                  mip" (the all-mips default).
+			  base_layer    — first array layer (0 for non-array images).
+			  layer_count   — number of array layers. 0 means "from base_layer to the
+			                  last layer".
+			  aspect        — image planes (see `Subresource_Aspect`). `{}` means
+			                  every aspect the resource owns.
 
 		Texture_View_Desc :: struct {image: Image, format: Pixel_Format, base_mip: i32, mip_count: i32, base_layer: i32, layer_count: i32}
 			Texture_View_Desc creates a sampled texture view.
 
 		Timeline_Semaphore :: distinct u64
 			Timeline_Semaphore is a monotonically increasing u64 visible to GPU and CPU.
-			
+
 			Modelled after Vulkan's VK_KHR_timeline_semaphore and D3D12's ID3D12Fence:
 			any submit may *wait* until the semaphore reaches a value, and any submit
 			*signals* a (typically larger) value when its work completes. CPU code may
 			read or block on a value via `timeline_semaphore_value` and
 			`timeline_semaphore_wait`.
-			
+
 			Binary semaphores (the swapchain acquire/present pair) are not exposed
 			publicly. They live inside the swapchain wrapper and are managed by
 			`present`; see §6 of the queue-submission note.
 
 		Transient_Allocator :: distinct u64
 			Transient_Allocator is the opaque handle for a per-frame linear allocator.
-			
+
 			Created by `create_transient_allocator`, drained by
 			`reset_transient_allocator`, fed by `transient_alloc`. Owned by exactly
 			one thread at a time — the typical shape is one allocator per recorder
@@ -1092,7 +1243,7 @@ package gfx
 
 		Transient_Allocator_Desc :: struct {label: string, capacity: int, usage: Transient_Usage_Set}
 			Transient_Allocator_Desc creates a `Transient_Allocator`.
-			
+
 			`capacity == 0` means "pick a backend default" (currently 4 MiB per
 			requested role). `usage` must contain at least one role (note §2).
 			`Transient_Usage.Indirect` composes only with `.Storage` for compute-
@@ -1100,21 +1251,21 @@ package gfx
 
 		Transient_Slice :: struct {buffer: Buffer, offset: int, size: int, mapped: rawptr}
 			Transient_Slice is one allocation out of a `Transient_Allocator`.
-			
+
 			`buffer` is the role-specific backing buffer for the requested usage;
 			the slice lives at `[offset, offset + size)`. `mapped` is a CPU pointer
 			into the persistently mapped backing buffer — write through it directly
 			or cast to a typed pointer. Validity ends at the next
 			`reset_transient_allocator` on the parent allocator; do not retain
 			`mapped` across that boundary.
-			
+
 			`offset` is aligned per `TRANSIENT_*_ALIGNMENT` for the requested
 			usage; `size` is rounded up to the same alignment so consecutive
 			allocations stay aligned. See note §3 / §4.
 
 		Transient_Usage :: enum {Uniform, Storage, Vertex, Index, Indirect}
 			Transient_Usage names which role a transient allocation will fulfill.
-			
+
 			One usage per `transient_alloc` call. The allocator's
 			`Transient_Usage_Set` (declared at creation) gates which roles the
 			backing buffer may serve; asking for a role outside that set is a
@@ -1158,11 +1309,13 @@ package gfx
 		backend_d3d11.odin
 		backend_null.odin
 		backend_vulkan.odin
+		barriers.odin
 		binding_groups.odin
 		buffers.odin
 		command_list.odin
 		context.odin
 		d3d11_buffers.odin
+		d3d11_devicecontext1.odin
 		d3d11_images.odin
 		d3d11_passes.odin
 		d3d11_pipelines.odin
