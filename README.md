@@ -153,6 +153,7 @@ Each D3D11 sample has a build script and a run script. Run scripts accept `-Auto
 | MRT | `tools/run_d3d11_mrt.ps1` | Two color attachments in one pass |
 | MSAA Resolve | `tools/run_d3d11_msaa.ps1` | 4x MSAA target resolved into a sampled texture |
 | GFX Lab | `tools/run_d3d11_gfx_lab.ps1` | Non-trivial v0.1 usage path |
+| Improved Shadows | `tools/run_d3d11_improved_shadows.ps1` | Multi-pass depth shadow map with shared material bindings |
 
 `d3d11_gfx_lab` is the main API ergonomics sample. It renders a depth-tested cube into offscreen color/depth targets, then samples the color target in a swapchain pass.
 

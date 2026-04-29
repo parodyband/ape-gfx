@@ -496,8 +496,9 @@ Planned order:
 - [x] Settle generated binding record payload semantics before the generated binding-group contract.
 - [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
 - [x] Add a transient `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
-- [ ] Next: decide whether this should become object-backed, remain transient, or be narrowed before public binding-group handles.
-- [ ] Then settle descriptor slot validation rules that binding groups should enforce before runtime calls.
+- [x] Exercise transient binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and a shared material-resource pass.
+- [ ] Next: tighten binding group validation around pipeline compatibility and slot/stage expectations before adding object-backed binding group handles.
+- [ ] Then decide whether binding groups should become public GPU objects, remain transient descriptors, or be narrowed to generated helper data.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
@@ -511,7 +512,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: evaluate the new display-pass callsite in `d3d11_gfx_lab`. If it is a net improvement, try the same pattern in `improved_shadows`; if it feels noisy, narrow or remove the transient group path before adding object-backed binding groups.
+Next implementation breadcrumb: add a focused binding-group validation pass that rejects generated groups whose reflected resource/sampler slots do not line up with the currently applied shader pipeline. The improved shadows migration proves the reuse goal, but it also shows that `apply_binding_group` should fail earlier and more specifically when a layout/group pair does not match the active pipeline.
 
 ## Validation
 
