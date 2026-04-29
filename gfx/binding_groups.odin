@@ -1,17 +1,128 @@
 package gfx
 
-// apply_binding_group validates a generated binding group and applies it with optional geometry bindings.
-apply_binding_group :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc, base_bindings: Bindings = {}) -> bool {
+// create_binding_group_layout creates an immutable generated binding group layout handle.
+create_binding_group_layout :: proc(ctx: ^Context, desc: Binding_Group_Layout_Desc) -> (Binding_Group_Layout, bool) {
+	if !require_initialized(ctx, "gfx.create_binding_group_layout") {
+		return Binding_Group_Layout_Invalid, false
+	}
+	if !validate_binding_group_layout_desc(ctx, desc) {
+		return Binding_Group_Layout_Invalid, false
+	}
+
+	handle_id := alloc_resource_id(ctx, &ctx.binding_group_layout_pool, "gfx.create_binding_group_layout")
+	if handle_id == 0 {
+		return Binding_Group_Layout_Invalid, false
+	}
+
+	handle := Binding_Group_Layout(handle_id)
+	if ctx.binding_group_layout_states == nil {
+		ctx.binding_group_layout_states = make(map[Binding_Group_Layout]Binding_Group_Layout_State)
+	}
+	ctx.binding_group_layout_states[handle] = {
+		valid = true,
+		desc = desc,
+	}
+
+	return handle, true
+}
+
+// destroy_binding_group_layout releases a live binding group layout handle.
+destroy_binding_group_layout :: proc(ctx: ^Context, layout: Binding_Group_Layout) {
+	if !require_initialized(ctx, "gfx.destroy_binding_group_layout") {
+		return
+	}
+	if !require_resource(ctx, &ctx.binding_group_layout_pool, u64(layout), "gfx.destroy_binding_group_layout", "binding group layout") {
+		return
+	}
+	if binding_group_layout_in_use(ctx, layout) {
+		set_validation_error(ctx, "gfx.destroy_binding_group_layout: layout is still used by a binding group")
+		return
+	}
+
+	if ctx.binding_group_layout_states != nil {
+		delete_key(&ctx.binding_group_layout_states, layout)
+	}
+	release_resource_id(&ctx.binding_group_layout_pool, u64(layout))
+}
+
+// create_binding_group creates an immutable binding group from a generated layout handle and resource handles.
+create_binding_group :: proc(ctx: ^Context, desc: Binding_Group_Desc) -> (Binding_Group, bool) {
+	if !require_initialized(ctx, "gfx.create_binding_group") {
+		return Binding_Group_Invalid, false
+	}
+	if !require_resource(ctx, &ctx.binding_group_layout_pool, u64(desc.layout), "gfx.create_binding_group", "binding group layout") {
+		return Binding_Group_Invalid, false
+	}
+
+	layout_state, layout_ok := query_binding_group_layout_state(ctx, desc.layout)
+	if !layout_ok {
+		set_validation_error(ctx, "gfx.create_binding_group: binding group layout state is unavailable")
+		return Binding_Group_Invalid, false
+	}
+	if !validate_binding_group_desc(ctx, layout_state.desc, desc, "gfx.create_binding_group") {
+		return Binding_Group_Invalid, false
+	}
+
+	handle_id := alloc_resource_id(ctx, &ctx.binding_group_pool, "gfx.create_binding_group")
+	if handle_id == 0 {
+		return Binding_Group_Invalid, false
+	}
+
+	handle := Binding_Group(handle_id)
+	if ctx.binding_group_states == nil {
+		ctx.binding_group_states = make(map[Binding_Group]Binding_Group_State)
+	}
+	ctx.binding_group_states[handle] = {
+		valid = true,
+		layout = desc.layout,
+		desc = desc,
+	}
+
+	return handle, true
+}
+
+// destroy_binding_group releases a live binding group handle.
+destroy_binding_group :: proc(ctx: ^Context, group: Binding_Group) {
+	if !require_initialized(ctx, "gfx.destroy_binding_group") {
+		return
+	}
+	if !require_resource(ctx, &ctx.binding_group_pool, u64(group), "gfx.destroy_binding_group", "binding group") {
+		return
+	}
+
+	if ctx.binding_group_states != nil {
+		delete_key(&ctx.binding_group_states, group)
+	}
+	release_resource_id(&ctx.binding_group_pool, u64(group))
+}
+
+// apply_binding_group validates an object-backed binding group against the active pipeline and applies it with optional geometry bindings.
+apply_binding_group :: proc(ctx: ^Context, group: Binding_Group, base_bindings: Bindings = {}) -> bool {
 	if !require_any_pass(ctx, "gfx.apply_binding_group") {
 		return false
 	}
-	if !validate_binding_group_layout_desc(ctx, layout) {
+
+	if !require_resource(ctx, &ctx.binding_group_pool, u64(group), "gfx.apply_binding_group", "binding group") {
 		return false
 	}
-	if !validate_binding_group_pipeline_compatibility(ctx, layout) {
+	group_state, group_ok := query_binding_group_state(ctx, group)
+	if !group_ok {
+		set_validation_error(ctx, "gfx.apply_binding_group: binding group state is unavailable")
 		return false
 	}
-	if !validate_binding_group_desc(ctx, layout, group) {
+	if !require_resource(ctx, &ctx.binding_group_layout_pool, u64(group_state.layout), "gfx.apply_binding_group", "binding group layout") {
+		return false
+	}
+	layout_state, layout_ok := query_binding_group_layout_state(ctx, group_state.layout)
+	if !layout_ok {
+		set_validation_error(ctx, "gfx.apply_binding_group: binding group layout state is unavailable")
+		return false
+	}
+
+	if !validate_binding_group_pipeline_compatibility(ctx, layout_state.desc) {
+		return false
+	}
+	if !validate_binding_group_desc(ctx, layout_state.desc, group_state.desc, "gfx.apply_binding_group") {
 		return false
 	}
 	if binding_group_base_has_shader_resources(base_bindings) {
@@ -20,7 +131,7 @@ apply_binding_group :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, gr
 	}
 
 	bindings := base_bindings
-	merge_binding_group(&bindings, layout, group)
+	merge_binding_group(&bindings, layout_state.desc, group_state.desc)
 	return apply_bindings(ctx, bindings)
 }
 
@@ -86,6 +197,41 @@ validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_La
 	}
 
 	return true
+}
+
+@(private)
+query_binding_group_layout_state :: proc(ctx: ^Context, layout: Binding_Group_Layout) -> (Binding_Group_Layout_State, bool) {
+	if ctx == nil || ctx.binding_group_layout_states == nil {
+		return {}, false
+	}
+
+	state, ok := ctx.binding_group_layout_states[layout]
+	return state, ok && state.valid
+}
+
+@(private)
+query_binding_group_state :: proc(ctx: ^Context, group: Binding_Group) -> (Binding_Group_State, bool) {
+	if ctx == nil || ctx.binding_group_states == nil {
+		return {}, false
+	}
+
+	state, ok := ctx.binding_group_states[group]
+	return state, ok && state.valid
+}
+
+@(private)
+binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout) -> bool {
+	if ctx == nil || ctx.binding_group_states == nil {
+		return false
+	}
+
+	for _, group_state in ctx.binding_group_states {
+		if group_state.valid && group_state.layout == layout {
+			return true
+		}
+	}
+
+	return false
 }
 
 @(private)
@@ -348,7 +494,7 @@ binding_group_layout_has_native_binding :: proc(layout: Binding_Group_Layout_Des
 }
 
 @(private)
-validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc) -> bool {
+validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc, op: string) -> bool {
 	for entry in layout.entries {
 		if !entry.active {
 			continue
@@ -360,19 +506,19 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 		case .Resource_View:
 			view := group.views[entry.slot]
 			if !view_valid(view) {
-				set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d requires a view", entry.slot)
+				set_validation_errorf(ctx, "%s: resource view slot %d requires a view", op, entry.slot)
 				return false
 			}
-			if !validate_binding_group_view(ctx, entry, view) {
+			if !validate_binding_group_view(ctx, entry, view, op) {
 				return false
 			}
 		case .Sampler:
 			sampler := group.samplers[entry.slot]
 			if !sampler_valid(sampler) {
-				set_validation_errorf(ctx, "gfx.apply_binding_group: sampler slot %d requires a sampler", entry.slot)
+				set_validation_errorf(ctx, "%s: sampler slot %d requires a sampler", op, entry.slot)
 				return false
 			}
-			if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), "gfx.apply_binding_group", "sampler") {
+			if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), op, "sampler") {
 				return false
 			}
 		}
@@ -383,7 +529,7 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 			continue
 		}
 		if !binding_group_layout_has_entry(layout, .Resource_View, u32(slot)) {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d is not declared by layout", slot)
+			set_validation_errorf(ctx, "%s: resource view slot %d is not declared by layout", op, slot)
 			return false
 		}
 	}
@@ -392,7 +538,7 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 			continue
 		}
 		if !binding_group_layout_has_entry(layout, .Sampler, u32(slot)) {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: sampler slot %d is not declared by layout", slot)
+			set_validation_errorf(ctx, "%s: sampler slot %d is not declared by layout", op, slot)
 			return false
 		}
 	}
@@ -401,16 +547,17 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 }
 
 @(private)
-validate_binding_group_view :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, view: View) -> bool {
+validate_binding_group_view :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, view: View, op: string) -> bool {
 	view_state := query_view_state(ctx, view)
 	if !view_state.valid {
-		set_invalid_handle_errorf(ctx, "gfx.apply_binding_group: resource view slot %d handle is invalid", entry.slot)
+		set_invalid_handle_errorf(ctx, "%s: resource view slot %d handle is invalid", op, entry.slot)
 		return false
 	}
 	if view_state.kind != entry.resource_view.view_kind {
 		set_validation_errorf(
 			ctx,
-			"gfx.apply_binding_group: resource view slot %d requires a %s view",
+			"%s: resource view slot %d requires a %s view",
+			op,
 			entry.slot,
 			view_kind_name(entry.resource_view.view_kind),
 		)
@@ -419,13 +566,13 @@ validate_binding_group_view :: proc(ctx: ^Context, entry: Binding_Group_Layout_E
 	if entry.resource_view.view_kind == .Storage_Image &&
 	   entry.resource_view.storage_image_format != .Invalid &&
 	   view_state.format != entry.resource_view.storage_image_format {
-		set_validation_errorf(ctx, "gfx.apply_binding_group: storage image slot %d format does not match layout", entry.slot)
+		set_validation_errorf(ctx, "%s: storage image slot %d format does not match layout", op, entry.slot)
 		return false
 	}
 	if entry.resource_view.view_kind == .Storage_Buffer &&
 	   entry.resource_view.storage_buffer_stride != 0 &&
 	   u32(view_state.storage_stride) != entry.resource_view.storage_buffer_stride {
-		set_validation_errorf(ctx, "gfx.apply_binding_group: storage buffer slot %d stride does not match layout", entry.slot)
+		set_validation_errorf(ctx, "%s: storage buffer slot %d stride does not match layout", op, entry.slot)
 		return false
 	}
 

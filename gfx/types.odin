@@ -33,6 +33,8 @@ Sampler :: distinct u64
 Shader :: distinct u64
 Pipeline :: distinct u64
 Compute_Pipeline :: distinct u64
+Binding_Group_Layout :: distinct u64
+Binding_Group :: distinct u64
 
 // Invalid handle sentinels returned when resource creation fails.
 Buffer_Invalid :: Buffer(0)
@@ -42,6 +44,8 @@ Sampler_Invalid :: Sampler(0)
 Shader_Invalid :: Shader(0)
 Pipeline_Invalid :: Pipeline(0)
 Compute_Pipeline_Invalid :: Compute_Pipeline(0)
+Binding_Group_Layout_Invalid :: Binding_Group_Layout(0)
+Binding_Group_Invalid :: Binding_Group(0)
 
 // Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
 Buffer_Usage_Flag :: enum {
@@ -577,15 +581,17 @@ Binding_Group_Native_Binding_Desc :: struct {
 	native_space: u32,
 }
 
-// Binding_Group_Layout_Desc is generated from Slang reflection for future binding-group APIs.
+// Binding_Group_Layout_Desc is generated from Slang reflection and creates Binding_Group_Layout handles.
 Binding_Group_Layout_Desc :: struct {
 	label: string,
 	entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc,
 	native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc,
 }
 
-// Binding_Group_Desc supplies transient resource handles for a generated binding group layout.
+// Binding_Group_Desc creates an object-backed binding group from a generated layout handle.
 Binding_Group_Desc :: struct {
+	label: string,
+	layout: Binding_Group_Layout,
 	views: [MAX_RESOURCE_VIEWS]View,
 	samplers: [MAX_SAMPLERS]Sampler,
 }
@@ -741,6 +747,19 @@ Compute_Pipeline_State :: struct {
 	shader: Shader,
 }
 
+@(private)
+Binding_Group_Layout_State :: struct {
+	valid: bool,
+	desc: Binding_Group_Layout_Desc,
+}
+
+@(private)
+Binding_Group_State :: struct {
+	valid: bool,
+	layout: Binding_Group_Layout,
+	desc: Binding_Group_Desc,
+}
+
 // Context owns all GPU resources and current frame state for one backend instance.
 Context :: struct {
 	desc: Desc,
@@ -757,9 +776,13 @@ Context :: struct {
 	shader_pool: Resource_Pool,
 	pipeline_pool: Resource_Pool,
 	compute_pipeline_pool: Resource_Pool,
+	binding_group_layout_pool: Resource_Pool,
+	binding_group_pool: Resource_Pool,
 	shader_states: map[Shader]Shader_State,
 	pipeline_states: map[Pipeline]Pipeline_State,
 	compute_pipeline_states: map[Compute_Pipeline]Compute_Pipeline_State,
+	binding_group_layout_states: map[Binding_Group_Layout]Binding_Group_Layout_State,
+	binding_group_states: map[Binding_Group]Binding_Group_State,
 	current_pipeline: Pipeline,
 	current_compute_pipeline: Compute_Pipeline,
 	pass_color_attachments: [MAX_COLOR_ATTACHMENTS]View,
@@ -846,4 +869,14 @@ pipeline_valid :: proc(pipeline: Pipeline) -> bool {
 // compute_pipeline_valid reports whether a Compute_Pipeline handle is nonzero.
 compute_pipeline_valid :: proc(pipeline: Compute_Pipeline) -> bool {
 	return u64(pipeline) != 0
+}
+
+// binding_group_layout_valid reports whether a Binding_Group_Layout handle is nonzero.
+binding_group_layout_valid :: proc(layout: Binding_Group_Layout) -> bool {
+	return u64(layout) != 0
+}
+
+// binding_group_valid reports whether a Binding_Group handle is nonzero.
+binding_group_valid :: proc(group: Binding_Group) -> bool {
+	return u64(group) != 0
 }

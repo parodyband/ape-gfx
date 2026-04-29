@@ -432,10 +432,27 @@ main :: proc() {
 	group_base_bindings: gfx.Bindings
 	group_base_bindings.vertex_buffers[0] = {buffer = vertex_buffer}
 
-	valid_group: gfx.Binding_Group_Desc
-	valid_group.views[0] = sampled_view
-	valid_group.samplers[0] = sampler
-	if gfx.apply_binding_group(&ctx, group_layout, valid_group, group_base_bindings) {
+	group_layout_handle, group_layout_handle_ok := gfx.create_binding_group_layout(&ctx, group_layout)
+	if !group_layout_handle_ok || !gfx.binding_group_layout_valid(group_layout_handle) {
+		fmt.eprintln("binding group layout handle creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, group_layout_handle)
+
+	valid_group_desc: gfx.Binding_Group_Desc
+	valid_group_desc.layout = group_layout_handle
+	valid_group_desc.views[0] = sampled_view
+	valid_group_desc.samplers[0] = sampler
+	valid_group, valid_group_ok := gfx.create_binding_group(&ctx, valid_group_desc)
+	if !valid_group_ok || !gfx.binding_group_valid(valid_group) {
+		fmt.eprintln("valid binding group creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, valid_group)
+	gfx.destroy(&ctx, group_layout_handle)
+	expect_error_info(&ctx, .Validation, "gfx.destroy_binding_group_layout: layout is still used by a binding group")
+
+	if gfx.apply_binding_group(&ctx, valid_group, group_base_bindings) {
 		fail("binding group without applied pipeline unexpectedly succeeded")
 	}
 	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: requires an applied graphics pipeline")
@@ -445,7 +462,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	if !gfx.apply_binding_group(&ctx, group_layout, valid_group, group_base_bindings) {
+	if !gfx.apply_binding_group(&ctx, valid_group, group_base_bindings) {
 		fmt.eprintln("valid binding group failed: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
@@ -454,10 +471,23 @@ main :: proc() {
 	wrong_slot_layout.entries[0].slot = 1
 	wrong_slot_layout.native_bindings[0].slot = 1
 	wrong_slot_layout.native_bindings[0].native_slot = 1
-	wrong_slot_group := valid_group
-	wrong_slot_group.views[0] = gfx.View_Invalid
-	wrong_slot_group.views[1] = sampled_view
-	if gfx.apply_binding_group(&ctx, wrong_slot_layout, wrong_slot_group, group_base_bindings) {
+	wrong_slot_layout_handle, wrong_slot_layout_ok := gfx.create_binding_group_layout(&ctx, wrong_slot_layout)
+	if !wrong_slot_layout_ok || !gfx.binding_group_layout_valid(wrong_slot_layout_handle) {
+		fmt.eprintln("wrong slot binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, wrong_slot_layout_handle)
+	wrong_slot_group_desc := valid_group_desc
+	wrong_slot_group_desc.layout = wrong_slot_layout_handle
+	wrong_slot_group_desc.views[0] = gfx.View_Invalid
+	wrong_slot_group_desc.views[1] = sampled_view
+	wrong_slot_group, wrong_slot_group_ok := gfx.create_binding_group(&ctx, wrong_slot_group_desc)
+	if !wrong_slot_group_ok || !gfx.binding_group_valid(wrong_slot_group) {
+		fmt.eprintln("wrong slot binding group creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, wrong_slot_group)
+	if gfx.apply_binding_group(&ctx, wrong_slot_group, group_base_bindings) {
 		fail("binding group layout for unused pipeline slot unexpectedly succeeded")
 	}
 	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout resource view slot 1 for fragment is not used by current pipeline")
@@ -465,37 +495,53 @@ main :: proc() {
 	missing_required_layout := group_layout
 	missing_required_layout.entries[1] = {}
 	missing_required_layout.native_bindings[1] = {}
-	missing_required_group := valid_group
-	missing_required_group.samplers[0] = gfx.Sampler_Invalid
-	if gfx.apply_binding_group(&ctx, missing_required_layout, missing_required_group, group_base_bindings) {
+	missing_required_layout_handle, missing_required_layout_ok := gfx.create_binding_group_layout(&ctx, missing_required_layout)
+	if !missing_required_layout_ok || !gfx.binding_group_layout_valid(missing_required_layout_handle) {
+		fmt.eprintln("missing required binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, missing_required_layout_handle)
+	missing_required_group_desc := valid_group_desc
+	missing_required_group_desc.layout = missing_required_layout_handle
+	missing_required_group_desc.samplers[0] = gfx.Sampler_Invalid
+	missing_required_group, missing_required_group_ok := gfx.create_binding_group(&ctx, missing_required_group_desc)
+	if !missing_required_group_ok || !gfx.binding_group_valid(missing_required_group) {
+		fmt.eprintln("missing required binding group creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, missing_required_group)
+	if gfx.apply_binding_group(&ctx, missing_required_group, group_base_bindings) {
 		fail("binding group layout missing current pipeline sampler unexpectedly succeeded")
 	}
 	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout is missing current pipeline fragment sampler slot 0")
 
-	missing_sampler_group := valid_group
+	missing_sampler_group := valid_group_desc
 	missing_sampler_group.samplers[0] = gfx.Sampler_Invalid
-	if gfx.apply_binding_group(&ctx, group_layout, missing_sampler_group, group_base_bindings) {
+	missing_sampler_handle, missing_sampler_ok := gfx.create_binding_group(&ctx, missing_sampler_group)
+	if missing_sampler_ok || gfx.binding_group_valid(missing_sampler_handle) {
 		fail("binding group with missing sampler unexpectedly succeeded")
 	}
-	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: sampler slot 0 requires a sampler")
+	expect_error_info(&ctx, .Validation, "gfx.create_binding_group: sampler slot 0 requires a sampler")
 
-	wrong_view_kind_group := valid_group
+	wrong_view_kind_group := valid_group_desc
 	wrong_view_kind_group.views[0] = attachment_view
-	if gfx.apply_binding_group(&ctx, group_layout, wrong_view_kind_group, group_base_bindings) {
+	wrong_view_kind_handle, wrong_view_kind_ok := gfx.create_binding_group(&ctx, wrong_view_kind_group)
+	if wrong_view_kind_ok || gfx.binding_group_valid(wrong_view_kind_handle) {
 		fail("binding group with wrong view kind unexpectedly succeeded")
 	}
-	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: resource view slot 0 requires a sampled view")
+	expect_error_info(&ctx, .Validation, "gfx.create_binding_group: resource view slot 0 requires a sampled view")
 
-	extra_view_group := valid_group
+	extra_view_group := valid_group_desc
 	extra_view_group.views[5] = sampled_view
-	if gfx.apply_binding_group(&ctx, group_layout, extra_view_group, group_base_bindings) {
+	extra_view_handle, extra_view_ok := gfx.create_binding_group(&ctx, extra_view_group)
+	if extra_view_ok || gfx.binding_group_valid(extra_view_handle) {
 		fail("binding group with extra resource view unexpectedly succeeded")
 	}
-	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: resource view slot 5 is not declared by layout")
+	expect_error_info(&ctx, .Validation, "gfx.create_binding_group: resource view slot 5 is not declared by layout")
 
 	base_with_resource := group_base_bindings
 	base_with_resource.views[0] = sampled_view
-	if gfx.apply_binding_group(&ctx, group_layout, valid_group, base_with_resource) {
+	if gfx.apply_binding_group(&ctx, valid_group, base_with_resource) {
 		fail("binding group with shader resources in base bindings unexpectedly succeeded")
 	}
 	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: base bindings must not contain resource views or samplers")

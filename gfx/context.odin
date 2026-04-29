@@ -83,7 +83,7 @@ shutdown :: proc(ctx: ^Context) {
 		set_errorf_code(
 			ctx,
 			.Resource_Leak,
-			"gfx.shutdown: leaked resources: buffers=%d images=%d views=%d samplers=%d shaders=%d pipelines=%d compute_pipelines=%d",
+			"gfx.shutdown: leaked resources: buffers=%d images=%d views=%d samplers=%d shaders=%d pipelines=%d compute_pipelines=%d binding_group_layouts=%d binding_groups=%d",
 			ctx.buffer_pool.live_count,
 			ctx.image_pool.live_count,
 			ctx.view_pool.live_count,
@@ -91,6 +91,8 @@ shutdown :: proc(ctx: ^Context) {
 			ctx.shader_pool.live_count,
 			ctx.pipeline_pool.live_count,
 			ctx.compute_pipeline_pool.live_count,
+			ctx.binding_group_layout_pool.live_count,
+			ctx.binding_group_pool.live_count,
 		)
 	}
 
@@ -385,7 +387,9 @@ resource_pool_live_total :: proc(ctx: ^Context) -> int {
 	       ctx.sampler_pool.live_count +
 	       ctx.shader_pool.live_count +
 	       ctx.pipeline_pool.live_count +
-	       ctx.compute_pipeline_pool.live_count
+	       ctx.compute_pipeline_pool.live_count +
+	       ctx.binding_group_layout_pool.live_count +
+	       ctx.binding_group_pool.live_count
 }
 
 @(private)
@@ -397,6 +401,8 @@ delete_resource_pools :: proc(ctx: ^Context) {
 	delete_resource_pool(&ctx.shader_pool)
 	delete_resource_pool(&ctx.pipeline_pool)
 	delete_resource_pool(&ctx.compute_pipeline_pool)
+	delete_resource_pool(&ctx.binding_group_layout_pool)
+	delete_resource_pool(&ctx.binding_group_pool)
 	if ctx.shader_states != nil {
 		delete(ctx.shader_states)
 		ctx.shader_states = nil
@@ -408,6 +414,14 @@ delete_resource_pools :: proc(ctx: ^Context) {
 	if ctx.compute_pipeline_states != nil {
 		delete(ctx.compute_pipeline_states)
 		ctx.compute_pipeline_states = nil
+	}
+	if ctx.binding_group_layout_states != nil {
+		delete(ctx.binding_group_layout_states)
+		ctx.binding_group_layout_states = nil
+	}
+	if ctx.binding_group_states != nil {
+		delete(ctx.binding_group_states)
+		ctx.binding_group_states = nil
 	}
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid

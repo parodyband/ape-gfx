@@ -154,10 +154,25 @@ main :: proc() {
 
 	group_layout := textured_quad_shader.binding_group_layout_desc("wrong native binding group layout")
 	group_layout.native_bindings[0].native_slot = 2
-	group: gfx.Binding_Group_Desc
-	textured_quad_shader.set_group_view_ape_texture(&group, sampled_view)
-	textured_quad_shader.set_group_sampler_ape_sampler(&group, sampler)
-	if gfx.apply_binding_group(&ctx, group_layout, group) {
+	group_layout_handle, group_layout_ok := gfx.create_binding_group_layout(&ctx, group_layout)
+	if !group_layout_ok {
+		fmt.eprintln("binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, group_layout_handle)
+
+	group_desc: gfx.Binding_Group_Desc
+	group_desc.layout = group_layout_handle
+	textured_quad_shader.set_group_view_ape_texture(&group_desc, sampled_view)
+	textured_quad_shader.set_group_sampler_ape_sampler(&group_desc, sampler)
+	group, group_ok := gfx.create_binding_group(&ctx, group_desc)
+	if !group_ok {
+		fmt.eprintln("binding group creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, group)
+
+	if gfx.apply_binding_group(&ctx, group) {
 		fmt.eprintln("binding group with mismatched native slot unexpectedly succeeded")
 		os.exit(1)
 	}

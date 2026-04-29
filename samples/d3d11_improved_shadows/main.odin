@@ -198,8 +198,9 @@ main :: proc() {
 	})
 	defer ape_sample.shader_program_destroy(&ctx, &shadows_program)
 
-	shadows_group_layout := improved_shadows_shader.binding_group_layout_desc("improved shadows material bindings")
-	ape_sample.must_gfx(&ctx, gfx.validate_binding_group_layout_desc(&ctx, shadows_group_layout), "improved shadows binding group layout validation failed")
+	shadows_group_layout, shadows_group_layout_ok := gfx.create_binding_group_layout(&ctx, improved_shadows_shader.binding_group_layout_desc("improved shadows material bindings"))
+	ape_sample.must_gfx(&ctx, shadows_group_layout_ok, "improved shadows binding group layout creation failed")
+	defer gfx.destroy(&ctx, shadows_group_layout)
 
 	depth_cube_bindings: gfx.Bindings
 	depth_cube_bindings.vertex_buffers[0] = {buffer = cube_buffer}
@@ -209,11 +210,15 @@ main :: proc() {
 	shadows_cube_bindings := depth_cube_bindings
 	shadows_plane_bindings := depth_plane_bindings
 
-	shadows_group: gfx.Binding_Group_Desc
-	improved_shadows_shader.set_group_view_diffuse_texture(&shadows_group, diffuse_view)
-	improved_shadows_shader.set_group_view_shadow_map(&shadows_group, shadow_sample_view)
-	improved_shadows_shader.set_group_sampler_diffuse_sampler(&shadows_group, diffuse_sampler)
-	improved_shadows_shader.set_group_sampler_shadow_sampler(&shadows_group, shadow_sampler)
+	shadows_group_desc: gfx.Binding_Group_Desc
+	shadows_group_desc.layout = shadows_group_layout
+	improved_shadows_shader.set_group_view_diffuse_texture(&shadows_group_desc, diffuse_view)
+	improved_shadows_shader.set_group_view_shadow_map(&shadows_group_desc, shadow_sample_view)
+	improved_shadows_shader.set_group_sampler_diffuse_sampler(&shadows_group_desc, diffuse_sampler)
+	improved_shadows_shader.set_group_sampler_shadow_sampler(&shadows_group_desc, shadow_sampler)
+	shadows_group, shadows_group_ok := gfx.create_binding_group(&ctx, shadows_group_desc)
+	ape_sample.must_gfx(&ctx, shadows_group_ok, "improved shadows binding group creation failed")
+	defer gfx.destroy(&ctx, shadows_group)
 
 	render_width := fb_width
 	render_height := fb_height
@@ -264,7 +269,6 @@ main :: proc() {
 			scene.cube_models[:],
 			i32(len(scene.plane_vertices)),
 			i32(len(scene.cube_vertices)),
-			shadows_group_layout,
 			shadows_group,
 		)
 		ape_sample.end_pass(&ctx)
@@ -288,14 +292,13 @@ draw_scene :: proc(
 	cube_models: []ape_math.Mat4,
 	plane_vertex_count: i32,
 	cube_vertex_count: i32,
-	group_layout: gfx.Binding_Group_Layout_Desc = {},
-	group: gfx.Binding_Group_Desc = {},
+	group: gfx.Binding_Group = gfx.Binding_Group_Invalid,
 ) {
-	apply_scene_bindings(ctx, scene_pass, plane_bindings, group_layout, group)
+	apply_scene_bindings(ctx, scene_pass, plane_bindings, group)
 	apply_object_uniforms(ctx, scene_pass, ape_math.identity(), light_view_proj)
 	ape_sample.draw(ctx, 0, plane_vertex_count)
 
-	apply_scene_bindings(ctx, scene_pass, cube_bindings, group_layout, group)
+	apply_scene_bindings(ctx, scene_pass, cube_bindings, group)
 	for model in cube_models {
 		apply_object_uniforms(ctx, scene_pass, model, light_view_proj)
 		ape_sample.draw(ctx, 0, cube_vertex_count)
@@ -306,14 +309,13 @@ apply_scene_bindings :: proc(
 	ctx: ^gfx.Context,
 	scene_pass: Scene_Pass,
 	base_bindings: gfx.Bindings,
-	group_layout: gfx.Binding_Group_Layout_Desc,
-	group: gfx.Binding_Group_Desc,
+	group: gfx.Binding_Group,
 ) {
 	switch scene_pass {
 	case .Shadow:
 		ape_sample.apply_bindings(ctx, base_bindings)
 	case .Lit:
-		ape_sample.must_gfx(ctx, gfx.apply_binding_group(ctx, group_layout, group, base_bindings), "lit binding group apply failed")
+		ape_sample.must_gfx(ctx, gfx.apply_binding_group(ctx, group, base_bindings), "lit binding group apply failed")
 	}
 }
 

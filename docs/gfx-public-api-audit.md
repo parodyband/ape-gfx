@@ -39,6 +39,8 @@ Composite statuses are comma-separated.
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
 | `Buffer_Invalid` | keep | Stable invalid sentinel. |
+| `Binding_Group_Invalid` | keep | Stable invalid sentinel for object-backed binding groups. |
+| `Binding_Group_Layout_Invalid` | keep | Stable invalid sentinel for object-backed binding group layouts. |
 | `COLOR_MASK_A` | keep, needs_docs | Stable color-write mask bit. |
 | `COLOR_MASK_B` | keep, needs_docs | Stable color-write mask bit. |
 | `COLOR_MASK_G` | keep, needs_docs | Stable color-write mask bit. |
@@ -47,7 +49,7 @@ Composite statuses are comma-separated.
 | `COLOR_MASK_RGBA` | keep, needs_docs | Stable combined color-write mask. |
 | `Compute_Pipeline_Invalid` | keep | Stable invalid sentinel. |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
-| `MAX_BINDING_GROUP_ENTRIES` | defer | Descriptor-only generated binding layout limit. Keep while binding-group API shape is evaluated. |
+| `MAX_BINDING_GROUP_ENTRIES` | keep | Generated binding group layout entry limit. |
 | `MAX_COLOR_ATTACHMENTS` | keep | Public fixed array limit. |
 | `MAX_IMAGE_MIPS` | keep | Public fixed array limit. |
 | `MAX_RESOURCE_VIEWS` | keep | Public fixed array limit. |
@@ -65,7 +67,7 @@ Composite statuses are comma-separated.
 
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
-| `apply_binding_group` | defer | Transient generated view/sampler binding path. Evaluate in samples before committing to object-backed binding groups. |
+| `apply_binding_group` | keep, needs_test | Applies an object-backed binding group with optional geometry bindings. |
 | `apply_bindings` | keep, needs_test | Core command. Expand validation tests around buffer/view/sampler slots. |
 | `apply_compute_pipeline` | keep, needs_test | Core compute command. Keep if compute is v0.1-stable. |
 | `apply_pipeline` | keep, needs_test | Core render command. |
@@ -74,10 +76,14 @@ Composite statuses are comma-separated.
 | `backend_name` | keep | Small diagnostic helper. |
 | `begin_compute_pass` | keep, needs_test | Core compute command. |
 | `begin_pass` | keep, needs_test | Core render command. |
+| `binding_group_layout_valid` | keep, needs_test | Simple sentinel check. |
+| `binding_group_valid` | keep, needs_test | Simple sentinel check. |
 | `buffer_valid` | keep, needs_test | Simple sentinel check. Revisit overload group only if callsites need it. |
 | `commit` | keep, needs_test | Core frame command. |
 | `compute_pipeline_valid` | keep, needs_test | Simple sentinel check. |
 | `create_buffer` | keep, needs_test | Primary buffer creation spelling. |
+| `create_binding_group` | keep, needs_test | Primary binding group creation spelling. |
+| `create_binding_group_layout` | keep, needs_test | Primary binding group layout creation spelling. |
 | `create_compute_pipeline` | keep, needs_test | Primary compute pipeline creation spelling. |
 | `create_image` | keep, needs_test | Primary image creation spelling. |
 | `create_pipeline` | keep, needs_test | Primary graphics pipeline creation spelling. |
@@ -86,6 +92,8 @@ Composite statuses are comma-separated.
 | `create_view` | keep, needs_test | Primary view creation spelling. |
 | `default_pass_action` | keep, needs_docs | Stable default helper. Document clear/store defaults. |
 | `destroy_buffer` | keep | Explicit destroy remains available. |
+| `destroy_binding_group` | keep | Explicit destroy remains available. |
+| `destroy_binding_group_layout` | keep | Explicit destroy remains available. |
 | `destroy_compute_pipeline` | keep | Explicit destroy remains available. |
 | `destroy_image` | keep | Explicit destroy remains available. |
 | `destroy_pipeline` | keep | Explicit destroy remains available. |
@@ -127,7 +135,7 @@ Composite statuses are comma-separated.
 | `shutdown` | keep, needs_test | Context teardown and leak reporting. |
 | `update_buffer` | keep, needs_test | Stable dynamic/stream buffer update. |
 | `update_image` | keep, needs_test | Stable dynamic image update. |
-| `validate_binding_group_layout_desc` | defer | Validates generated descriptor-only binding group layouts. Not a GPU object creation path yet. |
+| `validate_binding_group_layout_desc` | keep | Validates generated binding group layout descriptors before object creation. |
 | `view_valid` | keep, needs_test | Simple sentinel check. |
 | `destroy` | keep | Primary ergonomic destroy overload. |
 | `range` | keep | Primary data-span overload. |
@@ -137,12 +145,14 @@ Composite statuses are comma-separated.
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
 | `Backend` | keep | Stable backend selector. `Auto` behavior needs docs. |
-| `Binding_Group_Desc` | defer | Transient view/sampler handles for generated binding group layouts. Uniforms are still applied separately. |
-| `Binding_Group_Layout_Desc` | defer | Descriptor-only generated binding group layout data. Evaluate before adding public binding group handles. |
-| `Binding_Group_Layout_Entry_Desc` | defer | Logical generated binding entry descriptor. |
-| `Binding_Group_Native_Binding_Desc` | defer | Backend/stage native slot mapping for generated binding layouts. |
-| `Binding_Group_Resource_View_Layout_Desc` | defer | Resource-view payload for generated binding layout entries. |
-| `Binding_Group_Uniform_Block_Layout_Desc` | defer | Uniform-block payload for generated binding layout entries. |
+| `Binding_Group` | keep | Stable binding group handle. |
+| `Binding_Group_Desc` | keep | Binding group creation descriptor for generated resource views and samplers. Uniforms are still applied separately. |
+| `Binding_Group_Layout` | keep | Stable binding group layout handle. |
+| `Binding_Group_Layout_Desc` | keep | Generated binding group layout data used by `create_binding_group_layout`. |
+| `Binding_Group_Layout_Entry_Desc` | keep | Logical generated binding entry descriptor. |
+| `Binding_Group_Native_Binding_Desc` | keep | Backend/stage native slot mapping for generated binding layouts. |
+| `Binding_Group_Resource_View_Layout_Desc` | keep | Resource-view payload for generated binding layout entries. |
+| `Binding_Group_Uniform_Block_Layout_Desc` | keep | Uniform-block payload for generated binding layout entries. |
 | `Bindings` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Blend_Factor` | keep, needs_docs | Pipeline state enum. |
 | `Blend_Op` | keep, needs_docs | Pipeline state enum. |

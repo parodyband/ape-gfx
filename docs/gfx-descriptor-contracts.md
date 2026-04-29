@@ -365,11 +365,11 @@ Rules:
 - The active backend must report compute support.
 - Graphics shaders are rejected before backend creation.
 
-## Binding_Group_Layout_Desc And Binding_Group_Desc
+## Binding Groups
 
-`Binding_Group_Layout_Desc` records a generated Slang binding-group layout. `Binding_Group_Desc` supplies transient resource handles for that layout.
+`Binding_Group_Layout_Desc` records a generated Slang binding-group layout. `create_binding_group_layout` turns that descriptor into a `Binding_Group_Layout` handle. `Binding_Group_Desc` supplies resource handles for one `Binding_Group_Layout`, and `create_binding_group` turns it into a `Binding_Group` handle.
 
-This is not a GPU object yet. It is a narrow call path for generated views and samplers, with optional base geometry bindings for vertex and index buffers. Uniform block data still flows through `apply_uniforms` / generated `apply_uniform_*` helpers.
+On D3D11 these are CPU-side GFX objects that validate and flatten into native shader slots at apply time. Vulkan can later map the same public objects to descriptor set layouts and descriptor sets. Uniform block data still flows through `apply_uniforms` / generated `apply_uniform_*` helpers.
 
 Fields:
 
@@ -378,6 +378,8 @@ Fields:
 | `Binding_Group_Layout_Desc.label` | Optional diagnostic label. |
 | `Binding_Group_Layout_Desc.entries` | Sparse logical binding entries. Each active entry has a non-empty reflected name, at least one shader stage, valid binding kind, and a kind-specific logical slot. |
 | `Binding_Group_Layout_Desc.native_bindings` | Sparse backend mappings for generated entries. Each active mapping names a backend target, stage, binding kind, logical slot, native slot, and native space. |
+| `Binding_Group_Desc.label` | Optional diagnostic label. |
+| `Binding_Group_Desc.layout` | Required live `Binding_Group_Layout` handle from the same context. |
 | `Binding_Group_Desc.views` | Sparse logical resource view slots. Generated `set_group_view_*` helpers write these slots. |
 | `Binding_Group_Desc.samplers` | Sparse logical sampler slots. Generated `set_group_sampler_*` helpers write these slots. |
 
@@ -392,31 +394,40 @@ Rules:
 - `apply_binding_group` requires an applied graphics or compute pipeline.
 - The layout must match the current pipeline's reflected binding metadata: logical slot, stage, reflected name, kind payload, and native slot/space for the active backend.
 - Layouts missing a resource-view or sampler required by the current pipeline are rejected before handles are applied.
-- `apply_binding_group` requires every resource-view and sampler entry in the layout to have a matching handle in `Binding_Group_Desc`.
-- Extra active views or samplers that are not declared by the layout are rejected.
+- `create_binding_group` requires every resource-view and sampler entry in the layout to have a matching handle in `Binding_Group_Desc`.
+- Extra active views or samplers that are not declared by the layout are rejected during `create_binding_group`.
 - `base_bindings` passed to `apply_binding_group` may contain vertex and index buffers. It must not already contain views or samplers.
+- `destroy_binding_group_layout` rejects layouts that are still used by live binding groups.
 
 Representative callsite:
 
 ```odin
-layout := textured_quad_shader.binding_group_layout_desc("material bindings")
-if !gfx.validate_binding_group_layout_desc(&ctx, layout) {
-	fmt.eprintln("bad generated binding layout: ", gfx.last_error(&ctx))
+layout, ok := gfx.create_binding_group_layout(&ctx, textured_quad_shader.binding_group_layout_desc("material bindings"))
+if !ok {
+	fmt.eprintln("binding group layout failed: ", gfx.last_error(&ctx))
 	return
 }
+defer gfx.destroy(&ctx, layout)
 
 geometry: gfx.Bindings
 geometry.vertex_buffers[0] = {buffer = vertex_buffer}
 geometry.index_buffer = {buffer = index_buffer}
 
-group: gfx.Binding_Group_Desc
-textured_quad_shader.set_group_view_ape_texture(&group, texture_view)
-textured_quad_shader.set_group_sampler_ape_sampler(&group, sampler)
+group_desc := gfx.Binding_Group_Desc{layout = layout}
+textured_quad_shader.set_group_view_ape_texture(&group_desc, texture_view)
+textured_quad_shader.set_group_sampler_ape_sampler(&group_desc, sampler)
 
-ok := gfx.apply_binding_group(&ctx, layout, group, geometry)
+group, ok := gfx.create_binding_group(&ctx, group_desc)
+if !ok {
+	fmt.eprintln("binding group failed: ", gfx.last_error(&ctx))
+	return
+}
+defer gfx.destroy(&ctx, group)
+
+ok = gfx.apply_binding_group(&ctx, group, geometry)
 ```
 
-This is a stepping stone toward optional binding-group objects. Existing draw code can still use generated helpers with `gfx.Bindings` directly.
+Existing draw code can still use generated helpers with `gfx.Bindings` directly, but generated binding groups are the preferred path for reusable material or pass resources.
 
 ## Bindings
 

@@ -12,13 +12,13 @@ This repo is not trying to be a full game engine yet. No renderer layer, no mate
 
 `gfx` now has a `v0.1` graphics API contract:
 
-- explicit handles for `Buffer`, `Image`, `View`, `Sampler`, `Shader`, `Pipeline`, and `Compute_Pipeline`
+- explicit handles for `Buffer`, `Image`, `View`, `Sampler`, `Shader`, `Pipeline`, `Compute_Pipeline`, `Binding_Group_Layout`, and `Binding_Group`
 - Odin-style `create_*` procedures that return `(handle, ok)`
-- `destroy` overloads for public GPU resource handles
+- `destroy` overloads for public resource handles
 - descriptor literals and `bit_set` usage flags
 - one public `View` handle for sampled textures, storage images, storage buffers, color attachments, and depth-stencil attachments
 - render passes, compute passes, offscreen targets, depth, MRT, MSAA resolve, dynamic texture updates, storage views, and buffer readback on D3D11
-- Slang-generated bindings for resource slots, uniform helpers, simple vertex layouts, storage metadata, and compute dispatch sizing
+- Slang-generated bindings for resource slots, binding groups, uniform helpers, simple vertex layouts, storage metadata, and compute dispatch sizing
 - typed error reporting through `gfx.last_error_code` and `gfx.last_error_info`
 - generated API docs and a full validation script
 

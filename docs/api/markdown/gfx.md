@@ -6,6 +6,18 @@ Package: `gfx`
 
 ## Constants
 
+### `Binding_Group_Invalid`
+
+```odin
+Binding_Group_Invalid :: Binding_Group(0)
+```
+
+### `Binding_Group_Layout_Invalid`
+
+```odin
+Binding_Group_Layout_Invalid :: Binding_Group_Layout(0)
+```
+
 ### `Buffer_Invalid`
 
 ```odin
@@ -145,10 +157,10 @@ View_Invalid :: View(0)
 ### `apply_binding_group`
 
 ```odin
-apply_binding_group :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc, base_bindings: Bindings = {}) -> bool {...}
+apply_binding_group :: proc(ctx: ^Context, group: Binding_Group, base_bindings: Bindings = {}) -> bool {...}
 ```
 
-apply_binding_group validates a generated binding group and applies it with optional geometry bindings.
+apply_binding_group validates an object-backed binding group against the active pipeline and applies it with optional geometry bindings.
 
 ### `apply_bindings`
 
@@ -214,6 +226,22 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {...}
 
 begin_pass starts a graphics render pass.
 
+### `binding_group_layout_valid`
+
+```odin
+binding_group_layout_valid :: proc(layout: Binding_Group_Layout) -> bool {...}
+```
+
+binding_group_layout_valid reports whether a Binding_Group_Layout handle is nonzero.
+
+### `binding_group_valid`
+
+```odin
+binding_group_valid :: proc(group: Binding_Group) -> bool {...}
+```
+
+binding_group_valid reports whether a Binding_Group handle is nonzero.
+
 ### `buffer_valid`
 
 ```odin
@@ -237,6 +265,22 @@ compute_pipeline_valid :: proc(pipeline: Compute_Pipeline) -> bool {...}
 ```
 
 compute_pipeline_valid reports whether a Compute_Pipeline handle is nonzero.
+
+### `create_binding_group`
+
+```odin
+create_binding_group :: proc(ctx: ^Context, desc: Binding_Group_Desc) -> (: Binding_Group, : bool) {...}
+```
+
+create_binding_group creates an immutable binding group from a generated layout handle and resource handles.
+
+### `create_binding_group_layout`
+
+```odin
+create_binding_group_layout :: proc(ctx: ^Context, desc: Binding_Group_Layout_Desc) -> (: Binding_Group_Layout, : bool) {...}
+```
+
+create_binding_group_layout creates an immutable generated binding group layout handle.
 
 ### `create_buffer`
 
@@ -308,6 +352,22 @@ default_pass_action :: proc() -> Pass_Action {...}
 ```
 
 default_pass_action returns clear/store defaults for color, depth, and stencil attachments.
+
+### `destroy_binding_group`
+
+```odin
+destroy_binding_group :: proc(ctx: ^Context, group: Binding_Group) {...}
+```
+
+destroy_binding_group releases a live binding group handle.
+
+### `destroy_binding_group_layout`
+
+```odin
+destroy_binding_group_layout :: proc(ctx: ^Context, layout: Binding_Group_Layout) {...}
+```
+
+destroy_binding_group_layout releases a live binding group layout handle.
 
 ### `destroy_buffer`
 
@@ -664,7 +724,7 @@ view_valid reports whether a View handle is nonzero.
 ### `destroy`
 
 ```odin
-destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline}
+destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_binding_group}
 ```
 
 destroy overloads the explicit destroy_* procedures for all public resource handles.
@@ -687,13 +747,25 @@ Backend :: enum {Auto, Null, D3D11, Vulkan}
 
 Backend selects the native graphics implementation used by a Context.
 
+### `Binding_Group`
+
+```odin
+Binding_Group :: distinct u64
+```
+
 ### `Binding_Group_Desc`
 
 ```odin
-Binding_Group_Desc :: struct {views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
+Binding_Group_Desc :: struct {label: string, layout: Binding_Group_Layout, views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
 ```
 
-Binding_Group_Desc supplies transient resource handles for a generated binding group layout.
+Binding_Group_Desc creates an object-backed binding group from a generated layout handle.
+
+### `Binding_Group_Layout`
+
+```odin
+Binding_Group_Layout :: distinct u64
+```
 
 ### `Binding_Group_Layout_Desc`
 
@@ -701,7 +773,7 @@ Binding_Group_Desc supplies transient resource handles for a generated binding g
 Binding_Group_Layout_Desc :: struct {label: string, entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc, native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc}
 ```
 
-Binding_Group_Layout_Desc is generated from Slang reflection for future binding-group APIs.
+Binding_Group_Layout_Desc is generated from Slang reflection and creates Binding_Group_Layout handles.
 
 ### `Binding_Group_Layout_Entry_Desc`
 

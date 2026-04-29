@@ -210,7 +210,7 @@ The outer record stays common so tools can sort or match by backend, stage, refl
 - `native_bindings` preserve backend/stage native slot and space mappings.
 - `gfx.validate_binding_group_layout_desc` can validate the generated descriptor today; future binding-group objects can consume the same shape or a narrowed version of it.
 
-Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for the transient `gfx.Binding_Group_Desc` path. `gfx.apply_binding_group` can apply those view/sampler groups with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
+Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for `gfx.Binding_Group_Desc`. The intended path is to create a `gfx.Binding_Group_Layout` from `binding_group_layout_desc`, fill a `Binding_Group_Desc` with generated setters, create a `gfx.Binding_Group`, and apply that group with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
 
 Logical slots are assigned per binding kind:
 
@@ -478,9 +478,9 @@ It fills:
 
 `gfx.create_shader` and `gfx.create_pipeline` validate that reflected metadata matches runtime descriptors and bindings.
 
-## Post-v0.1 Binding Group Direction
+## Binding Group Direction
 
-The current contract deliberately stops at reflected binding metadata and named helper procedures. The next design pass should build optional binding groups on top of this data instead of replacing `gfx.Bindings`.
+The current contract uses generated reflection data to create object-backed binding group layouts and binding groups. `gfx.Bindings` remains the low-level immediate binding path for geometry buffers and explicit escape hatches, while generated binding groups are the preferred path for reusable shader resources.
 
 `ape_shaderc` now uses Slang's modern session/module/component API as its only shader compile path. Reflection is read from the linked `ProgramLayout` plus entry-point metadata produced by that path.
 
@@ -495,24 +495,24 @@ Planned order:
 - [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
 - [x] Settle generated binding record payload semantics before the generated binding-group contract.
 - [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
-- [x] Add a transient `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
-- [x] Exercise transient binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and a shared material-resource pass.
+- [x] Add a `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
+- [x] Exercise binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and a shared material-resource pass.
 - [x] Tighten `apply_binding_group` validation so generated layouts must match the currently applied pipeline's reflected logical slots, stages, names, payload metadata, and backend native slots.
-- [ ] Next: decide whether binding groups should become public GPU objects, remain transient descriptors, or be narrowed to generated helper data.
+- [x] Replace the transient public apply path with `Binding_Group_Layout` and `Binding_Group` handles.
+- [ ] Next: traverse Slang layout data deeply enough to represent `ParameterBlock<>`, multiple logical groups, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
 
 Open questions:
 
-- Whether generated `Binding_Group_Layout_Desc` should remain a descriptor-only reflection contract or become the input to a public `create_binding_group_layout` API.
 - How `ParameterBlock<>` should map to logical binding groups when Slang assigns target-specific native groups or spaces.
 - Whether a `Pipeline_Layout` object should exist only when it enables reuse across multiple generated shader packages.
 - How D3D11 should emulate groups by flattening reflected group entries into stage slots while Vulkan later maps them to descriptor sets.
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: decide whether transient binding groups are the final v0.1 shape or whether `gfx.create_binding_group_layout` / `gfx.create_binding_group` handles are worth adding now. Make that decision from the current samples first: if the only benefit is caching validation, keep the transient path; if the samples keep threading layout descriptors awkwardly or recreate the same descriptor data every frame, add object-backed handles.
+Next implementation breadcrumb: move directly into Slang group semantics. Add a focused shaderc pass that can detect and describe `ParameterBlock<>` or equivalent grouped resources from modern Slang reflection, then decide the generated Odin shape for multiple binding groups and whether that requires a `Pipeline_Layout` handle.
 
 ## Validation
 

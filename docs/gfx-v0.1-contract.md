@@ -276,7 +276,7 @@ Stable generated helpers:
 - View metadata constants such as `VIEW_KIND_*`, `VIEW_ACCESS_*`, `VIEW_FORMAT_*`, and `VIEW_STRIDE_*`.
 - Uniform structs and `apply_uniform_*` helpers when reflection is representable.
 - Simple packed vertex layout helpers such as `VERTEX_STRIDE`, `ATTR_*_OFFSET`, and `layout_desc`.
-- Descriptor-only binding group layout helpers such as `binding_group_layout_desc`.
+- Binding group layout descriptors such as `binding_group_layout_desc`, used with `gfx.create_binding_group_layout`.
 - Binding group resource setters such as `set_group_view_*` and `set_group_sampler_*`.
 - Compute thread-group constants and dispatch helpers.
 

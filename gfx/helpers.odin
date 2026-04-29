@@ -88,4 +88,6 @@ destroy :: proc {
 	destroy_shader,
 	destroy_pipeline,
 	destroy_compute_pipeline,
+	destroy_binding_group_layout,
+	destroy_binding_group,
 }

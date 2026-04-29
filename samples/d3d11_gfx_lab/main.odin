@@ -300,16 +300,12 @@ main :: proc() {
 	}
 	defer ape_sample.reloadable_shader_program_destroy(&ctx, &texture_program)
 
-	cube_group_layout := cube_shader.binding_group_layout_desc("lab cube bindings")
-	if !gfx.validate_binding_group_layout_desc(&ctx, cube_group_layout) {
-		fmt.eprintln("cube binding group layout validation failed: ", gfx.last_error(&ctx))
+	texture_group_layout, texture_group_layout_ok := gfx.create_binding_group_layout(&ctx, textured_quad_shader.binding_group_layout_desc("lab display bindings"))
+	if !texture_group_layout_ok {
+		fmt.eprintln("texture binding group layout creation failed: ", gfx.last_error(&ctx))
 		return
 	}
-	texture_group_layout := textured_quad_shader.binding_group_layout_desc("lab display bindings")
-	if !gfx.validate_binding_group_layout_desc(&ctx, texture_group_layout) {
-		fmt.eprintln("texture binding group layout validation failed: ", gfx.last_error(&ctx))
-		return
-	}
+	defer gfx.destroy(&ctx, texture_group_layout)
 
 	cube_bindings: gfx.Bindings
 	cube_bindings.vertex_buffers[0] = {buffer = cube_vertex_buffer, offset = 0}
@@ -319,9 +315,16 @@ main :: proc() {
 	texture_bindings.vertex_buffers[0] = {buffer = texture_vertex_buffer, offset = 0}
 	texture_bindings.index_buffer = {buffer = texture_index_buffer, offset = 0}
 
-	texture_group: gfx.Binding_Group_Desc
-	textured_quad_shader.set_group_view_ape_texture(&texture_group, offscreen_sample_view)
-	textured_quad_shader.set_group_sampler_ape_sampler(&texture_group, sampler)
+	texture_group_desc: gfx.Binding_Group_Desc
+	texture_group_desc.layout = texture_group_layout
+	textured_quad_shader.set_group_view_ape_texture(&texture_group_desc, offscreen_sample_view)
+	textured_quad_shader.set_group_sampler_ape_sampler(&texture_group_desc, sampler)
+	texture_group, texture_group_ok := gfx.create_binding_group(&ctx, texture_group_desc)
+	if !texture_group_ok {
+		fmt.eprintln("texture binding group creation failed: ", gfx.last_error(&ctx))
+		return
+	}
+	defer gfx.destroy(&ctx, texture_group)
 
 	render_width := fb_width
 	render_height := fb_height
@@ -405,7 +408,7 @@ main :: proc() {
 			fmt.eprintln("display apply_pipeline failed: ", gfx.last_error(&ctx))
 			return
 		}
-		if !gfx.apply_binding_group(&ctx, texture_group_layout, texture_group, texture_bindings) {
+		if !gfx.apply_binding_group(&ctx, texture_group, texture_bindings) {
 			fmt.eprintln("display apply_binding_group failed: ", gfx.last_error(&ctx))
 			return
 		}
