@@ -10,6 +10,14 @@ _No public constants._
 
 ## Procedures
 
+### `begin_input_frame`
+
+```odin
+begin_input_frame :: proc(window: ^Window) {...}
+```
+
+begin_input_frame prepares per-frame input state before poll_events.
+
 ### `create_window`
 
 ```odin
@@ -17,6 +25,14 @@ create_window :: proc(desc: Window_Desc) -> (: Window, : bool) {...}
 ```
 
 create_window creates a desktop window, defaulting invalid dimensions to 1280x720.
+
+### `cursor_position`
+
+```odin
+cursor_position :: proc(window: ^Window) -> (x, y: f64) {...}
+```
+
+cursor_position returns the cursor position in window coordinates.
 
 ### `destroy_window`
 
@@ -42,6 +58,22 @@ init :: proc() -> bool {...}
 
 init initializes the app/window subsystem.
 
+### `key_down`
+
+```odin
+key_down :: proc(window: ^Window, key: Key) -> bool {...}
+```
+
+key_down reports whether a keyboard key is currently pressed.
+
+### `mouse_button_down`
+
+```odin
+mouse_button_down :: proc(window: ^Window, button: Mouse_Button) -> bool {...}
+```
+
+mouse_button_down reports whether a mouse button is currently pressed.
+
 ### `native_window_handle`
 
 ```odin
@@ -57,6 +89,22 @@ poll_events :: proc() {...}
 ```
 
 poll_events pumps pending platform window events.
+
+### `request_close`
+
+```odin
+request_close :: proc(window: ^Window) {...}
+```
+
+request_close asks the platform window to close on the next loop iteration.
+
+### `scroll_delta`
+
+```odin
+scroll_delta :: proc(window: ^Window) -> (x, y: f64) {...}
+```
+
+scroll_delta returns the accumulated mouse-wheel delta for the current input frame.
 
 ### `should_close`
 
@@ -75,6 +123,22 @@ shutdown :: proc() {...}
 shutdown terminates the app/window subsystem.
 
 ## Types
+
+### `Key`
+
+```odin
+Key :: enum c.int {Escape = glfw.KEY_ESCAPE, A = glfw.KEY_A, C = glfw.KEY_C, D = glfw.KEY_D, S = glfw.KEY_S, W = glfw.KEY_W, Left = glfw.KEY_LEFT, Right = glfw.KEY_RIGHT, Down = glfw.KEY_DOWN, Up = glfw.KEY_UP}
+```
+
+Key names the small set of keyboard inputs exposed by the sample app layer.
+
+### `Mouse_Button`
+
+```odin
+Mouse_Button :: enum c.int {Left = glfw.MOUSE_BUTTON_LEFT, Right = glfw.MOUSE_BUTTON_RIGHT, Middle = glfw.MOUSE_BUTTON_MIDDLE}
+```
+
+Mouse_Button names the small set of mouse buttons exposed by the sample app layer.
 
 ### `Window`
 

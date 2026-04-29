@@ -154,6 +154,7 @@ Options :: struct {
 	generated_path: string,
 	kind: Shader_Kind,
 	all: bool,
+	probe_modern_api: bool,
 }
 
 SAMPLE_SHADER_JOBS :: [?]Shader_Job {
@@ -190,6 +191,8 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 		arg := args[i]
 		if arg == "-all" {
 			options.all = true
+		} else if arg == "-probe-modern-api" {
+			options.probe_modern_api = true
 		} else if arg == "-shader-name" {
 			i += 1
 			if i >= len(args) {
@@ -239,6 +242,19 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 		}
 	}
 
+	if options.probe_modern_api {
+		if options.all ||
+		   options.shader_name != "" ||
+		   kind_set ||
+		   options.source_path != "" ||
+		   options.package_path != "" ||
+		   options.generated_path != "" {
+			return {}, false
+		}
+
+		return options, true
+	}
+
 	if options.all {
 		if options.shader_name != "" ||
 		   kind_set ||
@@ -274,9 +290,14 @@ complete_default_paths :: proc(options: ^Options) {
 print_usage :: proc() {
 	fmt.eprintln("usage: ape_shaderc -shader-name <name> [-kind graphics|compute] [-source <path>] [-build-dir <dir>] [-package <path>] [-generated <path>]")
 	fmt.eprintln("       ape_shaderc -all [-build-dir <dir>]")
+	fmt.eprintln("       ape_shaderc -probe-modern-api")
 }
 
 pack :: proc(options: Options) -> bool {
+	if options.probe_modern_api {
+		return run_modern_slang_api_probe()
+	}
+
 	slang: Slang_API
 	if !load_slang_api(&slang) {
 		return false

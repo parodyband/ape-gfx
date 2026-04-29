@@ -1,7 +1,13 @@
 ﻿package app
 	procedures
+		begin_input_frame :: proc(window: ^Window) {...}
+			begin_input_frame prepares per-frame input state before poll_events.
+
 		create_window :: proc(desc: Window_Desc) -> (: Window, : bool) {...}
 			create_window creates a desktop window, defaulting invalid dimensions to 1280x720.
+
+		cursor_position :: proc(window: ^Window) -> (x, y: f64) {...}
+			cursor_position returns the cursor position in window coordinates.
 
 		destroy_window :: proc(window: ^Window) {...}
 			destroy_window releases a live window handle.
@@ -12,11 +18,23 @@
 		init :: proc() -> bool {...}
 			init initializes the app/window subsystem.
 
+		key_down :: proc(window: ^Window, key: Key) -> bool {...}
+			key_down reports whether a keyboard key is currently pressed.
+
+		mouse_button_down :: proc(window: ^Window, button: Mouse_Button) -> bool {...}
+			mouse_button_down reports whether a mouse button is currently pressed.
+
 		native_window_handle :: proc(window: ^Window) -> rawptr {...}
 			native_window_handle returns the Win32 HWND used by the D3D11 backend.
 
 		poll_events :: proc() {...}
 			poll_events pumps pending platform window events.
+
+		request_close :: proc(window: ^Window) {...}
+			request_close asks the platform window to close on the next loop iteration.
+
+		scroll_delta :: proc(window: ^Window) -> (x, y: f64) {...}
+			scroll_delta returns the accumulated mouse-wheel delta for the current input frame.
 
 		should_close :: proc(window: ^Window) -> bool {...}
 			should_close reports whether the user or platform requested window close.
@@ -26,6 +44,12 @@
 
 
 	types
+		Key :: enum c.int {Escape = glfw.KEY_ESCAPE, A = glfw.KEY_A, C = glfw.KEY_C, D = glfw.KEY_D, S = glfw.KEY_S, W = glfw.KEY_W, Left = glfw.KEY_LEFT, Right = glfw.KEY_RIGHT, Down = glfw.KEY_DOWN, Up = glfw.KEY_UP}
+			Key names the small set of keyboard inputs exposed by the sample app layer.
+
+		Mouse_Button :: enum c.int {Left = glfw.MOUSE_BUTTON_LEFT, Right = glfw.MOUSE_BUTTON_RIGHT, Middle = glfw.MOUSE_BUTTON_MIDDLE}
+			Mouse_Button names the small set of mouse buttons exposed by the sample app layer.
+
 		Window :: struct {handle: glfw.WindowHandle, width: i32, height: i32, title: cstring}
 			Window wraps the native window handle used by samples and graphics backends.
 
