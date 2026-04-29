@@ -1,6 +1,6 @@
 # Ape GFX v0.1 Release Notes
 
-Date: 2026-04-28
+Date: 2026-04-29
 
 Status: v0.1 release notes for the current D3D11-first `gfx` contract.
 
@@ -83,6 +83,7 @@ Generated bindings currently cover:
 - sampled texture and sampler bindings
 - generated binding group layout helpers and resource setters
 - generated pipeline layout helpers and explicit `gfx.Pipeline_Layout` handles
+- active pipeline-layout validation for supplied transient `gfx.Bindings` views and samplers
 - uniform block structs and `apply_uniform_*` helpers
 - simple packed vertex layout helpers
 - storage image and storage buffer metadata
@@ -113,6 +114,7 @@ The D3D11 backend proves the current public API with:
 - compute pipelines and compute passes
 - storage-buffer readback
 - D3D11 debug names from descriptor labels
+- shared validation that rejects transient resource bindings with wrong groups, wrong slots, wrong view kinds, or incompatible storage metadata before backend binding
 - validation before backend calls where possible
 
 The `Null` backend remains useful for smoke tests. The Vulkan backend is scaffolded but not implemented.
@@ -211,7 +213,6 @@ These pieces exist, but should not be treated as long-term frozen yet:
 
 After v0.1-alpha, the next larger areas are:
 
-- harden the immediate `gfx.Bindings` path against `Pipeline_Layout` metadata before backend checks
 - sketch resource-array and bindless reflection before freezing the group record shape further
 - improve storage and compute ergonomics beyond the current samples
 - add platform-neutral wrappers for null-backend validation, shader compilation, docs, and contract tests

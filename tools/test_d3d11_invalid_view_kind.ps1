@@ -237,7 +237,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	expected := "gfx.d3d11: resource view group 0 slot 0 expects sampled view, got storage image view"
+	expected := "gfx.apply_bindings: resource view group 0 slot 0 requires a sampled view"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid view kind failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)

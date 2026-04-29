@@ -25,6 +25,7 @@ Stable means user code should be able to rely on the shape for normal `v0.1` use
 - `Render_Target` is a convenience aggregate of explicit image/view handles for common offscreen color/depth targets.
 - Descriptors use Odin struct literals, `bit_set` usage flags, and zero-value defaults only where documented.
 - Runtime validation fails before backend calls for invalid descriptors, invalid handles, incompatible views, pass ordering mistakes, and reflected shader binding mismatches.
+- Transient `Bindings.views` and `Bindings.samplers` are checked against the active `Pipeline_Layout` when reflected shader metadata exists.
 - Programmatic errors use `gfx.Error_Code` through `last_error_code` and `last_error_info`.
 - Human-readable errors remain available through `last_error`.
 - Public query helpers expose backend-free state through `query_features`, `query_limits`, `query_backend_limits`, and `query_*_state`.
@@ -211,7 +212,7 @@ Rules:
 - Exactly one `View_Desc` flavor may be populated.
 - Sampled and storage views are bound through generated binding groups or `Bindings.views`.
 - Attachment views are used only in `Pass_Desc`.
-- Runtime validation rejects a sampled view in a storage slot, a storage view in a sampled slot, and attachment views in resource binding slots.
+- Runtime validation rejects a sampled view in a storage slot, a storage view in a sampled slot, attachment views in resource binding slots, and transient bindings that target undeclared pipeline-layout groups or slots.
 - Views must not create read/write hazards inside one pass or dispatch.
 
 ## Render Pass Contract
@@ -262,6 +263,7 @@ Rules:
 - Compute shaders must be separate from graphics shaders.
 - Render-only bindings such as vertex and index buffers are rejected in compute passes.
 - Storage buffers and storage images bind through reflected binding groups or `Bindings.views` slots.
+- Supplied transient compute views are checked against the active compute pipeline layout before backend binding.
 - Readback is explicit through `read_buffer`.
 
 ## Shader Contract
@@ -302,6 +304,8 @@ Generated vertex layout support is intentionally narrow:
 Manual `Pipeline_Desc.layout` overrides remain supported for compact formats, multiple streams, instancing, and custom vertex layouts. They still must match reflected shader inputs when metadata exists.
 
 Shaders with reflected binding metadata require an explicit `Pipeline_Layout`. Generated group-layout descriptors are created as handles, composed into a `Pipeline_Layout`, and supplied to graphics or compute pipeline descriptors before pipeline creation.
+
+Transient `gfx.Bindings` resource views and samplers use the same active pipeline-layout metadata for supplied entries. This keeps the direct binding path available for simple samples and escape hatches, but wrong logical groups, undeclared slots, wrong view kinds, and incompatible storage metadata fail before backend binding.
 
 ## Error Contract
 

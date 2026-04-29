@@ -512,7 +512,138 @@ validate_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		}
 	}
 
+	if !validate_bindings_against_pipeline_layout(ctx, bindings, "gfx.apply_bindings") {
+		return false
+	}
+
 	return true
+}
+
+@(private)
+validate_bindings_against_pipeline_layout :: proc(ctx: ^Context, bindings: Bindings, op: string) -> bool {
+	if !bindings_have_shader_resources(bindings) {
+		return true
+	}
+
+	shader_state, shader_state_ok := current_binding_group_shader_state(ctx, op)
+	if !shader_state_ok {
+		return false
+	}
+	if !shader_state.has_binding_metadata {
+		return true
+	}
+
+	pipeline_layout, pipeline_layout_ok := current_pipeline_layout(ctx, op)
+	if !pipeline_layout_ok {
+		return false
+	}
+	if !pipeline_layout_valid(pipeline_layout) {
+		set_validation_errorf(ctx, "%s: current pipeline has no pipeline_layout", op)
+		return false
+	}
+
+	pipeline_layout_state, pipeline_layout_state_ok := query_pipeline_layout_state(ctx, pipeline_layout)
+	if !pipeline_layout_state_ok {
+		set_validation_errorf(ctx, "%s: current pipeline_layout state is unavailable", op)
+		return false
+	}
+
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+
+			group_layout, group_layout_ok := pipeline_layout_group_desc(ctx, pipeline_layout_state.desc, u32(group), op)
+			if !group_layout_ok {
+				return false
+			}
+
+			entry, entry_ok := binding_group_layout_find_entry(group_layout, .Resource_View, u32(slot))
+			if !entry_ok {
+				set_validation_errorf(ctx, "%s: resource view group %d slot %d is not declared by current pipeline_layout", op, group, slot)
+				return false
+			}
+			if !validate_transient_binding_view(ctx, entry, view, u32(group), op) {
+				return false
+			}
+		}
+	}
+
+	for group_samplers, group in bindings.samplers {
+		for sampler, slot in group_samplers {
+			if !sampler_valid(sampler) {
+				continue
+			}
+
+			group_layout, group_layout_ok := pipeline_layout_group_desc(ctx, pipeline_layout_state.desc, u32(group), op)
+			if !group_layout_ok {
+				return false
+			}
+
+			_, entry_ok := binding_group_layout_find_entry(group_layout, .Sampler, u32(slot))
+			if !entry_ok {
+				set_validation_errorf(ctx, "%s: sampler group %d slot %d is not declared by current pipeline_layout", op, group, slot)
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+@(private)
+validate_transient_binding_view :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, view: View, group: u32, op: string) -> bool {
+	view_state := query_view_state(ctx, view)
+	if !view_state.valid {
+		set_invalid_handle_errorf(ctx, "%s: resource view group %d slot %d handle is invalid", op, group, entry.slot)
+		return false
+	}
+	if view_state.kind != entry.resource_view.view_kind {
+		set_validation_errorf(
+			ctx,
+			"%s: resource view group %d slot %d requires a %s view",
+			op,
+			group,
+			entry.slot,
+			view_kind_name(entry.resource_view.view_kind),
+		)
+		return false
+	}
+	if entry.resource_view.view_kind == .Storage_Image &&
+	   entry.resource_view.storage_image_format != .Invalid &&
+	   view_state.format != entry.resource_view.storage_image_format {
+		set_validation_errorf(ctx, "%s: storage image group %d slot %d format does not match pipeline_layout", op, group, entry.slot)
+		return false
+	}
+	if entry.resource_view.view_kind == .Storage_Buffer &&
+	   entry.resource_view.storage_buffer_stride != 0 &&
+	   u32(view_state.storage_stride) != entry.resource_view.storage_buffer_stride {
+		set_validation_errorf(ctx, "%s: storage buffer group %d slot %d stride does not match pipeline_layout", op, group, entry.slot)
+		return false
+	}
+
+	return true
+}
+
+@(private)
+bindings_have_shader_resources :: proc(bindings: Bindings) -> bool {
+	for group_views in bindings.views {
+		for view in group_views {
+			if view_valid(view) {
+				return true
+			}
+		}
+	}
+	for group_samplers in bindings.samplers {
+		for sampler in group_samplers {
+			if sampler_valid(sampler) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 @(private)

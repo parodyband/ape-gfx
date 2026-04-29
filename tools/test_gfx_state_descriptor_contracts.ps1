@@ -570,13 +570,34 @@ main :: proc() {
 	}
 	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: base bindings must not contain resource views or samplers")
 
-	sparse_bindings: gfx.Bindings
-	sparse_bindings.views[0][2] = sampled_view
-	sparse_bindings.samplers[0][3] = sampler
-	if !gfx.apply_bindings(&ctx, sparse_bindings) {
-		fmt.eprintln("sparse resource bindings failed: ", gfx.last_error(&ctx))
+	valid_transient_bindings := group_base_bindings
+	valid_transient_bindings.views[0][0] = sampled_view
+	valid_transient_bindings.samplers[0][0] = sampler
+	if !gfx.apply_bindings(&ctx, valid_transient_bindings) {
+		fmt.eprintln("valid transient bindings failed: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
+
+	wrong_group_bindings := group_base_bindings
+	wrong_group_bindings.views[1][0] = sampled_view
+	if gfx.apply_bindings(&ctx, wrong_group_bindings) {
+		fail("transient binding with wrong group unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_bindings: pipeline_layout is missing binding group 1")
+
+	extra_view_bindings := group_base_bindings
+	extra_view_bindings.views[0][2] = sampled_view
+	if gfx.apply_bindings(&ctx, extra_view_bindings) {
+		fail("transient binding with undeclared resource view unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_bindings: resource view group 0 slot 2 is not declared by current pipeline_layout")
+
+	extra_sampler_bindings := group_base_bindings
+	extra_sampler_bindings.samplers[0][3] = sampler
+	if gfx.apply_bindings(&ctx, extra_sampler_bindings) {
+		fail("transient binding with undeclared sampler unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_bindings: sampler group 0 slot 3 is not declared by current pipeline_layout")
 
 	bindings: gfx.Bindings
 	bindings.vertex_buffers[0] = {buffer = vertex_buffer, offset = -1}

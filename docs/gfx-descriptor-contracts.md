@@ -20,9 +20,9 @@ Ape GFX uses fixed-size arrays instead of count fields in several descriptors. T
 - `Pass_Desc.color_attachments` and `Pipeline_Desc.color_formats` are packed active spans. Non-empty entries must be contiguous from slot `0`.
 - `Layout_Desc.attrs` is sparse by semantic. Active attributes have a non-empty `semantic`; inactive entries may appear between active entries. Each active attribute must reference a vertex buffer slot with nonzero stride.
 - `Bindings.vertex_buffers` is sparse. The active graphics pipeline determines which vertex buffer slots are required before draw.
-- `Bindings.views` and `Bindings.samplers` are sparse logical shader slots inside sparse logical groups. Generated shader helpers write the exact reflected group and slot. Backends with shader metadata validate missing required slots and incompatible view kinds at draw or dispatch time.
+- `Bindings.views` and `Bindings.samplers` are sparse logical shader slots inside sparse logical groups. Generated shader helpers write the exact reflected group and slot. When an active pipeline has reflected binding metadata, `apply_bindings` rejects supplied transient views or samplers whose group, slot, view kind, or storage metadata is not declared by the active `Pipeline_Layout`. Missing required resources and uniforms remain draw or dispatch validation.
 
-The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, sparse resource/sampler bindings, and reflected D3D11 rejection of unused resource slots when shader metadata is known.
+The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, transient resource/sampler rejection for wrong groups, slots, view kinds, and storage metadata, plus D3D11 missing reflected binding checks when shader metadata is known.
 
 ## Desc
 
@@ -429,6 +429,7 @@ Rules:
 - Each group layout handle must be stored at the index declared by its `Binding_Group_Layout_Desc.group`.
 - `create_pipeline` and `create_compute_pipeline` reject shaders with binding metadata unless `pipeline_layout` is set.
 - Pipeline creation validates logical group, slot, stage, reflected name, payload metadata, and native slot/space for the active backend.
+- `apply_bindings` validates supplied transient resource views and samplers against the active pipeline layout before backend binding when the active shader has binding metadata.
 - `destroy_pipeline_layout` rejects layouts still used by live graphics or compute pipelines.
 - `destroy_binding_group_layout` rejects group layouts still used by live pipeline layouts.
 
@@ -547,7 +548,10 @@ Rules:
 - `apply_bindings` requires an active render or compute pass.
 - Resource views bound in a render pass cannot alias active pass attachments.
 - Resource views in one binding set cannot create read/write or write/write hazards over the same image or overlapping buffer range.
-- D3D11 additionally validates reflected required bindings, view kinds, storage access, uniform sizes, and required vertex/index buffers at draw or dispatch time.
+- If supplied views or samplers are present and the active shader has binding metadata, `apply_bindings` requires an applied pipeline and an active `Pipeline_Layout`.
+- Supplied views and samplers must target declared logical groups and slots in the active pipeline layout.
+- Supplied view kinds must match reflected layout entries. Storage image format and storage buffer stride are checked when reflected metadata specifies them.
+- D3D11 additionally validates missing reflected required resources, sampler bindings, uniform sizes, and required vertex/index buffers at draw or dispatch time.
 
 Representative callsite:
 

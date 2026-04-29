@@ -357,9 +357,33 @@ main :: proc() {
 		fmt.eprintln("sampled view bound to storage slot unexpectedly succeeded")
 		os.exit(1)
 	}
-	expected := "gfx.d3d11: resource view group 0 slot 0 expects storage image view, got sampled view"
+	expected := "gfx.apply_bindings: resource view group 0 slot 0 requires a storage image view"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid compute view kind failed with unexpected error: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	wrong_group_bindings: gfx.Bindings
+	wrong_group_bindings.views[1][0] = storage_image_view
+	if gfx.apply_bindings(&ctx, wrong_group_bindings) {
+		fmt.eprintln("compute resource bound to wrong group unexpectedly succeeded")
+		os.exit(1)
+	}
+	expected = "gfx.apply_bindings: pipeline_layout is missing binding group 1"
+	if gfx.last_error(&ctx) != expected {
+		fmt.eprintln("invalid compute binding group failed with unexpected error: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	wrong_slot_bindings: gfx.Bindings
+	wrong_slot_bindings.views[0][3] = storage_image_view
+	if gfx.apply_bindings(&ctx, wrong_slot_bindings) {
+		fmt.eprintln("compute resource bound to undeclared slot unexpectedly succeeded")
+		os.exit(1)
+	}
+	expected = "gfx.apply_bindings: resource view group 0 slot 3 is not declared by current pipeline_layout"
+	if gfx.last_error(&ctx) != expected {
+		fmt.eprintln("invalid compute binding slot failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
@@ -369,7 +393,7 @@ main :: proc() {
 		fmt.eprintln("storage image format mismatch unexpectedly succeeded")
 		os.exit(1)
 	}
-	expected = "gfx.d3d11: storage image resource view group 0 slot 0 expects format RGBA32F, got R32F"
+	expected = "gfx.apply_bindings: storage image group 0 slot 0 format does not match pipeline_layout"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid compute storage image format failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
@@ -381,7 +405,7 @@ main :: proc() {
 		fmt.eprintln("storage buffer stride mismatch unexpectedly succeeded")
 		os.exit(1)
 	}
-	expected = "gfx.d3d11: storage buffer resource view group 0 slot 2 expects stride 20, got 16"
+	expected = "gfx.apply_bindings: storage buffer group 0 slot 2 stride does not match pipeline_layout"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid compute storage buffer stride failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)

@@ -553,6 +553,7 @@ Planned order:
 - [x] Add negative shaderc coverage for unsupported `ParameterBlock<>` shapes: ordinary data, `ConstantBuffer<T>`, nested parameter blocks, resource arrays, and unsupported texture shapes.
 - [x] Add public `Pipeline_Layout` handles and require them for shaders with reflected binding metadata.
 - [x] Generate `pipeline_layout_desc` helpers and migrate samples to compose generated binding group layouts into pipeline layouts.
+- [x] Harden transient `gfx.Bindings` against active `Pipeline_Layout` metadata for supplied views and samplers.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - [ ] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
 
@@ -563,7 +564,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Roadmap note: `gfx_app` now owns the reusable shader-program and resize helpers. The next shader-contract-specific task is to harden the remaining immediate `gfx.Bindings` path against `Pipeline_Layout` metadata so transient resource bindings get the same public validation coverage as object-backed binding groups before backend-specific D3D11 checks run.
+Roadmap note: `gfx_app` owns the reusable shader-program and resize helpers. The transient `gfx.Bindings` path now validates supplied views and samplers against active `Pipeline_Layout` metadata before backend binding. The next shader-contract-specific tasks are deeper Slang API layout traversal and the decision on uniform data inside `ParameterBlock<>`.
 
 ## Validation
 
