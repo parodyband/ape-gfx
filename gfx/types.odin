@@ -423,16 +423,22 @@ Buffer_Read_Desc :: struct {
 }
 
 // Image_Desc creates an Image resource and optional immutable initial contents.
+//
+// Zero-count default (AAA roadmap item 34): leave `mip_count`, `array_count`,
+// `sample_count`, and `depth` at zero to mean "1". A descriptor that omits all
+// counts produces a single-mip, single-layer, single-sample image — the most
+// common shape — without forcing every call site to spell out the ones.
+// Negative values are rejected.
 Image_Desc :: struct {
 	label: string,
 	kind: Image_Kind,
 	usage: Image_Usage,
 	width: i32,
 	height: i32,
-	depth: i32,
-	mip_count: i32,
-	array_count: i32,
-	sample_count: i32,
+	depth: i32,        // 0 means 1.
+	mip_count: i32,    // 0 means 1.
+	array_count: i32,  // 0 means 1.
+	sample_count: i32, // 0 means 1.
 	format: Pixel_Format,
 	data: Range,
 	mips: [MAX_IMAGE_MIPS]Image_Subresource_Data,
@@ -517,11 +523,13 @@ View_Desc :: struct {
 }
 
 // Render_Target_Desc creates the common image/view bundle for one offscreen render target.
+//
+// `sample_count` follows the Image_Desc zero-count convention: 0 means 1.
 Render_Target_Desc :: struct {
 	label: string,
 	width: i32,
 	height: i32,
-	sample_count: i32,
+	sample_count: i32, // 0 means 1.
 	color_format: Pixel_Format,
 	depth_format: Pixel_Format,
 	sampled_color: bool,

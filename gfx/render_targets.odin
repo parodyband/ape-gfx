@@ -32,8 +32,6 @@ create_render_target :: proc(ctx: ^Context, desc: Render_Target_Desc) -> (Render
 			usage = usage,
 			width = desc.width,
 			height = desc.height,
-			mip_count = 1,
-			array_count = 1,
 			sample_count = sample_count,
 			format = desc.color_format,
 		})
@@ -78,8 +76,6 @@ create_render_target :: proc(ctx: ^Context, desc: Render_Target_Desc) -> (Render
 			usage = usage,
 			width = desc.width,
 			height = desc.height,
-			mip_count = 1,
-			array_count = 1,
 			sample_count = sample_count,
 			format = desc.depth_format,
 		})

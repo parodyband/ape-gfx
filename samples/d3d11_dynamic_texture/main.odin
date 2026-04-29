@@ -99,8 +99,6 @@ main :: proc() {
 		width = TEXTURE_SIZE,
 		height = TEXTURE_SIZE,
 		mip_count = MIP_COUNT,
-		array_count = 1,
-		sample_count = 1,
 		format = .RGBA8,
 	})
 	if !texture_ok {

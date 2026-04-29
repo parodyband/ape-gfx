@@ -83,8 +83,6 @@ main :: proc() {
 		usage = {.Color_Attachment},
 		width = RENDER_TARGET_SIZE,
 		height = RENDER_TARGET_SIZE,
-		mip_count = 1,
-		array_count = 1,
 		sample_count = MSAA_SAMPLE_COUNT,
 		format = .RGBA8,
 	})
@@ -113,9 +111,6 @@ main :: proc() {
 		usage = {.Texture},
 		width = RENDER_TARGET_SIZE,
 		height = RENDER_TARGET_SIZE,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
 		format = .RGBA8,
 	})
 	if !resolved_image_ok {

@@ -116,6 +116,8 @@ vertex_buffer, ok := gfx.create_buffer(&ctx, {
 
 `Image_Desc` creates a texture, storage image, color attachment, or depth-stencil attachment.
 
+Zero-count default (AAA roadmap item 34): `mip_count`, `array_count`, `sample_count`, and `depth` all treat `0` as the obvious default `1`. Single-mip / single-layer / single-sample images can be described without spelling the ones out. Negative values are rejected.
+
 Fields:
 
 | Field | Contract |

@@ -138,9 +138,6 @@ main :: proc() {
 		usage = {.Texture, .Immutable},
 		width = texture_asset.width,
 		height = texture_asset.height,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
 		format = .RGBA8,
 		data = gfx.range(texture_asset.pixels),
 	})

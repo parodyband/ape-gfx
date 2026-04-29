@@ -79,9 +79,6 @@ main :: proc() {
 		usage = {.Texture, .Depth_Stencil_Attachment},
 		width = RENDER_TARGET_SIZE,
 		height = RENDER_TARGET_SIZE,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
 		format = .D32F,
 	})
 	if !offscreen_depth_image_ok {

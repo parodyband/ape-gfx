@@ -165,6 +165,76 @@ main :: proc() {
 		fail("valid texture image did not report defaulted image state")
 	}
 
+	// AAA roadmap item 34: zero counts must default to 1, and explicit 1 must
+	// match. Verify all three count fields (mips / layers / samples) for the
+	// 0 / 1 / >1 cases.
+	explicit_one_image, explicit_one_image_ok := gfx.create_image(&ctx, {
+		label = "explicit one counts",
+		usage = {.Texture},
+		width = 16, height = 8,
+		mip_count = 1, array_count = 1, sample_count = 1,
+		format = .RGBA8,
+	})
+	if !explicit_one_image_ok || !gfx.image_valid(explicit_one_image) {
+		fmt.eprintln("explicit-one image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, explicit_one_image)
+	explicit_one_state := gfx.query_image_state(&ctx, explicit_one_image)
+	if explicit_one_state.mip_count != 1 || explicit_one_state.array_count != 1 || explicit_one_state.sample_count != 1 {
+		fail("explicit-one image did not match the zero-count default state")
+	}
+
+	mip_chain_image, mip_chain_image_ok := gfx.create_image(&ctx, {
+		label = "mip chain",
+		usage = {.Texture, .Dynamic_Update},
+		width = 16, height = 16,
+		mip_count = 4,
+		format = .RGBA8,
+	})
+	if !mip_chain_image_ok || !gfx.image_valid(mip_chain_image) {
+		fmt.eprintln("mip chain image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, mip_chain_image)
+	if gfx.query_image_state(&ctx, mip_chain_image).mip_count != 4 {
+		fail("mip chain image did not preserve mip_count")
+	}
+
+	array_image, array_image_ok := gfx.create_image(&ctx, {
+		label = "array image",
+		usage = {.Color_Attachment},
+		width = 8, height = 8,
+		array_count = 3,
+		format = .RGBA8,
+	})
+	if !array_image_ok || !gfx.image_valid(array_image) {
+		fmt.eprintln("array image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, array_image)
+	if gfx.query_image_state(&ctx, array_image).array_count != 3 {
+		fail("array image did not preserve array_count")
+	}
+
+	if gfx.query_features(&ctx).msaa_render_targets {
+		msaa_image, msaa_image_ok := gfx.create_image(&ctx, {
+			label = "msaa image",
+			usage = {.Color_Attachment},
+			width = 8, height = 8,
+			sample_count = 4,
+			format = .RGBA8,
+		})
+		if !msaa_image_ok || !gfx.image_valid(msaa_image) {
+			fmt.eprintln("msaa image failed: ", gfx.last_error(&ctx))
+			os.exit(1)
+		}
+		defer gfx.destroy(&ctx, msaa_image)
+		if gfx.query_image_state(&ctx, msaa_image).sample_count != 4 {
+			fail("msaa image did not preserve sample_count")
+		}
+	}
+
 	invalid_usage_image, invalid_usage_image_ok := gfx.create_image(&ctx, {
 		label = "missing image usage",
 		width = 1,
