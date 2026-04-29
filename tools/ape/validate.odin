@@ -1,8 +1,10 @@
 package main
 
 import "core:fmt"
+import os2 "core:os/os2"
 import "core:path/filepath"
 import "core:strconv"
+import "core:strings"
 import "core:time"
 
 Validate_Core_Options :: struct {
@@ -99,8 +101,15 @@ validate_core :: proc(options: Validate_Core_Options) -> bool {
 	fmt.printf("Root: %s\n", root)
 	fmt.println("D3D11 runtime tests: skipped")
 
+	step_started_at := validation_step_start("repo hygiene")
+	if !check_repo_hygiene(root) {
+		validation_step_fail("repo hygiene")
+		return false
+	}
+	validation_step_pass("repo hygiene", step_started_at)
+
 	if !options.skip_shader_compile {
-		step_started_at := validation_step_start("compile sample shaders")
+		step_started_at = validation_step_start("compile sample shaders")
 		if !compile_shaders({
 			root_path = root,
 			build_dir = "build/shaders",
@@ -133,7 +142,7 @@ validate_core :: proc(options: Validate_Core_Options) -> bool {
 		validation_step_pass(script, step_started_at)
 	}
 
-	step_started_at := validation_step_start("shaderc reflection tests")
+	step_started_at = validation_step_start("shaderc reflection tests")
 	if !run_shader_tests({
 		root_path = root,
 		name = "all",
@@ -179,8 +188,15 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 	fmt.printf("Root: %s\n", root)
 	fmt.printf("AutoExitFrames: %d\n", options.auto_exit_frames)
 
+	step_started_at := validation_step_start("repo hygiene")
+	if !check_repo_hygiene(root) {
+		validation_step_fail("repo hygiene")
+		return false
+	}
+	validation_step_pass("repo hygiene", step_started_at)
+
 	if !options.skip_shader_compile {
-		step_started_at := validation_step_start("compile sample shaders")
+		step_started_at = validation_step_start("compile sample shaders")
 		if !compile_shaders({
 			root_path = root,
 			build_dir = "build/shaders",
@@ -226,7 +242,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		validation_step_pass(script, step_started_at)
 	}
 
-	step_started_at := validation_step_start("shaderc reflection tests")
+	step_started_at = validation_step_start("shaderc reflection tests")
 	if !run_shader_tests({
 		root_path = root,
 		name = "all",
@@ -328,6 +344,86 @@ validation_step_pass :: proc(name: string, started_at: time.Time) {
 validation_step_fail :: proc(name: string) {
 	fmt.println()
 	fmt.eprintln("FAILED  ", name)
+}
+
+check_repo_hygiene :: proc(root: string) -> bool {
+	command := [?]string {"git", "ls-files"}
+	process_desc := os2.Process_Desc {
+		working_dir = root,
+		command = command[:],
+	}
+
+	state, stdout, stderr, err := os2.process_exec(process_desc, context.allocator)
+	defer if stdout != nil {
+		delete(stdout)
+	}
+	defer if stderr != nil {
+		delete(stderr)
+	}
+
+	if err != nil {
+		fmt.eprintln("repo hygiene: failed to run git ls-files: ", err)
+		return false
+	}
+	if !state.exited || state.exit_code != 0 {
+		if len(stderr) > 0 {
+			fmt.eprint(string(stderr))
+		}
+		fmt.eprintln("repo hygiene: git ls-files failed with exit ", state.exit_code)
+		return false
+	}
+
+	violations: [dynamic]string
+	defer delete(violations)
+
+	for raw_line in strings.split_lines(string(stdout), context.temp_allocator) {
+		path := strings.trim_space(strings.trim_right(raw_line, "\r"))
+		if path == "" {
+			continue
+		}
+
+		normalized, _ := strings.replace_all(path, "\\", "/", context.temp_allocator)
+		if repo_hygiene_forbidden_tracked_path(normalized) {
+			append(&violations, normalized)
+		}
+	}
+
+	if len(violations) == 0 {
+		return true
+	}
+
+	fmt.eprintln("repo hygiene: tracked build artifacts are not allowed:")
+	for path in violations {
+		fmt.eprintln("  ", path)
+	}
+	fmt.eprintln("repo hygiene: remove these files from git and keep artifact rules in .gitignore")
+	return false
+}
+
+repo_hygiene_forbidden_tracked_path :: proc(path: string) -> bool {
+	if strings.has_prefix(path, "_scratch/") || strings.has_prefix(path, "build/") {
+		return true
+	}
+
+	for suffix in REPO_HYGIENE_FORBIDDEN_SUFFIXES {
+		if strings.has_suffix(path, suffix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+REPO_HYGIENE_FORBIDDEN_SUFFIXES :: [?]string {
+	".o",
+	".obj",
+	".exe",
+	".pdb",
+	".ilk",
+	".lib",
+	".dll",
+	".so",
+	".dylib",
 }
 
 run_repo_script :: proc(root: string, script_name: string, arguments: []string = nil) -> bool {

@@ -153,6 +153,14 @@ View_Kind :: enum {
 //             the same view across two dispatches in one compute pass triggers
 //             an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
 //
+//   Storage_Read_Write
+//     D3D11   UAV bind (informational; common read/write storage path).
+//     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
+//     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+//             VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+//             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Use this for storage
+//             resources a shader may both read and write in the same pass.
+//
 //   Color_Target
 //     D3D11   OMSetRenderTargets (informational).
 //     D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
@@ -204,6 +212,7 @@ Resource_Usage :: enum {
 	Sampled,
 	Storage_Read,
 	Storage_Write,
+	Storage_Read_Write,
 	Color_Target,
 	Depth_Target_Read,
 	Depth_Target_Write,

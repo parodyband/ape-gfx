@@ -536,6 +536,8 @@ ok = gfx.apply_binding_groups(&ctx, groups[:], geometry)
 
 `Bindings` supplies transient buffers, resource views, and samplers for the currently active render or compute pass.
 
+`Bindings` is a fixed-size snapshot, not a compact builder. It contains storage for every public vertex buffer slot, logical binding group, resource-view slot, and sampler slot. Prefer creating it once per draw setup, mutating it as resources change, or reusing the geometry-only portion as `base_bindings` for object-backed binding groups. Avoid constructing fresh `Bindings{}` literals inside tight inner draw loops unless the cost is known to be irrelevant for that path.
+
 Fields:
 
 | Field | Contract |

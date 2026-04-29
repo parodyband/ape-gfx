@@ -3,9 +3,9 @@ package gfx
 // Bindless / resource-array public API — AAA roadmap items 26 / 27,
 // APE-22 / APE-23.
 //
-// This file holds the locked public types and verbs. Bodies still panic;
-// the runtime implementation lands with item 28. The shapes reflect the
-// design in docs/private/gfx-bindless-note.md, which composes with:
+// This file holds the locked public types and verbs. Runtime-only bodies
+// return Unsupported until their backend implementations land. The shapes
+// reflect the design in docs/private/gfx-bindless-note.md, which composes with:
 //
 //   gfx-bindless-note.md §5    — storage shape (item 27 / APE-23):
 //                                Binding_Group carries fixed arrays via
@@ -37,10 +37,10 @@ package gfx
 //   queue.odin                 — Timeline_Semaphore is the public sync for
 //                                heap-slot reuse.
 //
-// Heap-side verbs panic with `unimplemented (item 28)` until the runtime-
-// array sample exists and item 28 lands the validation rules. The
-// `arrays` payload on `Binding_Group_Desc` (declared in types.odin) is
-// also enforced by item 28; today the field zero-defaults to "no fixed
+// Heap-side verbs validate their descriptor shape, then return Unsupported
+// until the runtime-array sample exists and backend validation rules land.
+// The `arrays` payload on `Binding_Group_Desc` (declared in types.odin) is
+// enforced by binding-group validation; the field zero-defaults to "no fixed
 // arrays" so existing Binding_Group_Desc literals stay valid.
 
 // MAX_BINDING_GROUP_ARRAYS bounds the number of distinct fixed-array slots

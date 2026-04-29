@@ -139,6 +139,9 @@ submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Q
 //
 // Safe to call on a `Recording`, `Finished`, or `Submitted` list. Lists must
 // be destroyed before their owning Context shuts down.
+// TODO(command-list runtime): destroying a `Recording` list should cancel and
+// free recorder-owned backend state; destroying a `Submitted` list must defer
+// backend release until the GPU has completed the submit that owns it.
 destroy_command_list :: proc(list: ^Command_List) {
 	if list != nil {
 		list.state = .Submitted

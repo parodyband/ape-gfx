@@ -307,7 +307,7 @@ Composite statuses are comma-separated.
 | `Render_Pass_Encoder` | defer | APE-5 recording sketch type. Body and backend land with the explicit recording path. |
 | `Render_Target` | keep | Explicit aggregate of image/view handles created from `Render_Target_Desc`. |
 | `Render_Target_Desc` | keep | Low-level color/depth target helper descriptor covered by `tools/test_gfx_descriptor_contracts.ps1`. |
-| `Resource_Usage` | keep, needs_docs | APE-13/APE-14 buffer/image state vocabulary used by attachments, binding-group entries, and barrier verbs. |
+| `Resource_Usage` | keep | APE-13/APE-14 buffer/image state vocabulary used by attachments, binding-group entries, and barrier verbs; includes read-only, write-only, and read/write storage roles. |
 | `Sampler` | keep | Stable handle. |
 | `Semaphore_Signal` | defer | APE-17 timeline-signal edge sketch. |
 | `Semaphore_Wait` | defer | APE-17 timeline-wait edge sketch. |

@@ -18,9 +18,9 @@ import "core:fmt"
 // On the immediate-mode `Context` API (`gfx.barrier`), the D3D11 backend
 // validates the desc, runs the APE-16 debug-build consistency check against
 // a per-frame last-known-usage tracker on `Context`, and otherwise no-ops.
-// `cmd_barrier(list, desc)` is the encoder-mode equivalent and stays panicking
-// until the `Command_List` runtime lands in APE-5; both verbs share the same
-// validator so the schema does not drift.
+// `cmd_barrier(list, desc)` is the encoder-mode equivalent and returns
+// Unsupported until the `Command_List` runtime lands in APE-5; both verbs
+// share the same validator so the schema does not drift.
 
 // Subresource_Aspect_Flag selects which planes of an image a barrier names.
 //
@@ -337,7 +337,7 @@ validate_subresource_range :: proc(ctx: ^Context, op: string, transition_index: 
 @(private)
 resource_usage_legal_for_image :: proc(usage: Resource_Usage, image_state: Image_State) -> bool {
 	switch usage {
-	case .None, .Sampled, .Storage_Read, .Storage_Write,
+	case .None, .Sampled, .Storage_Read, .Storage_Write, .Storage_Read_Write,
 	     .Color_Target, .Depth_Target_Read, .Depth_Target_Write,
 	     .Copy_Source, .Copy_Dest, .Present:
 		return true
@@ -350,7 +350,7 @@ resource_usage_legal_for_image :: proc(usage: Resource_Usage, image_state: Image
 @(private)
 resource_usage_legal_for_buffer :: proc(usage: Resource_Usage) -> bool {
 	switch usage {
-	case .None, .Storage_Read, .Storage_Write, .Copy_Source, .Copy_Dest, .Indirect_Argument:
+	case .None, .Storage_Read, .Storage_Write, .Storage_Read_Write, .Copy_Source, .Copy_Dest, .Indirect_Argument:
 		return true
 	case .Sampled, .Color_Target, .Depth_Target_Read, .Depth_Target_Write, .Present:
 		return false
@@ -576,11 +576,10 @@ barrier_tracker_role_for_view :: proc(view_state: View_State) -> Resource_Usage 
 		return .Sampled
 	case .Storage_Image, .Storage_Buffer:
 		// D3D11 has no public split between storage read and storage write,
-		// and Slang reflection access on a binding-group entry is item-28's
-		// concern. Conservatively classify storage views as Storage_Write so
-		// any prior Sampled / Color_Target / Copy_Dest declaration on the
-		// same resource flags as a missing barrier.
-		return .Storage_Write
+		// and Slang reflection access is conservative for storage resources.
+		// Treat a storage view bind as read/write so barriers must declare the
+		// common UAV-style role explicitly.
+		return .Storage_Read_Write
 	case .Color_Attachment, .Depth_Stencil_Attachment:
 		return .None
 	}

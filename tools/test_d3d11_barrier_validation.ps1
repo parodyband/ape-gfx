@@ -88,6 +88,19 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, color_attach_view)
 
+	storage_image, storage_image_ok := gfx.create_image(&ctx, {
+		label = "barrier storage image",
+		usage = {.Storage_Image},
+		width = 16,
+		height = 16,
+		format = .RGBA8,
+	})
+	if !storage_image_ok {
+		fmt.eprintln("storage image creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, storage_image)
+
 	// 1. Barrier desc shape: invalid image handle is rejected.
 	bad_transitions := [?]gfx.Image_Transition {
 		{image = gfx.Image_Invalid, from = .Color_Target, to = .Sampled},
@@ -134,7 +147,23 @@ main :: proc() {
 	}
 	expect_error_contains(&ctx, "is not a legal buffer usage")
 
-	// 4. Wrong-barrier scenario: a render pass declares the image as
+	// 4. Storage_Read_Write is legal for both storage images and buffers.
+	storage_read_write_images := [?]gfx.Image_Transition {
+		{image = storage_image, from = .None, to = .Storage_Read_Write},
+	}
+	if !gfx.barrier(&ctx, {image_transitions = storage_read_write_images[:]}) {
+		fmt.eprintln("Storage_Read_Write image barrier failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	storage_read_write_buffers := [?]gfx.Buffer_Transition {
+		{buffer = storage_buffer, from = .None, to = .Storage_Read_Write},
+	}
+	if !gfx.barrier(&ctx, {buffer_transitions = storage_read_write_buffers[:]}) {
+		fmt.eprintln("Storage_Read_Write buffer barrier failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	// 5. Wrong-barrier scenario: a render pass declares the image as
 	//    Color_Target; a follow-up barrier mis-states the prior usage.
 	pass: gfx.Pass_Desc
 	pass.color_attachments[0] = color_attach_view
@@ -158,7 +187,7 @@ main :: proc() {
 	expect_error_contains(&ctx, "wrong barrier")
 	expect_error_contains(&ctx, "Color_Target")
 
-	// 5. Missing-barrier scenario at apply_bindings: the image is currently
+	// 6. Missing-barrier scenario at apply_bindings: the image is currently
 	//    Color_Target; reusing it as a color attachment in a fresh pass is
 	//    fine (Color_Target -> Color_Target), but moving it to Sampled via
 	//    apply_bindings without an intervening barrier is not.
@@ -184,7 +213,7 @@ main :: proc() {
 	expect_error_contains(&ctx, "missing barrier")
 	expect_error_contains(&ctx, "Sampled")
 
-	// 6. Frame boundary clears the tracker; the same begin_pass succeeds
+	// 7. Frame boundary clears the tracker; the same begin_pass succeeds
 	//    once we hit commit (no in-flight pass; commit is legal here).
 	if !gfx.commit(&ctx) {
 		fmt.eprintln("commit failed: ", gfx.last_error(&ctx))
@@ -199,7 +228,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	// 7. Barrier between passes is the legal path: declare Color_Target ->
+	// 8. Barrier between passes is the legal path: declare Color_Target ->
 	//    Sampled, then re-declaring the same transition should fail because
 	//    the resource is now Sampled.
 	if !gfx.barrier(&ctx, {image_transitions = correct_to_sampled[:]}) {

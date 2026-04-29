@@ -542,6 +542,9 @@ package gfx
 
 			Safe to call on a `Recording`, `Finished`, or `Submitted` list. Lists must
 			be destroyed before their owning Context shuts down.
+			TODO(command-list runtime): destroying a `Recording` list should cancel and
+			free recorder-owned backend state; destroying a `Submitted` list must defer
+			backend release until the GPU has completed the submit that owns it.
 
 		destroy_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) {...}
 			destroy_compute_pipeline releases a live compute pipeline handle.
@@ -711,6 +714,10 @@ package gfx
 
 		queue_kind :: proc(queue: Queue) -> Queue_Kind {...}
 			queue_kind reports the family a Queue belongs to.
+
+			TODO(queue runtime): store the queue kind in backend/context state and read
+			it from the Queue handle. The current placeholder returns Graphics until
+			explicit queues are implemented.
 
 		range_raw :: proc(ptr: rawptr, size: int) -> Range {...}
 			range_raw builds a byte Range from a raw pointer and byte size.
@@ -1357,7 +1364,7 @@ package gfx
 
 			`sample_count` follows the Image_Desc zero-count convention: 0 means 1.
 
-		Resource_Usage :: enum {None, Sampled, Storage_Read, Storage_Write, Color_Target, Depth_Target_Read, Depth_Target_Write, Copy_Source, Copy_Dest, Indirect_Argument, Present}
+		Resource_Usage :: enum {None, Sampled, Storage_Read, Storage_Write, Storage_Read_Write, Color_Target, Depth_Target_Read, Depth_Target_Write, Copy_Source, Copy_Dest, Indirect_Argument, Present}
 			Resource_Usage names the GPU role a Buffer or Image subresource is in at a
 			point in the command stream. It is the public vocabulary for the barrier
 			API (AAA roadmap item 18 / APE-14): pass attachment `initial_usage` /
@@ -1401,6 +1408,14 @@ package gfx
 			            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
 			            the same view across two dispatches in one compute pass triggers
 			            an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
+
+			  Storage_Read_Write
+			    D3D11   UAV bind (informational; common read/write storage path).
+			    D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
+			    Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+			            VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+			            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Use this for storage
+			            resources a shader may both read and write in the same pass.
 
 			  Color_Target
 			    D3D11   OMSetRenderTargets (informational).

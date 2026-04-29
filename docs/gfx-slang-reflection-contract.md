@@ -234,6 +234,8 @@ The outer record stays common so tools can sort or match by backend, stage, refl
 
 Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for `gfx.Binding_Group_Desc`. The intended path is to create `gfx.Binding_Group_Layout` handles from `binding_group_layout_desc(GROUP_N)`, compose them into a `gfx.Pipeline_Layout`, fill `Binding_Group_Desc` values with generated setters, create `gfx.Binding_Group` handles, and apply one or more groups with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
 
+Shader permutations must not silently change this layout contract. If two variants of one shader identity reflect different groups, slots, binding kinds, or payload metadata, `ape_shaderc` should reject that package until variant-keyed layout helpers exist. A future variant-aware path may emit `binding_group_layout_desc(key, group, label)` or equivalent helpers, but the current contract assumes every variant of one generated package shares the same binding-group layout.
+
 Logical slots are assigned per binding kind:
 
 | Kind | Prefix | Limit |

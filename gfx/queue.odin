@@ -26,9 +26,10 @@ package gfx
 //
 //   D3D11   — one logical Graphics queue, no real timelines. `acquire_*_queue`
 //             returns the same Queue for Graphics and a sentinel for Compute /
-//             Transfer; multi-queue submits panic; Timeline_Semaphore maps to
-//             a CPU-side u64 plus a single ID3D11Query for fence emulation;
-//             Present rides IDXGISwapChain::Present.
+//             Transfer; explicit multi-queue submits return Unsupported until
+//             queue runtime exists; Timeline_Semaphore maps to a CPU-side u64
+//             plus a single ID3D11Query for fence emulation; Present rides
+//             IDXGISwapChain::Present.
 //   D3D12   — one ID3D12CommandQueue per kind; Timeline_Semaphore maps 1:1
 //             onto ID3D12Fence; Present rides IDXGISwapChain::Present and the
 //             frame fence is signaled on the graphics queue.
@@ -150,6 +151,10 @@ acquire_transfer_queue :: proc(ctx: ^Context) -> Queue {
 }
 
 // queue_kind reports the family a Queue belongs to.
+//
+// TODO(queue runtime): store the queue kind in backend/context state and read
+// it from the Queue handle. The current placeholder returns Graphics until
+// explicit queues are implemented.
 queue_kind :: proc(queue: Queue) -> Queue_Kind {
 	return .Graphics
 }
