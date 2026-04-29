@@ -132,6 +132,11 @@ vulkan_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range)
 	return false
 }
 
+vulkan_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: apply_uniform_at is not implemented yet")
+	return false
+}
+
 vulkan_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: draw is not implemented yet")
 	return false
@@ -165,6 +170,11 @@ vulkan_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capa
 vulkan_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {}
 
 vulkan_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
+	return nil, false
+}
+
+vulkan_resolve_transient_chunk_mapped :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
 	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
 	return nil, false
 }

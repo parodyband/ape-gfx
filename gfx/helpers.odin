@@ -37,6 +37,12 @@ apply_uniform :: proc(ctx: ^Context, group: u32, slot: int, value: ^$T) -> bool 
 	return apply_uniforms(ctx, group, slot, range_raw(rawptr(value), size_of(T)))
 }
 
+// apply_uniform_at_typed binds a typed uniform value already written through
+// `slice.mapped`. Equivalent to `apply_uniform_at` with `byte_size = size_of(T)`.
+apply_uniform_at_typed :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, $T: typeid) -> bool {
+	return apply_uniform_at(ctx, group, slot, slice, size_of(T))
+}
+
 // destroy overloads the explicit destroy_* procedures for public resources and render-target aggregates.
 destroy :: proc {
 	destroy_buffer,

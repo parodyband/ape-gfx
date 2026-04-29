@@ -310,7 +310,7 @@ transient_alloc :: proc(allocator: Transient_Allocator, size: int, usage: Transi
 	}
 
 	chunk := &state.chunks[usage]
-	if !chunk.enabled || chunk.mapped == nil {
+	if !chunk.enabled {
 		return {}, false
 	}
 
@@ -320,6 +320,19 @@ transient_alloc :: proc(allocator: Transient_Allocator, size: int, usage: Transi
 	if aligned_offset > chunk.capacity || aligned_size > chunk.capacity - aligned_offset {
 		return {}, false
 	}
+
+	// The backend may have temporarily Unmapped the chunk to satisfy a
+	// previous bind+draw (e.g. d3d11_apply_uniform_at). Resolve the current
+	// CPU pointer; cheap when no remap is required.
+	ctx := transient_allocator_context(allocator)
+	if ctx == nil {
+		return {}, false
+	}
+	mapped, ok := backend_resolve_transient_chunk_mapped(ctx, chunk.buffer)
+	if !ok || mapped == nil {
+		return {}, false
+	}
+	chunk.mapped = mapped
 
 	chunk.cursor = aligned_offset + aligned_size
 	return Transient_Slice {
@@ -381,6 +394,19 @@ transient_unregister_context :: proc(ctx: ^Context) {
 		return
 	}
 	delete_key(&global_transient_contexts, ctx.context_id)
+}
+
+@(private)
+transient_allocator_context :: proc(allocator: Transient_Allocator) -> ^Context {
+	if u64(allocator) == 0 {
+		return nil
+	}
+	context_id := handle_context_id(u64(allocator))
+	ctx, ok := global_transient_contexts[context_id]
+	if !ok {
+		return nil
+	}
+	return ctx
 }
 
 @(private)

@@ -20,6 +20,11 @@ D3D11_Buffer :: struct {
 	usage: Buffer_Usage,
 	size: u32,
 	storage_stride: u32,
+	// Transient chunks (APE-20/21) are persistently mapped; this caches the
+	// current Map pointer so apply_uniform_at can Unmap before draw and the
+	// next transient_alloc can lazily re-Map with WRITE_NO_OVERWRITE.
+	transient_mapped:     bool,
+	transient_mapped_ptr: rawptr,
 }
 
 D3D11_Image :: struct {
@@ -126,6 +131,7 @@ D3D11_Compute_Pipeline :: struct {
 D3D11_State :: struct {
 	device: ^d3d11.IDevice,
 	immediate: ^d3d11.IDeviceContext,
+	context1: ^D3D11_DeviceContext1,
 	swapchain: ^dxgi.ISwapChain,
 	info_queue: ^d3d11.IInfoQueue,
 	debug_enabled: bool,
@@ -568,6 +574,7 @@ d3d11_create_device_and_swapchain :: proc(ctx: ^Context, state: ^D3D11_State, de
 	d3d11_set_debug_name_suffixed(cast(^d3d11.IDeviceChild)state.immediate, ctx.desc.label, "immediate context")
 	d3d11_set_dxgi_debug_name(cast(^dxgi.IObject)state.swapchain, d3d11_label_or_fallback(ctx.desc.label, "ape gfx swapchain"))
 	d3d11_init_info_queue(state)
+	d3d11_acquire_context1(state)
 	return true
 }
 
@@ -736,6 +743,12 @@ d3d11_release_state :: proc(state: ^D3D11_State) {
 	if state.info_queue != nil {
 		state.info_queue.Release(state.info_queue)
 		state.info_queue = nil
+	}
+	if state.context1 != nil {
+		// QueryInterface AddRef'd the context; release the extra reference.
+		base := cast(^d3d11.IDeviceContext)state.context1
+		base.Release(base)
+		state.context1 = nil
 	}
 	if state.immediate != nil {
 		state.immediate.Release(state.immediate)

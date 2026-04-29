@@ -163,6 +163,19 @@ main :: proc() {
 	bindings.vertex_buffers[0] = {buffer = vertex_buffer, offset = 0}
 	bindings.index_buffer = {buffer = index_buffer, offset = 0}
 
+	// APE-21: route per-frame uniforms through a transient allocator and bind
+	// them with apply_uniform_at. One allocation per frame, reset before use.
+	uniform_allocator, uniform_allocator_ok := gfx.create_transient_allocator(&ctx, {
+		label    = "cube frame uniforms",
+		capacity = 64 * 1024,
+		usage    = {.Uniform},
+	})
+	if !uniform_allocator_ok {
+		fmt.eprintln("create_transient_allocator failed: ", gfx.last_error(&ctx))
+		return
+	}
+	defer gfx.destroy_transient_allocator(&ctx, uniform_allocator)
+
 	render_width := fb_width
 	render_height := fb_height
 	projection := ape_math.cube_projection(render_width, render_height)
@@ -203,15 +216,26 @@ main :: proc() {
 			return
 		}
 
+		if !gfx.reset_transient_allocator(&ctx, uniform_allocator, {gfx.Timeline_Semaphore_Invalid, 0}) {
+			fmt.eprintln("reset_transient_allocator failed: ", gfx.last_error(&ctx))
+			return
+		}
+
 		elapsed_seconds := f32(time.duration_seconds(time.tick_since(start_tick)))
 		angle := elapsed_seconds * ROTATION_RADIANS_PER_SECOND
 		model := ape_math.mul(ape_math.rotation_y(angle), ape_math.rotation_x(angle * 0.71))
 		view_model := ape_math.mul(view, model)
-		uniforms := Frame_Uniforms {
+
+		slice, slice_ok := gfx.transient_alloc(uniform_allocator, size_of(Frame_Uniforms), .Uniform)
+		if !slice_ok {
+			fmt.eprintln("transient_alloc failed")
+			return
+		}
+		(^Frame_Uniforms)(slice.mapped)^ = Frame_Uniforms {
 			ape_mvp = ape_math.mul(projection, view_model),
 		}
-		if !cube_shader.apply_uniform_FrameUniforms(&ctx, &uniforms) {
-			fmt.eprintln("apply_uniform failed: ", gfx.last_error(&ctx))
+		if !gfx.apply_uniform_at(&ctx, cube_shader.GROUP_0, cube_shader.UB_FrameUniforms, slice, size_of(Frame_Uniforms)) {
+			fmt.eprintln("apply_uniform_at failed: ", gfx.last_error(&ctx))
 			return
 		}
 

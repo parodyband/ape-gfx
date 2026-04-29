@@ -784,6 +784,198 @@ d3d11_apply_compute_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data:
 	return true
 }
 
+d3d11_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	state := d3d11_state(ctx)
+	if state == nil || state.device == nil || state.immediate == nil {
+		set_backend_error(ctx, "gfx.d3d11: backend state is not initialized")
+		return false
+	}
+
+	buffer_info, buffer_ok := state.buffers[slice.buffer]
+	if !buffer_ok || buffer_info.buffer == nil {
+		set_invalid_handle_error(ctx, "gfx.d3d11: transient slice buffer handle is unknown")
+		return false
+	}
+	if u32(slice.offset) + u32(slice.size) > buffer_info.size {
+		set_validation_error(ctx, "gfx.d3d11: apply_uniform_at: slice extends past buffer")
+		return false
+	}
+	if !(.Uniform in buffer_info.usage) {
+		set_validation_error(ctx, "gfx.d3d11: apply_uniform_at: buffer is not constant-buffer-capable")
+		return false
+	}
+
+	if ctx.pass_kind == .Compute {
+		return d3d11_apply_compute_uniform_at(ctx, state, group, slot, slice, byte_size, buffer_info.buffer)
+	}
+
+	pipeline_info, pipeline_ok := state.pipelines[state.current_pipeline]
+	if !pipeline_ok {
+		set_validation_error(ctx, "gfx.d3d11: apply_uniform_at requires an applied pipeline")
+		return false
+	}
+
+	if !d3d11_validate_uniform_upload(ctx, &pipeline_info, group, slot, byte_size) {
+		return false
+	}
+
+	// D3D11.0 forbids draws while a bound resource is mapped, and the
+	// transient chunk is persistently mapped. Unmap it now so the draw can
+	// read; a later transient_alloc on the same chunk will lazily re-Map.
+	d3d11_transient_chunk_unmap_for_bind(ctx, slice.buffer)
+
+	first_constant := u32(slice.offset) / 16
+	num_constants := (u32(byte_size) + 15) / 16
+	num_constants = ((num_constants + 15) / 16) * 16 // D3D11 requires NumConstants to be a multiple of 16 (256 bytes).
+
+	slot_mask := d3d11_slot_mask(u32(slot))
+	if state.context1 != nil {
+		buffers := [1]^d3d11.IBuffer{buffer_info.buffer}
+		first_constants := [1]u32{first_constant}
+		num_constants_arr := [1]u32{num_constants}
+		if pipeline_info.has_binding_metadata {
+			vertex_slot := pipeline_info.uniform_slots[int(Shader_Stage.Vertex)][group][slot]
+			if vertex_slot.active {
+				state.context1.VSSetConstantBuffers1(state.context1, vertex_slot.native_slot, 1, &buffers[0], &first_constants[0], &num_constants_arr[0])
+			}
+			fragment_slot := pipeline_info.uniform_slots[int(Shader_Stage.Fragment)][group][slot]
+			if fragment_slot.active {
+				state.context1.PSSetConstantBuffers1(state.context1, fragment_slot.native_slot, 1, &buffers[0], &first_constants[0], &num_constants_arr[0])
+			}
+		} else {
+			state.context1.VSSetConstantBuffers1(state.context1, u32(slot), 1, &buffers[0], &first_constants[0], &num_constants_arr[0])
+			state.context1.PSSetConstantBuffers1(state.context1, u32(slot), 1, &buffers[0], &first_constants[0], &num_constants_arr[0])
+		}
+	} else {
+		// Fallback: copy the slice payload into the per-slot dynamic CB and bind it.
+		// Loses the transient allocator's bump-pointer benefit but keeps semantics.
+		aligned_size := d3d11_uniform_buffer_size(byte_size)
+		if aligned_size == 0 || aligned_size > 64 * 1024 {
+			set_validation_error(ctx, "gfx.d3d11: apply_uniform_at: byte_size is invalid")
+			return false
+		}
+		if !d3d11_ensure_uniform_buffer(ctx, state, group, slot, aligned_size) {
+			return false
+		}
+
+		buffer := state.uniform_buffers[group][slot]
+		mapped: d3d11.MAPPED_SUBRESOURCE
+		hr := state.immediate.Map(state.immediate, cast(^d3d11.IResource)buffer, 0, .WRITE_DISCARD, {}, &mapped)
+		if d3d11_failed(hr) {
+			set_backend_error(ctx, "gfx.d3d11: failed to map uniform buffer")
+			return false
+		}
+		mem.copy(mapped.pData, slice.mapped, byte_size)
+		if aligned_size > u32(byte_size) {
+			padding := int(aligned_size) - byte_size
+			padding_ptr := rawptr(uintptr(mapped.pData) + uintptr(byte_size))
+			mem.zero(padding_ptr, padding)
+		}
+		state.immediate.Unmap(state.immediate, cast(^d3d11.IResource)buffer, 0)
+
+		buffers := [1]^d3d11.IBuffer{buffer}
+		if pipeline_info.has_binding_metadata {
+			vertex_slot := pipeline_info.uniform_slots[int(Shader_Stage.Vertex)][group][slot]
+			if vertex_slot.active {
+				state.immediate.VSSetConstantBuffers(state.immediate, vertex_slot.native_slot, 1, &buffers[0])
+			}
+			fragment_slot := pipeline_info.uniform_slots[int(Shader_Stage.Fragment)][group][slot]
+			if fragment_slot.active {
+				state.immediate.PSSetConstantBuffers(state.immediate, fragment_slot.native_slot, 1, &buffers[0])
+			}
+		} else {
+			state.immediate.VSSetConstantBuffers(state.immediate, u32(slot), 1, &buffers[0])
+			state.immediate.PSSetConstantBuffers(state.immediate, u32(slot), 1, &buffers[0])
+		}
+	}
+
+	if pipeline_info.has_binding_metadata {
+		for stage in 0..<2 {
+			if pipeline_info.uniform_slots[stage][group][slot].active {
+				state.current_bindings[stage].uniforms[group] |= slot_mask
+			}
+		}
+	} else {
+		for stage in 0..<2 {
+			state.current_bindings[stage].uniforms[0] |= slot_mask
+		}
+	}
+	return true
+}
+
+@(private)
+d3d11_apply_compute_uniform_at :: proc(ctx: ^Context, state: ^D3D11_State, group: u32, slot: int, slice: Transient_Slice, byte_size: int, native_buffer: ^d3d11.IBuffer) -> bool {
+	pipeline_info, pipeline_ok := state.compute_pipelines[state.current_compute_pipeline]
+	if !pipeline_ok {
+		set_validation_error(ctx, "gfx.d3d11: apply_uniform_at requires an applied compute pipeline")
+		return false
+	}
+	if !d3d11_validate_compute_uniform_upload(ctx, &pipeline_info, group, slot, byte_size) {
+		return false
+	}
+
+	d3d11_transient_chunk_unmap_for_bind(ctx, slice.buffer)
+
+	first_constant := u32(slice.offset) / 16
+	num_constants := (u32(byte_size) + 15) / 16
+	num_constants = ((num_constants + 15) / 16) * 16
+
+	compute_stage := int(Shader_Stage.Compute)
+	slot_mask := d3d11_slot_mask(u32(slot))
+	if state.context1 != nil {
+		buffers := [1]^d3d11.IBuffer{native_buffer}
+		first_constants := [1]u32{first_constant}
+		num_constants_arr := [1]u32{num_constants}
+		if pipeline_info.has_binding_metadata {
+			compute_slot := pipeline_info.uniform_slots[compute_stage][group][slot]
+			if compute_slot.active {
+				state.context1.CSSetConstantBuffers1(state.context1, compute_slot.native_slot, 1, &buffers[0], &first_constants[0], &num_constants_arr[0])
+				state.current_bindings[compute_stage].uniforms[group] |= slot_mask
+			}
+		} else {
+			state.context1.CSSetConstantBuffers1(state.context1, u32(slot), 1, &buffers[0], &first_constants[0], &num_constants_arr[0])
+			state.current_bindings[compute_stage].uniforms[0] |= slot_mask
+		}
+		return true
+	}
+
+	aligned_size := d3d11_uniform_buffer_size(byte_size)
+	if aligned_size == 0 || aligned_size > 64 * 1024 {
+		set_validation_error(ctx, "gfx.d3d11: apply_uniform_at: byte_size is invalid")
+		return false
+	}
+	if !d3d11_ensure_uniform_buffer(ctx, state, group, slot, aligned_size) {
+		return false
+	}
+	buffer := state.uniform_buffers[group][slot]
+	mapped: d3d11.MAPPED_SUBRESOURCE
+	hr := state.immediate.Map(state.immediate, cast(^d3d11.IResource)buffer, 0, .WRITE_DISCARD, {}, &mapped)
+	if d3d11_failed(hr) {
+		set_backend_error(ctx, "gfx.d3d11: failed to map uniform buffer")
+		return false
+	}
+	mem.copy(mapped.pData, slice.mapped, byte_size)
+	if aligned_size > u32(byte_size) {
+		padding := int(aligned_size) - byte_size
+		padding_ptr := rawptr(uintptr(mapped.pData) + uintptr(byte_size))
+		mem.zero(padding_ptr, padding)
+	}
+	state.immediate.Unmap(state.immediate, cast(^d3d11.IResource)buffer, 0)
+
+	buffers := [1]^d3d11.IBuffer{buffer}
+	if pipeline_info.has_binding_metadata {
+		compute_slot := pipeline_info.uniform_slots[compute_stage][group][slot]
+		if compute_slot.active {
+			state.immediate.CSSetConstantBuffers(state.immediate, compute_slot.native_slot, 1, &buffers[0])
+			state.current_bindings[compute_stage].uniforms[group] |= slot_mask
+		}
+	} else {
+		state.immediate.CSSetConstantBuffers(state.immediate, u32(slot), 1, &buffers[0])
+		state.current_bindings[compute_stage].uniforms[0] |= slot_mask
+	}
+	return true
+}
+
 d3d11_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
 	state := d3d11_state(ctx)
 	if state == nil || state.immediate == nil {

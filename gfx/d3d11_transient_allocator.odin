@@ -82,12 +82,58 @@ d3d11_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capac
 	handle := Buffer(handle_id)
 
 	state.buffers[handle] = D3D11_Buffer {
-		buffer = native_buffer,
-		usage  = role_usage,
-		size   = u32(capacity),
+		buffer               = native_buffer,
+		usage                = role_usage,
+		size                 = u32(capacity),
+		transient_mapped     = true,
+		transient_mapped_ptr = mapped.pData,
 	}
 
 	return handle, mapped.pData, true
+}
+
+// d3d11_transient_chunk_unmap_for_bind unmaps a transient chunk so a draw can
+// read from it. D3D11.0 forbids draws while a bound resource is mapped, so the
+// `apply_uniform_at` path Unmaps the chunk before the bind+draw and lazily
+// re-Maps via `d3d11_transient_chunk_ensure_mapped` on the next allocation.
+d3d11_transient_chunk_unmap_for_bind :: proc(ctx: ^Context, buffer: Buffer) {
+	state := d3d11_state(ctx)
+	if state == nil || state.immediate == nil {
+		return
+	}
+	info, ok := &state.buffers[buffer]
+	if !ok || info.buffer == nil || !info.transient_mapped {
+		return
+	}
+	state.immediate.Unmap(state.immediate, cast(^d3d11.IResource)info.buffer, 0)
+	info.transient_mapped = false
+	info.transient_mapped_ptr = nil
+}
+
+// d3d11_transient_chunk_ensure_mapped re-Maps a transient chunk with
+// WRITE_NO_OVERWRITE so the caller can keep handing out CPU pointers without
+// discarding previously written contents.
+d3d11_transient_chunk_ensure_mapped :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	state := d3d11_state(ctx)
+	if state == nil || state.immediate == nil {
+		return nil, false
+	}
+	info, ok := &state.buffers[buffer]
+	if !ok || info.buffer == nil {
+		return nil, false
+	}
+	if info.transient_mapped {
+		return info.transient_mapped_ptr, true
+	}
+	mapped: d3d11.MAPPED_SUBRESOURCE
+	hr := state.immediate.Map(state.immediate, cast(^d3d11.IResource)info.buffer, 0, .WRITE_NO_OVERWRITE, {}, &mapped)
+	if d3d11_failed(hr) || mapped.pData == nil {
+		set_backend_error(ctx, "gfx.d3d11: failed to remap transient chunk for write")
+		return nil, false
+	}
+	info.transient_mapped = true
+	info.transient_mapped_ptr = mapped.pData
+	return mapped.pData, true
 }
 
 d3d11_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {
@@ -98,7 +144,7 @@ d3d11_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {
 
 	if info, ok := state.buffers[buffer]; ok {
 		if info.buffer != nil {
-			if state.immediate != nil {
+			if state.immediate != nil && info.transient_mapped {
 				state.immediate.Unmap(state.immediate, cast(^d3d11.IResource)info.buffer, 0)
 			}
 			info.buffer.Release(info.buffer)
@@ -116,21 +162,27 @@ d3d11_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, b
 		return nil, false
 	}
 
-	info, ok := state.buffers[buffer]
+	info, ok := &state.buffers[buffer]
 	if !ok || info.buffer == nil {
 		set_invalid_handle_error(ctx, "gfx.d3d11: transient chunk handle is unknown")
 		return nil, false
 	}
 
-	state.immediate.Unmap(state.immediate, cast(^d3d11.IResource)info.buffer, 0)
+	if info.transient_mapped {
+		state.immediate.Unmap(state.immediate, cast(^d3d11.IResource)info.buffer, 0)
+	}
 
 	mapped: d3d11.MAPPED_SUBRESOURCE
 	hr := state.immediate.Map(state.immediate, cast(^d3d11.IResource)info.buffer, 0, .WRITE_DISCARD, {}, &mapped)
 	if d3d11_failed(hr) || mapped.pData == nil {
+		info.transient_mapped = false
+		info.transient_mapped_ptr = nil
 		set_backend_error(ctx, "gfx.d3d11: failed to remap transient chunk on reset")
 		return nil, false
 	}
 
+	info.transient_mapped = true
+	info.transient_mapped_ptr = mapped.pData
 	return mapped.pData, true
 }
 

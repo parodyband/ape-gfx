@@ -178,6 +178,67 @@ apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> boo
 	return backend_apply_uniforms(ctx, group, slot, data)
 }
 
+// apply_uniform_at binds a `Transient_Slice` as a uniform/constant buffer at a slot.
+//
+// The caller is expected to have already written `byte_size` bytes through
+// `slice.mapped`. `byte_size` must match the reflected uniform block size;
+// `slice.size` is the slot's alignment-padded size and is at least `byte_size`.
+//
+// Composes with the transient allocator (APE-20): allocate a slice from a
+// `Transient_Allocator` with `Transient_Usage.Uniform`, write into
+// `slice.mapped`, then bind it here. The slot is rebound on every call, so the
+// usual draw-time required-uniform check is satisfied.
+//
+// example:
+//   slice, _ := gfx.transient_alloc(allocator, size_of(Frame_Uniforms), .Uniform)
+//   (^Frame_Uniforms)(slice.mapped)^ = uniforms
+//   gfx.apply_uniform_at(&ctx, 0, 0, slice, size_of(Frame_Uniforms))
+apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	if !require_any_pass(ctx, "gfx.apply_uniform_at") {
+		return false
+	}
+
+	if group >= MAX_BINDING_GROUPS {
+		set_validation_error(ctx, "gfx.apply_uniform_at: group is out of range")
+		return false
+	}
+	if slot < 0 || slot >= MAX_UNIFORM_BLOCKS {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slot is out of range")
+		return false
+	}
+	if !buffer_valid(slice.buffer) {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slice has no backing buffer")
+		return false
+	}
+	if !require_resource(ctx, &ctx.buffer_pool, u64(slice.buffer), "gfx.apply_uniform_at", "transient buffer") {
+		return false
+	}
+	if byte_size <= 0 {
+		set_validation_error(ctx, "gfx.apply_uniform_at: byte_size must be positive")
+		return false
+	}
+	if slice.offset < 0 || slice.size <= 0 || byte_size > slice.size {
+		set_validation_error(ctx, "gfx.apply_uniform_at: byte_size exceeds slice size")
+		return false
+	}
+	if slice.offset % TRANSIENT_UNIFORM_ALIGNMENT != 0 {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slice offset is not aligned to TRANSIENT_UNIFORM_ALIGNMENT")
+		return false
+	}
+
+	buffer_state := query_buffer_state(ctx, slice.buffer)
+	if !buffer_state.valid {
+		set_invalid_handle_error(ctx, "gfx.apply_uniform_at: slice buffer handle is invalid")
+		return false
+	}
+	if !(.Uniform in buffer_state.usage) {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slice buffer is not uniform-capable")
+		return false
+	}
+
+	return backend_apply_uniform_at(ctx, group, slot, slice, byte_size)
+}
+
 // draw issues a non-indexed or indexed draw depending on the active pipeline.
 // When the active pipeline declares an index_type, base_element and num_elements
 // are indices; otherwise they are vertices.

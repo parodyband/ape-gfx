@@ -271,6 +271,10 @@ null_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -
 	return true
 }
 
+null_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	return true
+}
+
 null_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
 	return true
 }
@@ -328,6 +332,18 @@ null_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {
 		delete_key(&state.buffers, buffer)
 	}
 	release_resource_id(&ctx.buffer_pool, u64(buffer))
+}
+
+null_resolve_transient_chunk_mapped :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	state := null_state(ctx)
+	if state == nil {
+		return nil, false
+	}
+	storage, ok := state.transient_chunks[buffer]
+	if !ok {
+		return nil, false
+	}
+	return raw_data(storage), true
 }
 
 null_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {

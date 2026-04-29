@@ -435,6 +435,20 @@ backend_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range
 	return false
 }
 
+backend_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_apply_uniform_at(ctx, group, slot, slice, byte_size)
+	case .D3D11:
+		return d3d11_apply_uniform_at(ctx, group, slot, slice, byte_size)
+	case .Vulkan:
+		return vulkan_apply_uniform_at(ctx, group, slot, slice, byte_size)
+	case .Auto:
+	}
+
+	return false
+}
+
 backend_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
 	switch ctx.backend {
 	case .Null:
@@ -515,6 +529,20 @@ backend_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {
 		vulkan_destroy_transient_chunk(ctx, buffer)
 	case .Auto:
 	}
+}
+
+backend_resolve_transient_chunk_mapped :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	switch ctx.backend {
+	case .Null:
+		return null_resolve_transient_chunk_mapped(ctx, buffer)
+	case .D3D11:
+		return d3d11_transient_chunk_ensure_mapped(ctx, buffer)
+	case .Vulkan:
+		return vulkan_resolve_transient_chunk_mapped(ctx, buffer)
+	case .Auto:
+	}
+
+	return nil, false
 }
 
 backend_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
