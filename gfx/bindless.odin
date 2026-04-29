@@ -1,0 +1,257 @@
+package gfx
+
+// Bindless / resource-array public API sketch — AAA roadmap item 26 / APE-22.
+//
+// This file is a header-only stub. Every entry point panics. The shapes here
+// reflect the design in docs/private/gfx-bindless-note.md, which composes
+// with:
+//
+//   gfx-bindless-note.md §5    — storage shape: Binding_Group_Array_Desc for
+//                                fixed arrays inside the immutable group;
+//                                Binding_Heap for runtime / bindless arrays.
+//                                Item 27 picks formally.
+//   gfx-bindless-note.md §6    — indexing model: shader declarations carry
+//                                constant / dynamic-uniform / fully-dynamic
+//                                intent; one public apply surface.
+//   gfx-bindless-note.md §7    — lifetime: descriptor writes are visible at
+//                                the next `submit` boundary; per-entry reuse
+//                                is fence-gated via Timeline_Semaphore.
+//   gfx-bindless-note.md §9    — D3D11 fallback: feature-gated fixed-array
+//                                expansion; runtime / bindless rejected.
+//                                Item 29 picks formally.
+//   gfx-slang-reflection-contract.md "Descriptor Arrays And Bindless
+//                                Direction" — generated-binding shapes that
+//                                target this runtime API.
+//   binding_groups.odin        — existing immutable-group surface that this
+//                                file extends without rewriting.
+//   queue.odin                 — Timeline_Semaphore is the public sync for
+//                                heap-slot reuse.
+//
+// Until item 27 picks the formal storage shape, the heap-side verbs panic
+// with `unimplemented (APE-22 sketch only)`. The fixed-array shape on
+// `Binding_Group_Desc` is sketched as `Binding_Group_Array_Desc` here; the
+// existing `Binding_Group_Desc` type in types.odin will grow an `arrays`
+// payload when item 27 lands the storage decision. Adding the field today
+// would orphan it on every Binding_Group_Desc literal in the samples;
+// holding the field for item 27 keeps the v0.1 contract intact.
+
+// MAX_BINDING_GROUP_ARRAYS bounds the number of distinct fixed-array slots
+// in one `Binding_Group_Desc`. The number must be small because every entry
+// holds a slice header and is part of the immutable group payload.
+//
+// Item 27 confirms or shrinks this.
+MAX_BINDING_GROUP_ARRAYS :: 8
+
+// MAX_BINDING_HEAPS bounds the number of `Binding_Heap` handles a pipeline
+// layout may bind in one draw / dispatch.
+//
+// One heap per logical pipeline-layout slot; `MAX_BINDING_GROUPS` is the
+// matching upper bound for groups, so heap and group budgets compose.
+MAX_BINDING_HEAPS :: MAX_BINDING_GROUPS
+
+// Binding_Group_Array_Desc is the immutable, fixed-count array payload that
+// will live inside `Binding_Group_Desc.arrays` once item 27 commits to the
+// storage shape.
+//
+// `kind` is `.Resource_View` or `.Sampler`; uniform-block arrays are not in
+// the contract (uniform arrays go through the existing `apply_uniform_*`
+// path).
+//
+// `slot` names the *logical* base slot reflected from Slang. The array
+// occupies `[slot, slot + count)` in the layout's per-kind slot space.
+// Backend-native expansion uses `Binding_Group_Native_Binding_Desc` for the
+// base slot; the per-element native slots are `base + index` and are not
+// emitted into `native_bindings` separately.
+//
+// `views` and `samplers` are mutually exclusive — exactly one is non-empty,
+// gated by `kind`. `len(views)` (or `len(samplers)`) must equal the
+// generated array's reflected `count` for full population, or the user must
+// use the `_range` setter from the generated binding to populate a subset.
+// Slots not populated by `_range` are validation errors at
+// `create_binding_group` time.
+//
+// `first_index` is meaningful only for the `_range` setter writing into a
+// staging payload before group creation; the create call collapses partial
+// ranges into the final array and rejects gaps.
+Binding_Group_Array_Desc :: struct {
+    active:      bool,
+    kind:        Shader_Binding_Kind,
+    slot:        u32,
+    first_index: u32,
+    count:       u32,
+    views:       []View,
+    samplers:    []Sampler,
+}
+
+// Binding_Heap is the opaque handle for a long-lived, mutable descriptor
+// table.
+//
+// Created by `create_binding_heap`. Slots are written individually with
+// `update_binding_heap_views` / `update_binding_heap_samplers`. Unlike
+// `Binding_Group`, a heap is *not* immutable; per-entry reuse is fence-
+// gated through `Timeline_Semaphore` (see §7.2 of the bindless note).
+//
+// One heap holds one element kind — sampled views, storage images, storage
+// buffers, *or* samplers. Mixed-kind heaps are not in the public contract
+// (Vulkan and D3D12 both forbid them in their natural form).
+Binding_Heap :: distinct u64
+Binding_Heap_Invalid :: Binding_Heap(0)
+
+// Binding_Heap_Desc creates a `Binding_Heap`.
+//
+// Exactly one of (`view_kind`, `samplers`) names the heap's element kind:
+//
+//   samplers = true                  -> sampler heap; view_kind / format /
+//                                       stride must be zero-init.
+//   samplers = false, view_kind = … -> resource-view heap; field semantics
+//                                       follow `Binding_Group_Resource_View_Layout_Desc`.
+//
+// `capacity` is the number of slots. Fence-gated reuse means a 4096-slot
+// heap can serve far more than 4096 distinct resources over its lifetime;
+// pick capacity based on "how many descriptors must be in flight at once",
+// not "how many resources will ever pass through".
+//
+// `access` follows the existing `Shader_Resource_Access` enum
+// (`.Read` / `.Write` / `.Read_Write`). Mixing access kinds inside one
+// heap is rejected; create separate heaps if a binding needs both.
+Binding_Heap_Desc :: struct {
+    label:                 string,
+    capacity:              u32,
+    samplers:              bool,
+    view_kind:             View_Kind,
+    access:                Shader_Resource_Access,
+    storage_image_format:  Pixel_Format,
+    storage_buffer_stride: u32,
+}
+
+// Binding_Heap_Slot_Range names a contiguous slot range for batched
+// updates and partial binds.
+//
+// `count == 0` is a no-op (validated as success). `first_index + count`
+// must be `<= capacity`.
+Binding_Heap_Slot_Range :: struct {
+    first_index: u32,
+    count:       u32,
+}
+
+// create_binding_heap allocates a long-lived descriptor heap.
+//
+// Must be called on the Context thread. Returns `Binding_Heap_Invalid` and
+// `false` on validation/backend failure; check `last_error(ctx)`.
+//
+// Backends:
+//
+//   D3D11   — rejected with `Features.bindless_resource_tables = false`.
+//             See §9 of the bindless note.
+//   D3D12   — allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
+//             matching `D3D12_DESCRIPTOR_HEAP_TYPE`.
+//   Vulkan  — allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
+//             with `UPDATE_AFTER_BIND` / `PARTIALLY_BOUND` /
+//             `runtimeDescriptorArray` flags from
+//             `VK_EXT_descriptor_indexing`.
+//
+// example:
+//   heap, ok := gfx.create_binding_heap(&ctx, gfx.Binding_Heap_Desc{
+//       label     = "particle textures",
+//       capacity  = 4096,
+//       view_kind = .Sampled,
+//       access    = .Read,
+//   })
+create_binding_heap :: proc(ctx: ^Context, desc: Binding_Heap_Desc) -> (Binding_Heap, bool) {
+    panic("gfx.create_binding_heap: unimplemented (APE-22 sketch only)")
+}
+
+// destroy_binding_heap releases a `Binding_Heap`'s backing storage.
+//
+// All in-flight submits that bound or read the heap must have completed;
+// the call does not block on its own slots. The typical caller is shutdown.
+destroy_binding_heap :: proc(ctx: ^Context, heap: Binding_Heap) {
+    panic("gfx.destroy_binding_heap: unimplemented (APE-22 sketch only)")
+}
+
+// binding_heap_capacity reports the slot count a heap was created with.
+//
+// Returns 0 for an invalid handle.
+binding_heap_capacity :: proc(ctx: ^Context, heap: Binding_Heap) -> u32 {
+    panic("gfx.binding_heap_capacity: unimplemented (APE-22 sketch only)")
+}
+
+// update_binding_heap_views writes a contiguous range of resource-view
+// descriptors into a heap.
+//
+// The write is **visible to every submit issued after this call returns**
+// (§7.1 of the bindless note). It is *not* visible to in-flight submits;
+// a slot already read by an unfinished submit must be released first.
+//
+// Validation:
+//
+//   - `heap` is a resource-view heap (not a sampler heap).
+//   - `len(views)` slots fit at `[first_index, first_index + len(views))`.
+//   - every `view` in `views` is valid and matches the heap's
+//     `view_kind` / `access` / `storage_image_format` /
+//     `storage_buffer_stride`.
+//   - no slot in the range has a pending fence recorded by
+//     `release_binding_heap_slot` that has not yet retired (§7.2).
+//
+// Returns false on validation/backend failure; check `last_error(ctx)`.
+//
+// example:
+//   gfx.update_binding_heap_views(&ctx, heap, 0, []gfx.View{
+//       tex_smoke, tex_spark, tex_glow,
+//   })
+update_binding_heap_views :: proc(ctx: ^Context, heap: Binding_Heap, first_index: u32, views: []View) -> bool {
+    panic("gfx.update_binding_heap_views: unimplemented (APE-22 sketch only)")
+}
+
+// update_binding_heap_samplers writes a contiguous range of sampler
+// descriptors into a sampler heap. Mirrors `update_binding_heap_views`.
+update_binding_heap_samplers :: proc(ctx: ^Context, heap: Binding_Heap, first_index: u32, samplers: []Sampler) -> bool {
+    panic("gfx.update_binding_heap_samplers: unimplemented (APE-22 sketch only)")
+}
+
+// release_binding_heap_slot records that slot `index` will not be safe to
+// overwrite until `frame_done` has been reached.
+//
+// The heap remembers the wait. The next `update_binding_heap_views` /
+// `update_binding_heap_samplers` for that slot is rejected as a validation
+// error until `gfx.timeline_semaphore_value(frame_done.semaphore) >=
+// frame_done.value`. Callers that already serialize frame pacing on the
+// CPU side may pass `{Timeline_Semaphore_Invalid, 0}` to release without
+// a fence (§7.2 of the bindless note).
+//
+// Releasing a slot does not zero or null its descriptor; readers that race
+// the release see the old contents. The fence guarantees no submit reads
+// the descriptor after release completes.
+release_binding_heap_slot :: proc(ctx: ^Context, heap: Binding_Heap, index: u32, frame_done: Semaphore_Wait) -> bool {
+    panic("gfx.release_binding_heap_slot: unimplemented (APE-22 sketch only)")
+}
+
+// apply_binding_heap binds a `Binding_Heap` at one logical pipeline-layout
+// slot, parallel to `apply_binding_group`.
+//
+// `group` is the logical group index the pipeline layout reserved for the
+// heap (the layout slot's `kind == .Heap`). Mixing `apply_binding_group`
+// and `apply_binding_heap` for the same logical slot in one draw is a
+// validation error.
+//
+// Per the indexing model in §6, the *shader* declaration decides whether
+// reads use a constant, dynamic-uniform, or fully-dynamic index into the
+// heap. The runtime does not pick.
+apply_binding_heap :: proc(ctx: ^Context, group: u32, heap: Binding_Heap) -> bool {
+    panic("gfx.apply_binding_heap: unimplemented (APE-22 sketch only)")
+}
+
+// cmd_apply_binding_heap is the encoder-side counterpart to
+// `apply_binding_heap`, recorded into a `Command_List`.
+//
+// Lands when `Command_List` recording lands; today this is the same kind
+// of forward-declared sketch as the rest of `command_list.odin`.
+cmd_apply_binding_heap :: proc(encoder: ^Render_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
+    panic("gfx.cmd_apply_binding_heap: unimplemented (APE-22 sketch only)")
+}
+
+// cmd_apply_compute_binding_heap mirrors `cmd_apply_binding_heap` for
+// compute encoders.
+cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
+    panic("gfx.cmd_apply_compute_binding_heap: unimplemented (APE-22 sketch only)")
+}
