@@ -220,6 +220,7 @@ SAMPLE_SHADER_JOBS :: [?]Shader_Job {
 	{name = "improved_shadows", kind = .Graphics},
 	{name = "mrt", kind = .Graphics},
 	{name = "dispatch_indirect_fill", kind = .Compute},
+	{name = "gpu_driven_indirect_args", kind = .Compute},
 }
 
 main :: proc() {
