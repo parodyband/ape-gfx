@@ -1118,7 +1118,32 @@ d3d11_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offs
 }
 
 d3d11_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
-	panic("gfx.d3d11: dispatch_indirect is unimplemented (APE-7 declaration only; backend lands in APE-9)")
+	state := d3d11_state(ctx)
+	if state == nil || state.immediate == nil {
+		set_backend_error(ctx, "gfx.d3d11: backend state is not initialized")
+		return false
+	}
+
+	pipeline_info, pipeline_ok := state.compute_pipelines[state.current_compute_pipeline]
+	if !pipeline_ok {
+		set_validation_error(ctx, "gfx.d3d11: dispatch_indirect requires an applied compute pipeline")
+		return false
+	}
+
+	if !d3d11_validate_dispatch_bindings(ctx, state, &pipeline_info) {
+		return false
+	}
+
+	buffer_info, buffer_ok := state.buffers[indirect_buffer]
+	if !buffer_ok || buffer_info.buffer == nil {
+		set_invalid_handle_error(ctx, "gfx.d3d11: indirect buffer handle is unknown")
+		return false
+	}
+
+	// The indirect buffer was tagged with D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS
+	// at creation (APE-7); D3D11 implicit transitions handle the buffer state.
+	state.immediate.DispatchIndirect(state.immediate, buffer_info.buffer, u32(offset))
+	return true
 }
 
 d3d11_end_pass :: proc(ctx: ^Context) -> bool {

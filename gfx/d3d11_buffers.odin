@@ -290,6 +290,11 @@ d3d11_buffer_usage :: proc(usage: Buffer_Usage) -> d3d11.USAGE {
 	if .Storage in usage {
 		return .DEFAULT
 	}
+	// Indirect-only buffers carry MiscFlags=DRAWINDIRECT_ARGS with BindFlags=0;
+	// D3D11 rejects USAGE=IMMUTABLE in that shape (E_INVALIDARG), so use DEFAULT.
+	if .Indirect in usage && d3d11_buffer_bind_flags(usage) == {} {
+		return .DEFAULT
+	}
 	if .Immutable in usage {
 		return .IMMUTABLE
 	}

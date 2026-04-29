@@ -252,6 +252,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"build_d3d11_triangle.ps1",
 		"build_d3d11_triangle_indirect.ps1",
 		"build_d3d11_triangle_minimal.ps1",
+		"build_d3d11_dispatch_indirect.ps1",
 	}
 	if !options.skip_d3d11_builds {
 		for script in d3d11_build_scripts {
@@ -280,6 +281,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"run_d3d11_triangle.ps1",
 		"run_d3d11_triangle_indirect.ps1",
 		"run_d3d11_triangle_minimal.ps1",
+		"run_d3d11_dispatch_indirect.ps1",
 	}
 	if !options.skip_d3d11_runs {
 		for script in d3d11_run_scripts {

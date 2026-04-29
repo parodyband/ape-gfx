@@ -1,5 +1,7 @@
 package main
 
+import "core:fmt"
+import "core:os"
 import app "ape:app"
 import gfx "ape:gfx"
 import shader_assets "ape:shader"
@@ -53,11 +55,15 @@ main :: proc() {
 	indirect_args := [?]gfx.Draw_Indirect_Args {
 		{vertex_count = 3, instance_count = 1, first_vertex = 0, first_instance = 0},
 	}
-	indirect_buffer, _ := gfx.create_buffer(&ctx, {
+	indirect_buffer, indirect_buffer_ok := gfx.create_buffer(&ctx, {
 		label = "triangle indirect args",
 		usage = {.Indirect, .Immutable},
 		data  = gfx.range(indirect_args[:]),
 	})
+	if !indirect_buffer_ok {
+		fmt.eprintln("indirect buffer creation failed:", gfx.last_error(&ctx))
+		os.exit(1)
+	}
 	defer gfx.destroy(&ctx, indirect_buffer)
 
 	shader_package, _ := shader_assets.load("build/shaders/triangle.ashader")

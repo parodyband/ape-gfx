@@ -219,6 +219,7 @@ SAMPLE_SHADER_JOBS :: [?]Shader_Job {
 	{name = "shadow_depth", kind = .Graphics},
 	{name = "improved_shadows", kind = .Graphics},
 	{name = "mrt", kind = .Graphics},
+	{name = "dispatch_indirect_fill", kind = .Compute},
 }
 
 main :: proc() {
