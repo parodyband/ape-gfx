@@ -81,6 +81,7 @@ $PublicValidationScripts = @(
 	"test_d3d11_storage_views.ps1",
 	"test_shaderc_modern_api_probe.ps1",
 	"test_shaderc_register_free_samples.ps1",
+	"test_shaderc_descriptor_table_slots.ps1",
 	"test_shaderc_invalid_vertex_layout.ps1",
 	"test_shaderc_storage_resource_metadata.ps1",
 	"test_shader_hot_reload.ps1"

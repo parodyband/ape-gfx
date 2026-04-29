@@ -465,7 +465,9 @@ Planned order:
 - [x] Bind and validate the minimum modern Slang API surface for `IGlobalSession`, `ISession`, target/profile setup, and session creation.
 - [x] Use the modern module/component path for normal `.ashader` package generation.
 - [x] Read reflection JSON from modern `ProgramLayout` and used-binding data from entry-point metadata.
-- [ ] Next: replace ad-hoc generated binding checks with focused validation around `ProgramLayout` metadata, then design binding groups on top of that contract.
+- [x] Add focused descriptor-table validation for register-free constant buffers, sampled textures, samplers, storage images, and storage buffers across D3D11 and Vulkan records.
+- [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
+- [ ] Next: design the first generated binding-group contract on top of reflected names, logical slots, native slots, and native spaces.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
@@ -487,6 +489,7 @@ Current shader reflection validation is covered by:
 .\tools\compile_shaders.ps1 -All
 .\tools\test_shaderc_modern_api_probe.ps1
 .\tools\test_shaderc_register_free_samples.ps1
+.\tools\test_shaderc_descriptor_table_slots.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1
 .\tools\test_d3d11_invalid_pipeline_layout.ps1

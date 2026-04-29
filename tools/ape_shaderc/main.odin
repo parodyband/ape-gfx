@@ -99,6 +99,19 @@ Binding_Record :: struct {
 	storage_buffer_stride: u32,
 }
 
+Reflection_Parameter :: struct {
+	name: string,
+	binding_kind: string,
+	slot: u32,
+	type_value: json.Value,
+}
+
+Reflection_Model :: struct {
+	value: json.Value,
+	root: json.Object,
+	parameters: [dynamic]Reflection_Parameter,
+}
+
 Uniform_Block :: struct {
 	name: string,
 	size: u32,
@@ -619,6 +632,14 @@ compile_modern_component_stage :: proc(
 	}
 	defer release_slang_blob(reflection_blob)
 
+	reflection_model, reflection_model_ok := parse_reflection_model(options, stage, reflection)
+	if !reflection_model_ok {
+		delete(bytecode)
+		delete(reflection)
+		return {}, false
+	}
+	defer delete_reflection_model(&reflection_model)
+
 	metadata: ^ISlangMetadata
 	if !get_modern_entry_point_metadata(linked, target_index, &metadata) {
 		delete(bytecode)
@@ -627,7 +648,7 @@ compile_modern_component_stage :: proc(
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)metadata)
 
-	if !collect_bindings_from_reflection(slang, metadata, layout, stage, reflection, bindings, uniform_blocks) {
+	if !collect_bindings_from_reflection(slang, metadata, layout, stage, reflection_model, bindings, uniform_blocks) {
 		delete(bytecode)
 		delete(reflection)
 		return {}, false
@@ -635,7 +656,7 @@ compile_modern_component_stage :: proc(
 
 	if stage.stage == .Vertex && stage.entry == "vs_main" {
 		stage_vertex_layout: Generated_Vertex_Layout
-		if !collect_vertex_layout_from_json(options, stage, reflection, &stage_vertex_layout) {
+		if !collect_vertex_layout_from_reflection(options, stage, reflection_model.root, &stage_vertex_layout) {
 			delete(bytecode)
 			delete(reflection)
 			delete_vertex_layout(&stage_vertex_layout)
@@ -652,7 +673,7 @@ compile_modern_component_stage :: proc(
 
 	if stage.stage == .Compute && stage.entry == "cs_main" {
 		stage_compute_thread_group: Compute_Thread_Group_Size
-		if !collect_compute_thread_group_from_json(options, stage, reflection, &stage_compute_thread_group) {
+		if !collect_compute_thread_group_from_reflection(options, stage, reflection_model.root, &stage_compute_thread_group) {
 			delete(bytecode)
 			delete(reflection)
 			return {}, false
@@ -814,7 +835,7 @@ collect_bindings_from_reflection :: proc(
 	metadata: ^ISlangMetadata,
 	reflection: rawptr,
 	stage: Stage_Desc,
-	reflection_json: []byte,
+	reflection_model: Reflection_Model,
 	bindings: ^[dynamic]Binding_Record,
 	uniform_blocks: ^[dynamic]Uniform_Block,
 ) -> bool {
@@ -871,7 +892,7 @@ collect_bindings_from_reflection :: proc(
 
 		kind, kind_ok := binding_kind_from_category(category)
 		if !kind_ok && category == .Descriptor_Table_Slot {
-			kind, kind_ok = binding_kind_from_descriptor_json(reflection_json, name, slot)
+			kind, kind_ok = binding_kind_from_descriptor_parameter(reflection_model, name, slot)
 		}
 		if !kind_ok {
 			continue
@@ -889,8 +910,8 @@ collect_bindings_from_reflection :: proc(
 			}
 			binding_size = block_size
 		} else if kind == .Resource_View {
-			metadata_kind, metadata_access, metadata_format, metadata_stride, metadata_ok := resource_view_metadata_from_json(
-				reflection_json,
+			metadata_kind, metadata_access, metadata_format, metadata_stride, metadata_ok := resource_view_metadata_from_reflection(
+				reflection_model,
 				name,
 				category,
 				slot,
@@ -969,25 +990,103 @@ binding_kind_limit :: proc(kind: Binding_Kind) -> u32 {
 	return 0
 }
 
-collect_vertex_layout_from_json :: proc(
-	options: Options,
-	stage: Stage_Desc,
-	reflection_json: []byte,
-	out_layout: ^Generated_Vertex_Layout,
-) -> bool {
+parse_reflection_model :: proc(options: Options, stage: Stage_Desc, reflection_json: []byte) -> (Reflection_Model, bool) {
 	value, err := json.parse(reflection_json)
-	defer json.destroy_value(value)
 	if err != nil {
-		fmt.eprintln("ape_shaderc: failed to parse Slang reflection JSON for vertex layout: ", options.source_path, ":", stage.entry)
-		return false
+		fmt.eprintln("ape_shaderc: failed to parse Slang reflection JSON: ", options.source_path, ":", stage.entry)
+		return {}, false
 	}
 
 	root, root_ok := json_object(value)
 	if !root_ok {
+		json.destroy_value(value)
 		fmt.eprintln("ape_shaderc: Slang reflection root is not an object: ", options.source_path, ":", stage.entry)
-		return false
+		return {}, false
 	}
 
+	model := Reflection_Model {
+		value = value,
+		root = root,
+	}
+
+	parameters_value, parameters_ok := json_field(root, "parameters")
+	if !parameters_ok {
+		return model, true
+	}
+
+	parameters, parameters_array_ok := json_array(parameters_value)
+	if !parameters_array_ok {
+		delete_reflection_model(&model)
+		fmt.eprintln("ape_shaderc: Slang reflection parameters field is not an array: ", options.source_path, ":", stage.entry)
+		return {}, false
+	}
+
+	for parameter_value in parameters {
+		parameter, parameter_ok := json_object(parameter_value)
+		if !parameter_ok {
+			continue
+		}
+
+		name, name_ok := json_string_field(parameter, "name")
+		if !name_ok || name == "" {
+			continue
+		}
+
+		binding_value, binding_ok := json_field(parameter, "binding")
+		if !binding_ok {
+			continue
+		}
+		binding, binding_object_ok := json_object(binding_value)
+		if !binding_object_ok {
+			continue
+		}
+
+		binding_kind, binding_kind_ok := json_string_field(binding, "kind")
+		slot, slot_ok := json_u32_field(binding, "index")
+		type_value, type_ok := json_field(parameter, "type")
+		if !binding_kind_ok || !slot_ok || !type_ok {
+			continue
+		}
+
+		append(&model.parameters, Reflection_Parameter {
+			name = name,
+			binding_kind = binding_kind,
+			slot = slot,
+			type_value = type_value,
+		})
+	}
+
+	return model, true
+}
+
+delete_reflection_model :: proc(model: ^Reflection_Model) {
+	if model == nil {
+		return
+	}
+
+	if model.parameters != nil {
+		delete(model.parameters)
+	}
+	json.destroy_value(model.value)
+	model^ = {}
+}
+
+reflection_parameter_by_binding :: proc(model: Reflection_Model, name: string, binding_kind: string, slot: u32) -> (Reflection_Parameter, bool) {
+	for parameter in model.parameters {
+		if parameter.name == name && parameter.binding_kind == binding_kind && parameter.slot == slot {
+			return parameter, true
+		}
+	}
+
+	return {}, false
+}
+
+collect_vertex_layout_from_reflection :: proc(
+	options: Options,
+	stage: Stage_Desc,
+	root: json.Object,
+	out_layout: ^Generated_Vertex_Layout,
+) -> bool {
 	entry_points_value, entry_points_ok := json_field(root, "entryPoints")
 	if !entry_points_ok {
 		fmt.eprintln("ape_shaderc: Slang reflection has no entryPoints array: ", options.source_path, ":", stage.entry)
@@ -1155,25 +1254,12 @@ collect_vertex_attributes_from_type :: proc(
 	return true
 }
 
-collect_compute_thread_group_from_json :: proc(
+collect_compute_thread_group_from_reflection :: proc(
 	options: Options,
 	stage: Stage_Desc,
-	reflection_json: []byte,
+	root: json.Object,
 	out_group: ^Compute_Thread_Group_Size,
 ) -> bool {
-	value, err := json.parse(reflection_json)
-	defer json.destroy_value(value)
-	if err != nil {
-		fmt.eprintln("ape_shaderc: failed to parse Slang reflection JSON for compute thread group size: ", options.source_path, ":", stage.entry)
-		return false
-	}
-
-	root, root_ok := json_object(value)
-	if !root_ok {
-		fmt.eprintln("ape_shaderc: Slang reflection root is not an object: ", options.source_path, ":", stage.entry)
-		return false
-	}
-
 	entry_points_value, entry_points_ok := json_field(root, "entryPoints")
 	if !entry_points_ok {
 		fmt.eprintln("ape_shaderc: Slang reflection has no entryPoints array: ", options.source_path, ":", stage.entry)
@@ -1459,66 +1545,13 @@ binding_kind_from_category :: proc(category: Slang_Parameter_Category) -> (Bindi
 	return .Uniform_Block, false
 }
 
-binding_kind_from_descriptor_json :: proc(reflection_json: []byte, name: string, slot: u32) -> (Binding_Kind, bool) {
-	value, err := json.parse(reflection_json)
-	defer json.destroy_value(value)
-	if err != nil {
+binding_kind_from_descriptor_parameter :: proc(reflection_model: Reflection_Model, name: string, slot: u32) -> (Binding_Kind, bool) {
+	parameter, parameter_ok := reflection_parameter_by_binding(reflection_model, name, "descriptorTableSlot", slot)
+	if !parameter_ok {
 		return .Uniform_Block, false
 	}
 
-	root, root_ok := json_object(value)
-	if !root_ok {
-		return .Uniform_Block, false
-	}
-
-	parameters_value, parameters_ok := json_field(root, "parameters")
-	if !parameters_ok {
-		return .Uniform_Block, false
-	}
-
-	parameters, parameters_array_ok := json_array(parameters_value)
-	if !parameters_array_ok {
-		return .Uniform_Block, false
-	}
-
-	for parameter_value in parameters {
-		parameter, parameter_ok := json_object(parameter_value)
-		if !parameter_ok {
-			continue
-		}
-
-		parameter_name, parameter_name_ok := json_string_field(parameter, "name")
-		if !parameter_name_ok || parameter_name != name {
-			continue
-		}
-
-		binding_value, binding_ok := json_field(parameter, "binding")
-		if !binding_ok {
-			continue
-		}
-		binding, binding_object_ok := json_object(binding_value)
-		if !binding_object_ok {
-			continue
-		}
-
-		parameter_binding_kind, parameter_binding_kind_ok := json_string_field(binding, "kind")
-		if !parameter_binding_kind_ok || parameter_binding_kind != "descriptorTableSlot" {
-			continue
-		}
-		parameter_slot, parameter_slot_ok := json_u32_field(binding, "index")
-		if !parameter_slot_ok || parameter_slot != slot {
-			continue
-		}
-
-		type_value, type_ok := json_field(parameter, "type")
-		if !type_ok {
-			return .Uniform_Block, false
-		}
-
-		return binding_kind_from_json_type(type_value)
-	}
-
-	return .Uniform_Block, false
+	return binding_kind_from_json_type(parameter.type_value)
 }
 
 binding_kind_from_json_type :: proc(type_value: json.Value) -> (Binding_Kind, bool) {
@@ -1544,8 +1577,8 @@ binding_kind_from_json_type :: proc(type_value: json.Value) -> (Binding_Kind, bo
 	return .Uniform_Block, false
 }
 
-resource_view_metadata_from_json :: proc(
-	reflection_json: []byte,
+resource_view_metadata_from_reflection :: proc(
+	reflection_model: Reflection_Model,
 	name: string,
 	category: Slang_Parameter_Category,
 	slot: u32,
@@ -1555,62 +1588,8 @@ resource_view_metadata_from_json :: proc(
 		return .Sampled, .Unknown, .Invalid, 0, false
 	}
 
-	value, err := json.parse(reflection_json)
-	defer json.destroy_value(value)
-	if err != nil {
-		return .Sampled, .Unknown, .Invalid, 0, false
-	}
-
-	root, root_ok := json_object(value)
-	if !root_ok {
-		return .Sampled, .Unknown, .Invalid, 0, false
-	}
-
-	parameters_value, parameters_ok := json_field(root, "parameters")
-	if !parameters_ok {
-		return .Sampled, .Unknown, .Invalid, 0, false
-	}
-
-	parameters, parameters_array_ok := json_array(parameters_value)
-	if !parameters_array_ok {
-		return .Sampled, .Unknown, .Invalid, 0, false
-	}
-
-	for parameter_value in parameters {
-		parameter, parameter_ok := json_object(parameter_value)
-		if !parameter_ok {
-			continue
-		}
-
-		parameter_name, parameter_name_ok := json_string_field(parameter, "name")
-		if !parameter_name_ok || parameter_name != name {
-			continue
-		}
-
-		binding_value, binding_ok := json_field(parameter, "binding")
-		if !binding_ok {
-			continue
-		}
-		binding, binding_object_ok := json_object(binding_value)
-		if !binding_object_ok {
-			continue
-		}
-
-		parameter_binding_kind, parameter_binding_kind_ok := json_string_field(binding, "kind")
-		if !parameter_binding_kind_ok || parameter_binding_kind != binding_kind {
-			continue
-		}
-		parameter_slot, parameter_slot_ok := json_u32_field(binding, "index")
-		if !parameter_slot_ok || parameter_slot != slot {
-			continue
-		}
-
-		type_value, type_ok := json_field(parameter, "type")
-		if !type_ok {
-			return .Sampled, .Unknown, .Invalid, 0, false
-		}
-
-		return resource_view_metadata_from_type_json(type_value, binding_kind)
+	if parameter, parameter_ok := reflection_parameter_by_binding(reflection_model, name, binding_kind, slot); parameter_ok {
+		return resource_view_metadata_from_type_json(parameter.type_value, binding_kind)
 	}
 
 	return .Sampled, .Unknown, .Invalid, 0, false
