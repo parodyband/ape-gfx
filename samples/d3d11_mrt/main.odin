@@ -27,12 +27,6 @@ Frame_Uniforms :: struct {
 	ape_frame: [4]f32,
 }
 
-Render_Target :: struct {
-	image: gfx.Image,
-	color_view: gfx.View,
-	sample_view: gfx.View,
-}
-
 #assert(size_of(Frame_Uniforms) == mrt_shader.SIZE_FrameUniforms)
 #assert(offset_of(Frame_Uniforms, ape_frame) == mrt_shader.OFFSET_FrameUniforms_ape_frame)
 #assert(u32(size_of(Color_Vertex)) == mrt_shader.VERTEX_STRIDE)
@@ -41,74 +35,6 @@ Render_Target :: struct {
 #assert(u32(size_of(Texture_Vertex)) == textured_quad_shader.VERTEX_STRIDE)
 #assert(offset_of(Texture_Vertex, position) == textured_quad_shader.ATTR_POSITION_OFFSET)
 #assert(offset_of(Texture_Vertex, uv) == textured_quad_shader.ATTR_TEXCOORD_OFFSET)
-
-create_render_target :: proc(ctx: ^gfx.Context, label: string) -> (Render_Target, bool) {
-	target: Render_Target
-
-	image, image_ok := gfx.create_image(ctx, {
-		label = fmt.tprintf("%s image", label),
-		kind = .Image_2D,
-		usage = {.Texture, .Color_Attachment},
-		width = RENDER_TARGET_SIZE,
-		height = RENDER_TARGET_SIZE,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
-		format = .RGBA8,
-	})
-	if !image_ok {
-		fmt.eprintln("render target image creation failed: ", gfx.last_error(ctx))
-		return {}, false
-	}
-	target.image = image
-
-	color_view, color_view_ok := gfx.create_view(ctx, {
-		label = fmt.tprintf("%s color attachment", label),
-		color_attachment = {
-			image = target.image,
-			format = .RGBA8,
-		},
-	})
-	if !color_view_ok {
-		fmt.eprintln("render target color view creation failed: ", gfx.last_error(ctx))
-		destroy_render_target(ctx, &target)
-		return {}, false
-	}
-	target.color_view = color_view
-
-	sample_view, sample_view_ok := gfx.create_view(ctx, {
-		label = fmt.tprintf("%s sampled view", label),
-		texture = {
-			image = target.image,
-			format = .RGBA8,
-		},
-	})
-	if !sample_view_ok {
-		fmt.eprintln("render target sampled view creation failed: ", gfx.last_error(ctx))
-		destroy_render_target(ctx, &target)
-		return {}, false
-	}
-	target.sample_view = sample_view
-
-	return target, true
-}
-
-destroy_render_target :: proc(ctx: ^gfx.Context, target: ^Render_Target) {
-	if target == nil {
-		return
-	}
-
-	if gfx.view_valid(target.sample_view) {
-		gfx.destroy(ctx, target.sample_view)
-	}
-	if gfx.view_valid(target.color_view) {
-		gfx.destroy(ctx, target.color_view)
-	}
-	if gfx.image_valid(target.image) {
-		gfx.destroy(ctx, target.image)
-	}
-	target^ = {}
-}
 
 main :: proc() {
 	if !app.init() {
@@ -152,17 +78,31 @@ main :: proc() {
 		return
 	}
 
-	target_warm, warm_ok := create_render_target(&ctx, "mrt warm target")
+	target_warm, warm_ok := gfx.create_render_target(&ctx, {
+		label = "mrt warm target",
+		width = RENDER_TARGET_SIZE,
+		height = RENDER_TARGET_SIZE,
+		color_format = .RGBA8,
+		sampled_color = true,
+	})
 	if !warm_ok {
+		fmt.eprintln("warm render target creation failed: ", gfx.last_error(&ctx))
 		return
 	}
-	defer destroy_render_target(&ctx, &target_warm)
+	defer gfx.destroy_render_target(&ctx, &target_warm)
 
-	target_cool, cool_ok := create_render_target(&ctx, "mrt cool target")
+	target_cool, cool_ok := gfx.create_render_target(&ctx, {
+		label = "mrt cool target",
+		width = RENDER_TARGET_SIZE,
+		height = RENDER_TARGET_SIZE,
+		color_format = .RGBA8,
+		sampled_color = true,
+	})
 	if !cool_ok {
+		fmt.eprintln("cool render target creation failed: ", gfx.last_error(&ctx))
 		return
 	}
-	defer destroy_render_target(&ctx, &target_cool)
+	defer gfx.destroy_render_target(&ctx, &target_cool)
 
 	sampler, sampler_ok := gfx.create_sampler(&ctx, {
 		label = "mrt display sampler",
@@ -302,7 +242,7 @@ main :: proc() {
 
 		if !gfx.begin_pass(&ctx, {
 			label = "mrt offscreen pass",
-			color_attachments = {0 = target_warm.color_view, 1 = target_cool.color_view},
+			color_attachments = {0 = target_warm.color_attachment, 1 = target_cool.color_attachment},
 			action = mrt_action,
 		}) {
 			fmt.eprintln("mrt begin_pass failed: ", gfx.last_error(&ctx))
@@ -342,7 +282,7 @@ main :: proc() {
 			return
 		}
 
-	textured_quad_shader.set_view_material_ape_texture(&texture_bindings, target_warm.sample_view)
+		textured_quad_shader.set_view_material_ape_texture(&texture_bindings, target_warm.color_sample)
 		if !gfx.apply_bindings(&ctx, texture_bindings) {
 			fmt.eprintln("display warm apply_bindings failed: ", gfx.last_error(&ctx))
 			return
@@ -352,7 +292,7 @@ main :: proc() {
 			return
 		}
 
-	textured_quad_shader.set_view_material_ape_texture(&texture_bindings, target_cool.sample_view)
+		textured_quad_shader.set_view_material_ape_texture(&texture_bindings, target_cool.color_sample)
 		if !gfx.apply_bindings(&ctx, texture_bindings) {
 			fmt.eprintln("display cool apply_bindings failed: ", gfx.last_error(&ctx))
 			return
