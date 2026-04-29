@@ -2,6 +2,15 @@ package gfx
 
 // create_pipeline creates an immutable graphics pipeline state object.
 // On failure, the returned handle is Pipeline_Invalid and last_error explains why.
+//
+// example:
+//   pipeline, ok := gfx.create_pipeline(&ctx, {
+//       label           = "triangle",
+//       shader          = shader,
+//       pipeline_layout = pipeline_layout,
+//       primitive_type  = .Triangles,
+//       layout          = triangle_shader.layout_desc(),
+//   })
 create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (Pipeline, bool) {
 	if !require_initialized(ctx, "gfx.create_pipeline") {
 		return Pipeline_Invalid, false
@@ -49,6 +58,13 @@ destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {
 
 // create_compute_pipeline creates an immutable compute pipeline state object.
 // On failure, the returned handle is Compute_Pipeline_Invalid and last_error explains why.
+//
+// example:
+//   pipeline, ok := gfx.create_compute_pipeline(&ctx, {
+//       label           = "simulate",
+//       shader          = compute_shader,
+//       pipeline_layout = pipeline_layout,
+//   })
 create_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> (Compute_Pipeline, bool) {
 	if !require_initialized(ctx, "gfx.create_compute_pipeline") {
 		return Compute_Pipeline_Invalid, false

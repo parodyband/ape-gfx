@@ -2,6 +2,14 @@ package gfx
 
 // create_buffer creates a GPU buffer and reports whether creation succeeded.
 // On failure, the returned handle is Buffer_Invalid and last_error explains why.
+//
+// example:
+//   vertices := [?]Vertex{ ... }
+//   vbuf, ok := gfx.create_buffer(&ctx, {
+//       label = "triangle vertices",
+//       usage = {.Vertex, .Immutable},
+//       data  = gfx.range(vertices[:]),
+//   })
 create_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> (Buffer, bool) {
 	if !require_initialized(ctx, "gfx.create_buffer") {
 		return Buffer_Invalid, false

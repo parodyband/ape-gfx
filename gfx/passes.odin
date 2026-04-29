@@ -1,6 +1,13 @@
 package gfx
 
 // begin_pass starts a graphics render pass.
+//
+// example:
+//   action := gfx.default_pass_action()
+//   action.colors[0].clear_value = {r = 0, g = 0, b = 0, a = 1}
+//   gfx.begin_pass(&ctx, {label = "main", action = action})
+//   // ...apply_pipeline / apply_bindings / draw...
+//   gfx.end_pass(&ctx)
 begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	if !require_initialized(ctx, "gfx.begin_pass") {
 		return false
@@ -30,6 +37,9 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 }
 
 // apply_pipeline binds a graphics pipeline inside a render pass.
+//
+// example:
+//   gfx.apply_pipeline(&ctx, pipeline)
 apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 	if !require_render_pass(ctx, "gfx.apply_pipeline") {
 		return false
@@ -52,6 +62,12 @@ apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 }
 
 // begin_compute_pass starts a compute-only pass.
+//
+// example:
+//   gfx.begin_compute_pass(&ctx, {label = "simulate"})
+//   gfx.apply_compute_pipeline(&ctx, compute_pipeline)
+//   gfx.dispatch(&ctx, 64, 1, 1)
+//   gfx.end_compute_pass(&ctx)
 begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool {
 	if !require_initialized(ctx, "gfx.begin_compute_pass") {
 		return false
@@ -105,6 +121,12 @@ apply_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) -> boo
 }
 
 // apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
+//
+// example:
+//   bindings: gfx.Bindings
+//   bindings.vertex_buffers[0] = {buffer = vertex_buffer}
+//   bindings.index_buffer = {buffer = index_buffer}
+//   gfx.apply_bindings(&ctx, bindings)
 apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	if !require_any_pass(ctx, "gfx.apply_bindings") {
 		return false
@@ -123,6 +145,10 @@ apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 }
 
 // apply_uniforms uploads one reflected uniform block to the current pipeline.
+//
+// example:
+//   frame := FrameUniforms{view_proj = view_proj}
+//   gfx.apply_uniforms(&ctx, 0, 0, gfx.range_raw(&frame, size_of(frame)))
 apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	if !require_any_pass(ctx, "gfx.apply_uniforms") {
 		return false
@@ -146,6 +172,12 @@ apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> boo
 }
 
 // draw issues a non-indexed or indexed draw depending on the active pipeline.
+// When the active pipeline declares an index_type, base_element and num_elements
+// are indices; otherwise they are vertices.
+//
+// example:
+//   gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
+//   gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
 draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {
 	if !require_render_pass(ctx, "gfx.draw") {
 		return false
@@ -160,6 +192,11 @@ draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances:
 }
 
 // dispatch issues a compute dispatch with explicit thread-group counts.
+//
+// example:
+//   gfx.apply_compute_pipeline(&ctx, simulate_pipeline)
+//   gfx.apply_bindings(&ctx, sim_bindings)
+//   gfx.dispatch(&ctx, (count + 63) / 64, 1, 1)
 dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {
 	if !require_compute_pass(ctx, "gfx.dispatch") {
 		return false

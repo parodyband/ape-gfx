@@ -2,6 +2,16 @@ package gfx
 
 // create_image creates a texture, storage image, or attachment image.
 // On failure, the returned handle is Image_Invalid and last_error explains why.
+//
+// example:
+//   image, ok := gfx.create_image(&ctx, {
+//       label  = "diffuse",
+//       kind   = .Image_2D,
+//       usage  = {.Texture, .Immutable},
+//       width  = 256, height = 256,
+//       format = .RGBA8,
+//       mips   = {0 = {data = gfx.range(pixels[:])}},
+//   })
 create_image :: proc(ctx: ^Context, desc: Image_Desc) -> (Image, bool) {
 	if !require_initialized(ctx, "gfx.create_image") {
 		return Image_Invalid, false
