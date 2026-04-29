@@ -1,15 +1,18 @@
 package gfx
 
-// Bindless / resource-array public API sketch — AAA roadmap item 26 / APE-22.
+// Bindless / resource-array public API — AAA roadmap items 26 / 27,
+// APE-22 / APE-23.
 //
-// This file is a header-only stub. Every entry point panics. The shapes here
-// reflect the design in docs/private/gfx-bindless-note.md, which composes
-// with:
+// This file holds the locked public types and verbs. Bodies still panic;
+// the runtime implementation lands with item 28. The shapes reflect the
+// design in docs/private/gfx-bindless-note.md, which composes with:
 //
-//   gfx-bindless-note.md §5    — storage shape: Binding_Group_Array_Desc for
-//                                fixed arrays inside the immutable group;
-//                                Binding_Heap for runtime / bindless arrays.
-//                                Item 27 picks formally.
+//   gfx-bindless-note.md §5    — storage shape (item 27 / APE-23):
+//                                Binding_Group carries fixed arrays via
+//                                Binding_Group_Array_Desc; Binding_Heap
+//                                carries runtime / bindless arrays.
+//                                Group-only and heap-only candidates
+//                                rejected.
 //   gfx-bindless-note.md §6    — indexing model: shader declarations carry
 //                                constant / dynamic-uniform / fully-dynamic
 //                                intent; one public apply surface.
@@ -21,25 +24,24 @@ package gfx
 //                                Item 29 picks formally.
 //   gfx-slang-reflection-contract.md "Descriptor Arrays And Bindless
 //                                Direction" — generated-binding shapes that
-//                                target this runtime API.
+//                                target this runtime API. The runtime type
+//                                consumed by Slang tooling is named
+//                                `Binding_Heap` (was `Binding_Table` in
+//                                pre-item-27 drafts).
 //   binding_groups.odin        — existing immutable-group surface that this
 //                                file extends without rewriting.
 //   queue.odin                 — Timeline_Semaphore is the public sync for
 //                                heap-slot reuse.
 //
-// Until item 27 picks the formal storage shape, the heap-side verbs panic
-// with `unimplemented (APE-22 sketch only)`. The fixed-array shape on
-// `Binding_Group_Desc` is sketched as `Binding_Group_Array_Desc` here; the
-// existing `Binding_Group_Desc` type in types.odin will grow an `arrays`
-// payload when item 27 lands the storage decision. Adding the field today
-// would orphan it on every Binding_Group_Desc literal in the samples;
-// holding the field for item 27 keeps the v0.1 contract intact.
+// Heap-side verbs panic with `unimplemented (item 28)` until the runtime-
+// array sample exists and item 28 lands the validation rules. The
+// `arrays` payload on `Binding_Group_Desc` (declared in types.odin) is
+// also enforced by item 28; today the field zero-defaults to "no fixed
+// arrays" so existing Binding_Group_Desc literals stay valid.
 
 // MAX_BINDING_GROUP_ARRAYS bounds the number of distinct fixed-array slots
 // in one `Binding_Group_Desc`. The number must be small because every entry
 // holds a slice header and is part of the immutable group payload.
-//
-// Item 27 confirms or shrinks this.
 MAX_BINDING_GROUP_ARRAYS :: 8
 
 // MAX_BINDING_HEAPS bounds the number of `Binding_Heap` handles a pipeline
@@ -50,8 +52,8 @@ MAX_BINDING_GROUP_ARRAYS :: 8
 MAX_BINDING_HEAPS :: MAX_BINDING_GROUPS
 
 // Binding_Group_Array_Desc is the immutable, fixed-count array payload that
-// will live inside `Binding_Group_Desc.arrays` once item 27 commits to the
-// storage shape.
+// lives inside `Binding_Group_Desc.arrays` (declared in types.odin, locked
+// by item 27).
 //
 // `kind` is `.Resource_View` or `.Sampler`; uniform-block arrays are not in
 // the contract (uniform arrays go through the existing `apply_uniform_*`
@@ -158,7 +160,7 @@ Binding_Heap_Slot_Range :: struct {
 //       access    = .Read,
 //   })
 create_binding_heap :: proc(ctx: ^Context, desc: Binding_Heap_Desc) -> (Binding_Heap, bool) {
-    panic("gfx.create_binding_heap: unimplemented (APE-22 sketch only)")
+    panic("gfx.create_binding_heap: unimplemented (item 28)")
 }
 
 // destroy_binding_heap releases a `Binding_Heap`'s backing storage.
@@ -166,14 +168,14 @@ create_binding_heap :: proc(ctx: ^Context, desc: Binding_Heap_Desc) -> (Binding_
 // All in-flight submits that bound or read the heap must have completed;
 // the call does not block on its own slots. The typical caller is shutdown.
 destroy_binding_heap :: proc(ctx: ^Context, heap: Binding_Heap) {
-    panic("gfx.destroy_binding_heap: unimplemented (APE-22 sketch only)")
+    panic("gfx.destroy_binding_heap: unimplemented (item 28)")
 }
 
 // binding_heap_capacity reports the slot count a heap was created with.
 //
 // Returns 0 for an invalid handle.
 binding_heap_capacity :: proc(ctx: ^Context, heap: Binding_Heap) -> u32 {
-    panic("gfx.binding_heap_capacity: unimplemented (APE-22 sketch only)")
+    panic("gfx.binding_heap_capacity: unimplemented (item 28)")
 }
 
 // update_binding_heap_views writes a contiguous range of resource-view
@@ -200,13 +202,13 @@ binding_heap_capacity :: proc(ctx: ^Context, heap: Binding_Heap) -> u32 {
 //       tex_smoke, tex_spark, tex_glow,
 //   })
 update_binding_heap_views :: proc(ctx: ^Context, heap: Binding_Heap, first_index: u32, views: []View) -> bool {
-    panic("gfx.update_binding_heap_views: unimplemented (APE-22 sketch only)")
+    panic("gfx.update_binding_heap_views: unimplemented (item 28)")
 }
 
 // update_binding_heap_samplers writes a contiguous range of sampler
 // descriptors into a sampler heap. Mirrors `update_binding_heap_views`.
 update_binding_heap_samplers :: proc(ctx: ^Context, heap: Binding_Heap, first_index: u32, samplers: []Sampler) -> bool {
-    panic("gfx.update_binding_heap_samplers: unimplemented (APE-22 sketch only)")
+    panic("gfx.update_binding_heap_samplers: unimplemented (item 28)")
 }
 
 // release_binding_heap_slot records that slot `index` will not be safe to
@@ -223,7 +225,7 @@ update_binding_heap_samplers :: proc(ctx: ^Context, heap: Binding_Heap, first_in
 // the release see the old contents. The fence guarantees no submit reads
 // the descriptor after release completes.
 release_binding_heap_slot :: proc(ctx: ^Context, heap: Binding_Heap, index: u32, frame_done: Semaphore_Wait) -> bool {
-    panic("gfx.release_binding_heap_slot: unimplemented (APE-22 sketch only)")
+    panic("gfx.release_binding_heap_slot: unimplemented (item 28)")
 }
 
 // apply_binding_heap binds a `Binding_Heap` at one logical pipeline-layout
@@ -238,7 +240,7 @@ release_binding_heap_slot :: proc(ctx: ^Context, heap: Binding_Heap, index: u32,
 // reads use a constant, dynamic-uniform, or fully-dynamic index into the
 // heap. The runtime does not pick.
 apply_binding_heap :: proc(ctx: ^Context, group: u32, heap: Binding_Heap) -> bool {
-    panic("gfx.apply_binding_heap: unimplemented (APE-22 sketch only)")
+    panic("gfx.apply_binding_heap: unimplemented (item 28)")
 }
 
 // cmd_apply_binding_heap is the encoder-side counterpart to
@@ -247,11 +249,11 @@ apply_binding_heap :: proc(ctx: ^Context, group: u32, heap: Binding_Heap) -> boo
 // Lands when `Command_List` recording lands; today this is the same kind
 // of forward-declared sketch as the rest of `command_list.odin`.
 cmd_apply_binding_heap :: proc(encoder: ^Render_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
-    panic("gfx.cmd_apply_binding_heap: unimplemented (APE-22 sketch only)")
+    panic("gfx.cmd_apply_binding_heap: unimplemented (item 28)")
 }
 
 // cmd_apply_compute_binding_heap mirrors `cmd_apply_binding_heap` for
 // compute encoders.
 cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
-    panic("gfx.cmd_apply_compute_binding_heap: unimplemented (APE-22 sketch only)")
+    panic("gfx.cmd_apply_compute_binding_heap: unimplemented (item 28)")
 }

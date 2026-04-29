@@ -769,6 +769,13 @@ Binding_Group_Desc :: struct {
 	layout: Binding_Group_Layout,
 	views: [MAX_RESOURCE_VIEWS]View,
 	samplers: [MAX_SAMPLERS]Sampler,
+	// arrays carries fixed-size descriptor-array payloads (see
+	// gfx/bindless.odin and gfx-bindless-note.md §5). Slot count is
+	// MAX_BINDING_GROUP_ARRAYS; entries with active = false are ignored.
+	// validate_binding_group_desc enforces the shape once item 28 lands;
+	// today the field is locked declaration-only and zero-init means
+	// "no fixed arrays", so existing literals stay valid.
+	arrays: [MAX_BINDING_GROUP_ARRAYS]Binding_Group_Array_Desc,
 }
 
 // Shader_Vertex_Input_Desc carries Slang-reflected vertex input metadata.

@@ -340,26 +340,26 @@ Binding_Group_Array_Desc :: struct {
 
 `create_binding_group` should copy array payloads into the immutable binding group state, then validate every element against the generated layout entry. Updating fixed arrays can wait until a real sample needs it; replacing the binding group is acceptable for the first fixed-array implementation.
 
-Unsized or bindless resource arrays should not be part of `Binding_Group_Desc`. They should use a separate table object with explicit capacity and update operations:
+Unsized or bindless resource arrays are not part of `Binding_Group_Desc`. They use the runtime `Binding_Heap` object with explicit capacity and update operations. AAA roadmap item 27 / APE-23 locked the type name as `Binding_Heap` (earlier drafts of this section called it `Binding_Table`); the runtime declarations live in `gfx/bindless.odin`:
 
 ```odin
-Binding_Table :: distinct u64
+Binding_Heap :: distinct u64
 
-Binding_Table_Desc :: struct {
-	label: string,
-	kind: gfx.Shader_Binding_Kind,
-	capacity: u32,
-	view_kind: gfx.View_Kind,
-	access: gfx.Shader_Resource_Access,
-	storage_image_format: gfx.Pixel_Format,
+Binding_Heap_Desc :: struct {
+	label:                 string,
+	capacity:              u32,
+	samplers:              bool,
+	view_kind:             gfx.View_Kind,
+	access:                gfx.Shader_Resource_Access,
+	storage_image_format:  gfx.Pixel_Format,
 	storage_buffer_stride: u32,
 }
 
-update_binding_table_views :: proc(ctx: ^gfx.Context, table: gfx.Binding_Table, first_index: u32, views: []gfx.View) -> bool
-update_binding_table_samplers :: proc(ctx: ^gfx.Context, table: gfx.Binding_Table, first_index: u32, samplers: []gfx.Sampler) -> bool
+update_binding_heap_views :: proc(ctx: ^gfx.Context, heap: gfx.Binding_Heap, first_index: u32, views: []gfx.View) -> bool
+update_binding_heap_samplers :: proc(ctx: ^gfx.Context, heap: gfx.Binding_Heap, first_index: u32, samplers: []gfx.Sampler) -> bool
 ```
 
-Generated bindings for an unsized declaration should publish the logical group, logical slot, element kind, and whether the binding requires a `Binding_Table`. Runtime validation should report the active backend limit before creating the table or pipeline layout.
+Generated bindings for an unsized declaration publish the logical group, logical slot, element kind, and whether the binding requires a `Binding_Heap`. Pipeline-layout slots served by an unsized binding carry `kind = .Heap`. Runtime validation reports the active backend limit before creating the heap or pipeline layout.
 
 Feature and limit reporting needs new fields before unsized arrays are accepted:
 
