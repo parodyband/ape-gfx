@@ -346,6 +346,15 @@ create_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> (: 
 
 create_pipeline_layout creates an immutable layout composed from generated binding group layouts.
 
+### `create_render_target`
+
+```odin
+create_render_target :: proc(ctx: ^Context, desc: Render_Target_Desc) -> (: Render_Target, : bool) {...}
+```
+
+create_render_target creates image and view handles for a simple offscreen render target.
+It supports color-only, depth-only, and color-plus-depth targets with optional sampled views.
+
 ### `create_sampler`
 
 ```odin
@@ -436,6 +445,14 @@ destroy_pipeline_layout :: proc(ctx: ^Context, layout: Pipeline_Layout) {...}
 ```
 
 destroy_pipeline_layout releases a live pipeline layout handle.
+
+### `destroy_render_target`
+
+```odin
+destroy_render_target :: proc(ctx: ^Context, target: ^Render_Target) {...}
+```
+
+destroy_render_target releases all live handles owned by a Render_Target and clears the struct.
 
 ### `destroy_sampler`
 
@@ -637,6 +654,14 @@ read_buffer :: proc(ctx: ^Context, desc: Buffer_Read_Desc) -> bool {...}
 
 read_buffer synchronously copies GPU buffer data into CPU memory.
 
+### `render_target_pass_desc`
+
+```odin
+render_target_pass_desc :: proc(target: Render_Target, label: string, action: Pass_Action) -> Pass_Desc {...}
+```
+
+render_target_pass_desc returns a Pass_Desc that targets the render target's attachment views.
+
 ### `resize`
 
 ```odin
@@ -720,10 +745,10 @@ view_valid reports whether a View handle is nonzero.
 ### `destroy`
 
 ```odin
-destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group}
+destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group, destroy_render_target}
 ```
 
-destroy overloads the explicit destroy_* procedures for all public resource handles.
+destroy overloads the explicit destroy_* procedures for public resources and render-target aggregates.
 
 ### `range`
 
@@ -1230,6 +1255,22 @@ Raster_State :: struct {fill_mode: Fill_Mode, cull_mode: Cull_Mode, winding: Fac
 ```
 
 Raster_State configures rasterization for a graphics pipeline.
+
+### `Render_Target`
+
+```odin
+Render_Target :: struct {width: i32, height: i32, sample_count: i32, color_format: Pixel_Format, depth_format: Pixel_Format, color_image: Image, color_attachment: View, color_sample: View, depth_image: Image, depth_stencil_attachment: View, depth_sample: View}
+```
+
+Render_Target groups explicit handles for a simple offscreen color/depth target.
+
+### `Render_Target_Desc`
+
+```odin
+Render_Target_Desc :: struct {label: string, width: i32, height: i32, sample_count: i32, color_format: Pixel_Format, depth_format: Pixel_Format, sampled_color: bool, sampled_depth: bool}
+```
+
+Render_Target_Desc creates the common image/view bundle for one offscreen render target.
 
 ### `Sampler`
 

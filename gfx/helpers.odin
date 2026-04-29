@@ -37,7 +37,7 @@ apply_uniform :: proc(ctx: ^Context, group: u32, slot: int, value: ^$T) -> bool 
 	return apply_uniforms(ctx, group, slot, range_raw(rawptr(value), size_of(T)))
 }
 
-// destroy overloads the explicit destroy_* procedures for all public resource handles.
+// destroy overloads the explicit destroy_* procedures for public resources and render-target aggregates.
 destroy :: proc {
 	destroy_buffer,
 	destroy_image,
@@ -49,4 +49,5 @@ destroy :: proc {
 	destroy_binding_group_layout,
 	destroy_pipeline_layout,
 	destroy_binding_group,
+	destroy_render_target,
 }

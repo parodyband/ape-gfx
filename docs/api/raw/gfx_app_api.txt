@@ -15,6 +15,7 @@
 		must :: proc(ok: bool, message: string) {...}
 		must_create_buffer :: proc(ctx: ^gfx.Context, desc: gfx.Buffer_Desc) -> gfx.Buffer {...}
 		must_create_image :: proc(ctx: ^gfx.Context, desc: gfx.Image_Desc) -> gfx.Image {...}
+		must_create_render_target :: proc(ctx: ^gfx.Context, desc: gfx.Render_Target_Desc) -> gfx.Render_Target {...}
 		must_create_sampler :: proc(ctx: ^gfx.Context, desc: gfx.Sampler_Desc) -> gfx.Sampler {...}
 		must_create_view :: proc(ctx: ^gfx.Context, desc: gfx.View_Desc) -> gfx.View {...}
 		must_create_window :: proc(desc: app.Window_Desc) -> app.Window {...}

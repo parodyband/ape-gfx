@@ -28,6 +28,7 @@ This release is meant for a renderer or desktop game layer that wants to own hig
 - initialize one D3D11 `gfx.Context`
 - create buffers, images, views, samplers, shaders, and pipelines
 - render to the implicit window swapchain or explicit offscreen attachments
+- create common offscreen color/depth targets with `Render_Target_Desc`
 - sample offscreen color and depth targets
 - run D3D11 compute passes with storage image or storage buffer views
 - validate shader bindings, vertex layouts, uniforms, and pass compatibility from Slang metadata
@@ -52,6 +53,7 @@ The stable API surface is the low-level `gfx` package:
 - `Shader`
 - `Pipeline`
 - `Compute_Pipeline`
+- `Render_Target`
 - descriptor-driven `create_*` procedures returning `(handle, ok)`
 - explicit `destroy` and `destroy_*` resource lifetime
 - `begin_pass`, `apply_pipeline`, `apply_bindings`, `apply_uniforms`, `draw`, `end_pass`, `commit`
@@ -102,6 +104,7 @@ The D3D11 backend proves the current public API with:
 - sampled texture views
 - color attachment views
 - depth-stencil attachment views
+- low-level `Render_Target` creation helpers for common offscreen targets
 - sampled depth textures
 - multiple render targets
 - MSAA color resolve
@@ -138,7 +141,7 @@ It validates the release by:
 - running every D3D11 sample with `-AutoExitFrames 5`
 - running `git diff --check`
 
-The validation suite passed locally for v0.1 on 2026-04-28.
+The validation suite passed locally for v0.1 on 2026-04-29.
 
 ## Samples
 
@@ -208,7 +211,6 @@ These pieces exist, but should not be treated as long-term frozen yet:
 
 After v0.1-alpha, the next larger areas are:
 
-- add a low-level render-target helper for common color/depth target setup
 - harden the immediate `gfx.Bindings` path against `Pipeline_Layout` metadata before backend checks
 - sketch resource-array and bindless reflection before freezing the group record shape further
 - improve storage and compute ergonomics beyond the current samples

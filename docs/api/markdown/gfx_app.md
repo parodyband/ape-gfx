@@ -86,6 +86,12 @@ must_create_buffer :: proc(ctx: ^gfx.Context, desc: gfx.Buffer_Desc) -> gfx.Buff
 must_create_image :: proc(ctx: ^gfx.Context, desc: gfx.Image_Desc) -> gfx.Image {...}
 ```
 
+### `must_create_render_target`
+
+```odin
+must_create_render_target :: proc(ctx: ^gfx.Context, desc: gfx.Render_Target_Desc) -> gfx.Render_Target {...}
+```
+
 ### `must_create_sampler`
 
 ```odin

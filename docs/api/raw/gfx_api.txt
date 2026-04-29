@@ -100,6 +100,10 @@
 		create_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> (: Pipeline_Layout, : bool) {...}
 			create_pipeline_layout creates an immutable layout composed from generated binding group layouts.
 
+		create_render_target :: proc(ctx: ^Context, desc: Render_Target_Desc) -> (: Render_Target, : bool) {...}
+			create_render_target creates image and view handles for a simple offscreen render target.
+			It supports color-only, depth-only, and color-plus-depth targets with optional sampled views.
+
 		create_sampler :: proc(ctx: ^Context, desc: Sampler_Desc) -> (: Sampler, : bool) {...}
 			create_sampler creates immutable texture sampling state.
 			On failure, the returned handle is Sampler_Invalid and last_error explains why.
@@ -135,6 +139,9 @@
 
 		destroy_pipeline_layout :: proc(ctx: ^Context, layout: Pipeline_Layout) {...}
 			destroy_pipeline_layout releases a live pipeline layout handle.
+
+		destroy_render_target :: proc(ctx: ^Context, target: ^Render_Target) {...}
+			destroy_render_target releases all live handles owned by a Render_Target and clears the struct.
 
 		destroy_sampler :: proc(ctx: ^Context, sampler: Sampler) {...}
 			destroy_sampler releases a live sampler handle.
@@ -211,6 +218,9 @@
 		read_buffer :: proc(ctx: ^Context, desc: Buffer_Read_Desc) -> bool {...}
 			read_buffer synchronously copies GPU buffer data into CPU memory.
 
+		render_target_pass_desc :: proc(target: Render_Target, label: string, action: Pass_Action) -> Pass_Desc {...}
+			render_target_pass_desc returns a Pass_Desc that targets the render target's attachment views.
+
 		resize :: proc(ctx: ^Context, width, height: i32) -> bool {...}
 			resize recreates swapchain-dependent backend resources after a window resize.
 
@@ -243,8 +253,8 @@
 
 
 	proc_group
-		destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group}
-			destroy overloads the explicit destroy_* procedures for all public resource handles.
+		destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group, destroy_render_target}
+			destroy overloads the explicit destroy_* procedures for public resources and render-target aggregates.
 
 		range :: proc{range_slice, range_fixed_array, range_raw}
 			range is an overload group for common upload/readback byte ranges.
@@ -427,6 +437,12 @@
 		Raster_State :: struct {fill_mode: Fill_Mode, cull_mode: Cull_Mode, winding: Face_Winding}
 			Raster_State configures rasterization for a graphics pipeline.
 
+		Render_Target :: struct {width: i32, height: i32, sample_count: i32, color_format: Pixel_Format, depth_format: Pixel_Format, color_image: Image, color_attachment: View, color_sample: View, depth_image: Image, depth_stencil_attachment: View, depth_sample: View}
+			Render_Target groups explicit handles for a simple offscreen color/depth target.
+
+		Render_Target_Desc :: struct {label: string, width: i32, height: i32, sample_count: i32, color_format: Pixel_Format, depth_format: Pixel_Format, sampled_color: bool, sampled_depth: bool}
+			Render_Target_Desc creates the common image/view bundle for one offscreen render target.
+
 		Sampler :: distinct u64
 		Sampler_Desc :: struct {label: string, min_filter: Filter, mag_filter: Filter, mip_filter: Filter, wrap_u: Wrap, wrap_v: Wrap, wrap_w: Wrap}
 			Sampler_Desc creates a texture sampler state.
@@ -520,6 +536,7 @@
 		passes.odin
 		pipeline_layouts.odin
 		pipelines.odin
+		render_targets.odin
 		samplers.odin
 		shaders.odin
 		types.odin

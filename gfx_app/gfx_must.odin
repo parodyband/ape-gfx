@@ -45,6 +45,12 @@ must_create_view :: proc(ctx: ^gfx.Context, desc: gfx.View_Desc) -> gfx.View {
 	return view
 }
 
+must_create_render_target :: proc(ctx: ^gfx.Context, desc: gfx.Render_Target_Desc) -> gfx.Render_Target {
+	target, ok := gfx.create_render_target(ctx, desc)
+	must_gfx(ctx, ok, "render target creation failed")
+	return target
+}
+
 must_create_sampler :: proc(ctx: ^gfx.Context, desc: gfx.Sampler_Desc) -> gfx.Sampler {
 	sampler, ok := gfx.create_sampler(ctx, desc)
 	must_gfx(ctx, ok, "sampler creation failed")

@@ -24,6 +24,7 @@ $RequiredPublicSymbols = @(
 	"create_buffer :: proc(ctx: ^Context, desc: Buffer_Desc)",
 	"create_image :: proc(ctx: ^Context, desc: Image_Desc)",
 	"create_view :: proc(ctx: ^Context, desc: View_Desc)",
+	"create_render_target :: proc(ctx: ^Context, desc: Render_Target_Desc)",
 	"create_binding_group_layout :: proc(ctx: ^Context, desc: Binding_Group_Layout_Desc)",
 	"create_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc)",
 	"create_binding_group :: proc(ctx: ^Context, desc: Binding_Group_Desc)",
@@ -37,7 +38,8 @@ $RequiredPublicSymbols = @(
 	"last_error_code :: proc(ctx: ^Context) -> Error_Code",
 	"last_error_info :: proc(ctx: ^Context) -> Error_Info",
 	"query_backend_limits :: proc(ctx: ^Context) -> Limits",
-	"destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group}"
+	"render_target_pass_desc :: proc(target: Render_Target, label: string, action: Pass_Action)",
+	"destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group, destroy_render_target}"
 )
 
 foreach ($Symbol in $RequiredPublicSymbols) {

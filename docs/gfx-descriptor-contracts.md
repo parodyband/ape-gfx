@@ -223,6 +223,48 @@ ok := gfx.resolve_image(&ctx, {
 })
 ```
 
+## Render_Target_Desc
+
+`Render_Target_Desc` creates the common image/view bundle for one offscreen target. It is a low-level convenience helper over `Image_Desc` and `View_Desc`, not a renderer-owned framebuffer object.
+
+Fields:
+
+| Field | Contract |
+| --- | --- |
+| `label` | Optional diagnostic label applied to the created image and view descriptors. |
+| `width`, `height` | Required and must be positive. |
+| `sample_count` | Optional; `0` defaults to `1`. Multisampled sampled views are unsupported, so sampled render targets must remain single-sampled for now. |
+| `color_format` | Optional. When non-`.Invalid`, creates `color_image` and `color_attachment`. Must be a color format. |
+| `depth_format` | Optional. When non-`.Invalid`, creates `depth_image` and `depth_stencil_attachment`. Must be a depth format. |
+| `sampled_color` | Optional. When true, the color image also gets `Texture` usage and `color_sample` is created. Requires `color_format`. |
+| `sampled_depth` | Optional. When true, the depth image also gets `Texture` usage and `depth_sample` is created. Requires `depth_format`. |
+
+Rules:
+
+- At least one of `color_format` or `depth_format` must be set.
+- The helper creates one-mip, one-layer, 2D images.
+- Partial creation failure destroys any image or view handles already created before returning `({}, false)`.
+- `destroy_render_target(&ctx, &target)` releases views before images and clears the struct.
+- `render_target_pass_desc(target, label, action)` returns a `Pass_Desc` that targets `color_attachment` slot 0 and `depth_stencil_attachment` when present.
+
+Representative color/depth callsite:
+
+```odin
+target, ok := gfx.create_render_target(&ctx, {
+	label = "offscreen target",
+	width = 1024,
+	height = 1024,
+	color_format = .RGBA8,
+	depth_format = .D32F,
+	sampled_color = true,
+})
+if !ok {
+	fmt.eprintln("target creation failed: ", gfx.last_error(&ctx))
+	return
+}
+defer gfx.destroy_render_target(&ctx, &target)
+```
+
 ## View_Desc
 
 `View_Desc` creates exactly one `View` handle over an existing image or buffer.
@@ -578,4 +620,4 @@ Run:
 .\tools\test_gfx_state_descriptor_contracts.ps1
 ```
 
-These tests cover representative valid defaults and invalid shapes for `Desc`, `Buffer_Desc`, `Image_Desc`, `Image_Update_Desc`, `Image_Resolve_Desc`, `View_Desc`, `Sampler_Desc`, `Shader_Desc`, `Pipeline_Layout_Desc`, `Pipeline_Desc`, `Compute_Pipeline_Desc`, `Bindings`, and `Pass_Desc` on the null backend where possible, so most contract checks run without depending on D3D11 device setup.
+These tests cover representative valid defaults and invalid shapes for `Desc`, `Buffer_Desc`, `Image_Desc`, `Image_Update_Desc`, `Image_Resolve_Desc`, `Render_Target_Desc`, `View_Desc`, `Sampler_Desc`, `Shader_Desc`, `Pipeline_Layout_Desc`, `Pipeline_Desc`, `Compute_Pipeline_Desc`, `Bindings`, and `Pass_Desc` on the null backend where possible, so most contract checks run without depending on D3D11 device setup.

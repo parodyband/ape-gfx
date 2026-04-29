@@ -245,6 +245,101 @@ main :: proc() {
 		fail("valid sampled view did not report expected state")
 	}
 
+	render_target, render_target_ok := gfx.create_render_target(&ctx, {
+		label = "color depth render target",
+		width = 16,
+		height = 8,
+		color_format = .RGBA8,
+		depth_format = .D32F,
+		sampled_color = true,
+		sampled_depth = true,
+	})
+	if !render_target_ok ||
+	   !gfx.image_valid(render_target.color_image) ||
+	   !gfx.view_valid(render_target.color_attachment) ||
+	   !gfx.view_valid(render_target.color_sample) ||
+	   !gfx.image_valid(render_target.depth_image) ||
+	   !gfx.view_valid(render_target.depth_stencil_attachment) ||
+	   !gfx.view_valid(render_target.depth_sample) {
+		fmt.eprintln("valid render target failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	color_attachment_state := gfx.query_view_state(&ctx, render_target.color_attachment)
+	color_sample_state := gfx.query_view_state(&ctx, render_target.color_sample)
+	depth_attachment_state := gfx.query_view_state(&ctx, render_target.depth_stencil_attachment)
+	depth_sample_state := gfx.query_view_state(&ctx, render_target.depth_sample)
+	if color_attachment_state.kind != .Color_Attachment ||
+	   color_sample_state.kind != .Sampled ||
+	   depth_attachment_state.kind != .Depth_Stencil_Attachment ||
+	   depth_sample_state.kind != .Sampled ||
+	   color_sample_state.image != render_target.color_image ||
+	   depth_sample_state.image != render_target.depth_image {
+		fail("valid render target did not report expected view state")
+	}
+
+	pass_desc := gfx.render_target_pass_desc(render_target, "render target pass", gfx.default_pass_action())
+	if pass_desc.color_attachments[0] != render_target.color_attachment ||
+	   pass_desc.depth_stencil_attachment != render_target.depth_stencil_attachment {
+		fail("render_target_pass_desc did not target expected attachment views")
+	}
+
+	gfx.destroy_render_target(&ctx, &render_target)
+	if gfx.image_valid(render_target.color_image) ||
+	   gfx.view_valid(render_target.color_attachment) ||
+	   gfx.view_valid(render_target.color_sample) ||
+	   gfx.image_valid(render_target.depth_image) ||
+	   gfx.view_valid(render_target.depth_stencil_attachment) ||
+	   gfx.view_valid(render_target.depth_sample) {
+		fail("destroy_render_target did not clear target handles")
+	}
+
+	empty_render_target, empty_render_target_ok := gfx.create_render_target(&ctx, {
+		label = "empty render target",
+		width = 1,
+		height = 1,
+	})
+	if empty_render_target_ok || gfx.image_valid(empty_render_target.color_image) || gfx.image_valid(empty_render_target.depth_image) {
+		fail("render target without formats unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_render_target: color_format or depth_format is required")
+
+	wrong_color_render_target, wrong_color_render_target_ok := gfx.create_render_target(&ctx, {
+		label = "wrong color format",
+		width = 1,
+		height = 1,
+		color_format = .D32F,
+	})
+	if wrong_color_render_target_ok || gfx.image_valid(wrong_color_render_target.color_image) {
+		fail("render target with depth format as color unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_render_target: color_format must be a color format")
+
+	sampled_missing_color, sampled_missing_color_ok := gfx.create_render_target(&ctx, {
+		label = "sampled missing color",
+		width = 1,
+		height = 1,
+		depth_format = .D32F,
+		sampled_color = true,
+	})
+	if sampled_missing_color_ok || gfx.image_valid(sampled_missing_color.depth_image) {
+		fail("render target with sampled_color and no color unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_render_target: sampled_color requires color_format")
+
+	sampled_msaa_render_target, sampled_msaa_render_target_ok := gfx.create_render_target(&ctx, {
+		label = "sampled msaa",
+		width = 1,
+		height = 1,
+		sample_count = 4,
+		color_format = .RGBA8,
+		sampled_color = true,
+	})
+	if sampled_msaa_render_target_ok || gfx.image_valid(sampled_msaa_render_target.color_image) {
+		fail("sampled multisampled render target unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_render_target: sampled_color does not support multisampled targets yet; resolve into a single-sampled texture")
+
 	empty_view, empty_view_ok := gfx.create_view(&ctx, {label = "empty view"})
 	if empty_view_ok || gfx.view_valid(empty_view) {
 		fail("empty view descriptor unexpectedly succeeded")

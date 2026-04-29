@@ -90,6 +90,7 @@ Composite statuses are comma-separated.
 | `create_image` | keep, needs_test | Primary image creation spelling. |
 | `create_pipeline` | keep, needs_test | Primary graphics pipeline creation spelling. |
 | `create_pipeline_layout` | keep, needs_test | Primary pipeline layout creation spelling for reflected shader bindings. |
+| `create_render_target` | keep | Low-level helper for common offscreen color/depth target setup. Covered by descriptor contract tests. |
 | `create_sampler` | keep, needs_test | Primary sampler creation spelling. |
 | `create_shader` | keep, needs_docs | Primary low-level shader creation spelling. Most users should arrive through `.ashader`. |
 | `create_view` | keep, needs_test | Primary view creation spelling. |
@@ -101,6 +102,7 @@ Composite statuses are comma-separated.
 | `destroy_image` | keep | Explicit destroy remains available. |
 | `destroy_pipeline` | keep | Explicit destroy remains available. |
 | `destroy_pipeline_layout` | keep | Explicit destroy remains available. |
+| `destroy_render_target` | keep | Releases the explicit image/view handles owned by a `Render_Target` aggregate. |
 | `destroy_sampler` | keep | Explicit destroy remains available. |
 | `destroy_shader` | keep | Explicit destroy remains available. |
 | `destroy_view` | keep | Explicit destroy remains available. |
@@ -126,6 +128,7 @@ Composite statuses are comma-separated.
 | `query_view_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
 | `range_raw` | keep | Useful raw-pointer escape hatch. Primary docs should prefer typed `range` when possible. |
 | `read_buffer` | keep, needs_test | Synchronous readback is v0.1-stable if documented as blocking. |
+| `render_target_pass_desc` | keep | Small helper for beginning a pass against a `Render_Target` aggregate. |
 | `resize` | keep, needs_test | Stable swapchain resize entry point. |
 | `resolve_image` | keep, needs_test | Stable MSAA color resolve command. |
 | `sampler_valid` | keep, needs_test | Simple sentinel check. |
@@ -207,6 +210,8 @@ Composite statuses are comma-separated.
 | `Primitive_Type` | keep | Pipeline topology enum. |
 | `Range` | keep | Raw byte span for uploads/readback/bytecode. |
 | `Raster_State` | keep, needs_docs | Pipeline raster state. |
+| `Render_Target` | keep | Explicit aggregate of image/view handles created from `Render_Target_Desc`. |
+| `Render_Target_Desc` | keep | Low-level color/depth target helper descriptor covered by `tools/test_gfx_descriptor_contracts.ps1`. |
 | `Sampler` | keep | Stable handle. |
 | `Sampler_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Shader` | keep | Stable handle. |

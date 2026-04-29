@@ -13,6 +13,7 @@ This repo is not trying to be a full game engine yet. No renderer layer, no mate
 `gfx` now has a `v0.1` graphics API contract:
 
 - explicit handles for `Buffer`, `Image`, `View`, `Sampler`, `Shader`, `Pipeline`, `Compute_Pipeline`, `Binding_Group_Layout`, and `Binding_Group`
+- `Render_Target` aggregates for common offscreen color/depth image and view bundles
 - Odin-style `create_*` procedures that return `(handle, ok)`
 - `destroy` overloads for public resource handles
 - descriptor literals and `bit_set` usage flags

@@ -84,30 +84,17 @@ main :: proc() {
 
 	scene := make_scene()
 
-	shadow_image := gfx_app.must_create_image(&ctx, {
+	shadow_target := gfx_app.must_create_render_target(&ctx, {
 		label = "shadow map",
-		kind = .Image_2D,
-		usage = {.Texture, .Depth_Stencil_Attachment},
 		width = SHADOW_MAP_SIZE,
 		height = SHADOW_MAP_SIZE,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
-		format = .D32F,
+		depth_format = .D32F,
+		sampled_depth = true,
 	})
-	defer gfx.destroy(&ctx, shadow_image)
+	defer gfx.destroy_render_target(&ctx, &shadow_target)
 
-	shadow_depth_view := gfx_app.must_create_view(&ctx, {
-		label = "shadow depth attachment",
-		depth_stencil_attachment = {image = shadow_image, format = .D32F},
-	})
-	defer gfx.destroy(&ctx, shadow_depth_view)
-
-	shadow_sample_view := gfx_app.must_create_view(&ctx, {
-		label = "shadow sampled depth",
-		texture = {image = shadow_image, format = .D32F},
-	})
-	defer gfx.destroy(&ctx, shadow_sample_view)
+	shadow_depth_view := shadow_target.depth_stencil_attachment
+	shadow_sample_view := shadow_target.depth_sample
 
 	texture_asset := gfx_app.must_load_texture_asset("build/textures/texture.aptex")
 	defer gfx_app.unload_texture_asset(&texture_asset)
@@ -246,7 +233,7 @@ main :: proc() {
 
 		shadow_action := gfx.default_pass_action()
 		shadow_action.depth.clear_value = 1
-		gfx_app.begin_pass(&ctx, {label = "shadow map pass", depth_stencil_attachment = shadow_depth_view, action = shadow_action})
+		gfx_app.begin_pass(&ctx, gfx.render_target_pass_desc(shadow_target, "shadow map pass", shadow_action))
 		gfx_app.apply_pipeline(&ctx, depth_program.pipeline)
 		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
 		gfx_app.end_pass(&ctx)

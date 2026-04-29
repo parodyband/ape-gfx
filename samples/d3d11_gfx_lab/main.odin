@@ -73,78 +73,19 @@ main :: proc() {
 	}
 	defer gfx.shutdown(&ctx)
 
-	offscreen_color_image, offscreen_color_image_ok := gfx.create_image(&ctx, {
-		label = "lab offscreen color",
-		kind = .Image_2D,
-		usage = {.Texture, .Color_Attachment},
+	offscreen_target, offscreen_target_ok := gfx.create_render_target(&ctx, {
+		label = "lab offscreen target",
 		width = OFFSCREEN_SIZE,
 		height = OFFSCREEN_SIZE,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
-		format = .RGBA8,
+		color_format = .RGBA8,
+		depth_format = .D32F,
+		sampled_color = true,
 	})
-	if !offscreen_color_image_ok {
-		fmt.eprintln("offscreen color image creation failed: ", gfx.last_error(&ctx))
+	if !offscreen_target_ok {
+		fmt.eprintln("offscreen target creation failed: ", gfx.last_error(&ctx))
 		return
 	}
-	defer gfx.destroy(&ctx, offscreen_color_image)
-
-	offscreen_color_view, offscreen_color_view_ok := gfx.create_view(&ctx, {
-		label = "lab offscreen color attachment",
-		color_attachment = {
-			image = offscreen_color_image,
-			format = .RGBA8,
-		},
-	})
-	if !offscreen_color_view_ok {
-		fmt.eprintln("offscreen color view creation failed: ", gfx.last_error(&ctx))
-		return
-	}
-	defer gfx.destroy(&ctx, offscreen_color_view)
-
-	offscreen_sample_view, offscreen_sample_view_ok := gfx.create_view(&ctx, {
-		label = "lab offscreen sampled color",
-		texture = {
-			image = offscreen_color_image,
-			format = .RGBA8,
-		},
-	})
-	if !offscreen_sample_view_ok {
-		fmt.eprintln("offscreen sampled view creation failed: ", gfx.last_error(&ctx))
-		return
-	}
-	defer gfx.destroy(&ctx, offscreen_sample_view)
-
-	offscreen_depth_image, offscreen_depth_image_ok := gfx.create_image(&ctx, {
-		label = "lab offscreen depth",
-		kind = .Image_2D,
-		usage = {.Depth_Stencil_Attachment},
-		width = OFFSCREEN_SIZE,
-		height = OFFSCREEN_SIZE,
-		mip_count = 1,
-		array_count = 1,
-		sample_count = 1,
-		format = .D32F,
-	})
-	if !offscreen_depth_image_ok {
-		fmt.eprintln("offscreen depth image creation failed: ", gfx.last_error(&ctx))
-		return
-	}
-	defer gfx.destroy(&ctx, offscreen_depth_image)
-
-	offscreen_depth_view, offscreen_depth_view_ok := gfx.create_view(&ctx, {
-		label = "lab offscreen depth attachment",
-		depth_stencil_attachment = {
-			image = offscreen_depth_image,
-			format = .D32F,
-		},
-	})
-	if !offscreen_depth_view_ok {
-		fmt.eprintln("offscreen depth view creation failed: ", gfx.last_error(&ctx))
-		return
-	}
-	defer gfx.destroy(&ctx, offscreen_depth_view)
+	defer gfx.destroy_render_target(&ctx, &offscreen_target)
 
 	sampler, sampler_ok := gfx.create_sampler(&ctx, {
 		label = "lab offscreen sampler",
@@ -314,7 +255,7 @@ main :: proc() {
 
 	texture_group_desc: gfx.Binding_Group_Desc
 	texture_group_desc.layout = texture_group_layout
-	textured_quad_shader.set_group_view_material_ape_texture(&texture_group_desc, offscreen_sample_view)
+	textured_quad_shader.set_group_view_material_ape_texture(&texture_group_desc, offscreen_target.color_sample)
 	textured_quad_shader.set_group_sampler_material_ape_sampler(&texture_group_desc, sampler)
 	texture_group, texture_group_ok := gfx.create_binding_group(&ctx, texture_group_desc)
 	if !texture_group_ok {
@@ -356,12 +297,7 @@ main :: proc() {
 		offscreen_action.colors[0].clear_value = gfx.Color{r = 0.035, g = 0.040, b = 0.052, a = 1}
 		offscreen_action.depth.clear_value = 1
 
-		if !gfx.begin_pass(&ctx, {
-			label = "lab offscreen cube pass",
-			color_attachments = {0 = offscreen_color_view},
-			depth_stencil_attachment = offscreen_depth_view,
-			action = offscreen_action,
-		}) {
+		if !gfx.begin_pass(&ctx, gfx.render_target_pass_desc(offscreen_target, "lab offscreen cube pass", offscreen_action)) {
 			fmt.eprintln("offscreen begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}

@@ -516,6 +516,33 @@ View_Desc :: struct {
 	depth_stencil_attachment: Depth_Stencil_Attachment_View_Desc,
 }
 
+// Render_Target_Desc creates the common image/view bundle for one offscreen render target.
+Render_Target_Desc :: struct {
+	label: string,
+	width: i32,
+	height: i32,
+	sample_count: i32,
+	color_format: Pixel_Format,
+	depth_format: Pixel_Format,
+	sampled_color: bool,
+	sampled_depth: bool,
+}
+
+// Render_Target groups explicit handles for a simple offscreen color/depth target.
+Render_Target :: struct {
+	width: i32,
+	height: i32,
+	sample_count: i32,
+	color_format: Pixel_Format,
+	depth_format: Pixel_Format,
+	color_image: Image,
+	color_attachment: View,
+	color_sample: View,
+	depth_image: Image,
+	depth_stencil_attachment: View,
+	depth_sample: View,
+}
+
 // Sampler_Desc creates a texture sampler state.
 Sampler_Desc :: struct {
 	label: string,

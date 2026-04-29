@@ -22,6 +22,7 @@ Stable means user code should be able to rely on the shape for normal `v0.1` use
 - The compute command flow is `begin_compute_pass`, `apply_compute_pipeline`, `apply_bindings`, `dispatch`, `end_compute_pass`.
 - Buffers, images, views, samplers, shaders, graphics pipelines, and compute pipelines are public resource types.
 - `View` is the single public view handle for sampled textures, storage images, storage buffers, color attachments, and depth-stencil attachments.
+- `Render_Target` is a convenience aggregate of explicit image/view handles for common offscreen color/depth targets.
 - Descriptors use Odin struct literals, `bit_set` usage flags, and zero-value defaults only where documented.
 - Runtime validation fails before backend calls for invalid descriptors, invalid handles, incompatible views, pass ordering mistakes, and reflected shader binding mismatches.
 - Programmatic errors use `gfx.Error_Code` through `last_error_code` and `last_error_info`.
@@ -176,6 +177,7 @@ Stable resources:
 - `Buffer`
 - `Image`
 - `View`
+- `Render_Target`
 - `Sampler`
 - `Shader`
 - `Pipeline`
@@ -186,6 +188,7 @@ Stable resource rules:
 - Handles are context-owned. A handle from one context is invalid in another.
 - Destroyed handles become stale.
 - `destroy` is overloaded for all public resource handles.
+- `destroy_render_target` releases the views and images owned by a `Render_Target` aggregate and clears the struct.
 - `query_*_state` returns backend-free state for diagnostics and validation.
 - Labels are optional and used for diagnostics/native debug names.
 
@@ -235,6 +238,7 @@ Rules:
 
 - A pass with no explicit attachments targets the implicit window swapchain.
 - Explicit offscreen passes use color/depth attachment `View` handles.
+- Common one-color/depth offscreen targets can be created with `create_render_target` and passed to `render_target_pass_desc`.
 - Color attachments must be contiguous from slot 0.
 - Pipeline color/depth formats must match the active pass shape.
 - `draw` is indexed when the active pipeline has a non-`.None` `index_type`.
