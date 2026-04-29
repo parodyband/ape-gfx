@@ -293,8 +293,7 @@ main :: proc() {
 		gfx_app.reloadable_shader_program_poll(&ctx, &cube_program)
 		gfx_app.reloadable_shader_program_poll(&ctx, &texture_program)
 
-		offscreen_action := gfx.Pass_Action{}
-		offscreen_action.colors[0].clear_value = {r = 0.035, g = 0.040, b = 0.052, a = 1}
+		offscreen_action := gfx.Pass_Action{colors = {0 = {clear_value = {r = 0.035, g = 0.040, b = 0.052, a = 1}}}}
 
 		if !gfx.begin_pass(&ctx, gfx.render_target_pass_desc(offscreen_target, "lab offscreen cube pass", offscreen_action)) {
 			fmt.eprintln("offscreen begin_pass failed: ", gfx.last_error(&ctx))
