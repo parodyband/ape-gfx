@@ -491,6 +491,46 @@ backend_end_compute_pass :: proc(ctx: ^Context) -> bool {
 	return false
 }
 
+backend_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capacity: int, label: string) -> (Buffer, rawptr, bool) {
+	switch ctx.backend {
+	case .Null:
+		return null_create_transient_chunk(ctx, role, capacity, label)
+	case .D3D11:
+		return d3d11_create_transient_chunk(ctx, role, capacity, label)
+	case .Vulkan:
+		return vulkan_create_transient_chunk(ctx, role, capacity, label)
+	case .Auto:
+	}
+
+	return Buffer_Invalid, nil, false
+}
+
+backend_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {
+	switch ctx.backend {
+	case .Null:
+		null_destroy_transient_chunk(ctx, buffer)
+	case .D3D11:
+		d3d11_destroy_transient_chunk(ctx, buffer)
+	case .Vulkan:
+		vulkan_destroy_transient_chunk(ctx, buffer)
+	case .Auto:
+	}
+}
+
+backend_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	switch ctx.backend {
+	case .Null:
+		return null_reset_transient_chunk(ctx, buffer)
+	case .D3D11:
+		return d3d11_reset_transient_chunk(ctx, buffer)
+	case .Vulkan:
+		return vulkan_reset_transient_chunk(ctx, buffer)
+	case .Auto:
+	}
+
+	return nil, false
+}
+
 backend_commit :: proc(ctx: ^Context) -> bool {
 	switch ctx.backend {
 	case .Null:

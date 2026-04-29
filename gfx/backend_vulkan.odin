@@ -156,3 +156,15 @@ vulkan_commit :: proc(ctx: ^Context) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: commit is not implemented yet")
 	return false
 }
+
+vulkan_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capacity: int, label: string) -> (Buffer, rawptr, bool) {
+	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
+	return Buffer_Invalid, nil, false
+}
+
+vulkan_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {}
+
+vulkan_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
+	return nil, false
+}

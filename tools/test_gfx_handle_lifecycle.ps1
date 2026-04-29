@@ -138,7 +138,7 @@ main :: proc() {
 	}
 
 	gfx.shutdown(&ctx_leak)
-	expect_error(&ctx_leak, "gfx.shutdown: leaked resources: buffers=1 images=0 views=0 samplers=0 shaders=0 pipelines=0 compute_pipelines=0 binding_group_layouts=0 pipeline_layouts=0 binding_groups=0")
+	expect_error(&ctx_leak, "gfx.shutdown: leaked resources: buffers=1 images=0 views=0 samplers=0 shaders=0 pipelines=0 compute_pipelines=0 binding_group_layouts=0 pipeline_layouts=0 binding_groups=0 transient_allocators=0")
 	expect_error_code(&ctx_leak, .Resource_Leak)
 
 	fmt.println("gfx handle lifecycle validation passed")

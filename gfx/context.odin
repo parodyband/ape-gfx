@@ -83,7 +83,7 @@ shutdown :: proc(ctx: ^Context) {
 		set_errorf_code(
 			ctx,
 			.Resource_Leak,
-			"gfx.shutdown: leaked resources: buffers=%d images=%d views=%d samplers=%d shaders=%d pipelines=%d compute_pipelines=%d binding_group_layouts=%d pipeline_layouts=%d binding_groups=%d",
+			"gfx.shutdown: leaked resources: buffers=%d images=%d views=%d samplers=%d shaders=%d pipelines=%d compute_pipelines=%d binding_group_layouts=%d pipeline_layouts=%d binding_groups=%d transient_allocators=%d",
 			ctx.buffer_pool.live_count,
 			ctx.image_pool.live_count,
 			ctx.view_pool.live_count,
@@ -94,9 +94,11 @@ shutdown :: proc(ctx: ^Context) {
 			ctx.binding_group_layout_pool.live_count,
 			ctx.pipeline_layout_pool.live_count,
 			ctx.binding_group_pool.live_count,
+			ctx.transient_allocator_pool.live_count,
 		)
 	}
 
+	transient_unregister_context(ctx)
 	backend_shutdown(ctx)
 	delete_resource_pools(ctx)
 	ctx.initialized = false
@@ -392,7 +394,8 @@ resource_pool_live_total :: proc(ctx: ^Context) -> int {
 	       ctx.compute_pipeline_pool.live_count +
 	       ctx.binding_group_layout_pool.live_count +
 	       ctx.pipeline_layout_pool.live_count +
-	       ctx.binding_group_pool.live_count
+	       ctx.binding_group_pool.live_count +
+	       ctx.transient_allocator_pool.live_count
 }
 
 @(private)
@@ -407,6 +410,11 @@ delete_resource_pools :: proc(ctx: ^Context) {
 	delete_resource_pool(&ctx.binding_group_layout_pool)
 	delete_resource_pool(&ctx.pipeline_layout_pool)
 	delete_resource_pool(&ctx.binding_group_pool)
+	delete_resource_pool(&ctx.transient_allocator_pool)
+	if ctx.transient_allocator_states != nil {
+		delete(ctx.transient_allocator_states)
+		ctx.transient_allocator_states = nil
+	}
 	if ctx.shader_states != nil {
 		delete(ctx.shader_states)
 		ctx.shader_states = nil

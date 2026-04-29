@@ -64,6 +64,12 @@ Composite statuses are comma-separated.
 | `Sampler_Invalid` | keep | Stable invalid sentinel. |
 | `Shader_Invalid` | keep | Stable invalid sentinel. |
 | `Timeline_Semaphore_Invalid` | defer | APE-17 queue/timeline sketch sentinel. Stays public when the submission API lands. |
+| `TRANSIENT_INDEX_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Index` slices. |
+| `TRANSIENT_INDIRECT_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Indirect` slices. |
+| `TRANSIENT_STORAGE_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Storage` slices. |
+| `TRANSIENT_UNIFORM_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Uniform` slices (256 bytes, the strictest of the three target backends). |
+| `TRANSIENT_VERTEX_ALIGNMENT` | keep | Public alignment for `Transient_Usage.Vertex` slices. |
+| `Transient_Allocator_Invalid` | keep | Stable invalid sentinel for transient allocators. |
 | `View_Invalid` | keep | Stable invalid sentinel. |
 
 ## Procedures
@@ -166,6 +172,12 @@ Composite statuses are comma-separated.
 | `timeline_semaphore_signal` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `timeline_semaphore_value` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `timeline_semaphore_wait` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `create_transient_allocator` | keep, needs_test | Primary creation spelling for per-frame linear allocators (APE-19/APE-20). |
+| `destroy_transient_allocator` | keep | Releases backing chunks owned by a transient allocator. |
+| `reset_transient_allocator` | keep, needs_test | Returns the bump pointer to zero after the previous frame retires; rotates D3D11 chunks via `Map(WRITE_DISCARD)`. |
+| `transient_alloc` | keep, needs_test | Per-frame slice allocation; alignment selected by `Transient_Usage`. |
+| `transient_allocator_capacity` | keep | Per-role capacity diagnostic. |
+| `transient_allocator_used` | keep | Per-frame bytes-handed-out diagnostic. |
 | `update_buffer` | keep, needs_test | Stable dynamic/stream buffer update. |
 | `update_image` | keep, needs_test | Stable dynamic image update. |
 | `validate_binding_group_layout_desc` | keep | Validates generated binding group layout descriptors before object creation. |
@@ -252,6 +264,7 @@ Composite statuses are comma-separated.
 | `Render_Pass_Encoder` | defer | APE-5 recording sketch type. Body and backend land with the explicit recording path. |
 | `Render_Target` | keep | Explicit aggregate of image/view handles created from `Render_Target_Desc`. |
 | `Render_Target_Desc` | keep | Low-level color/depth target helper descriptor covered by `tools/test_gfx_descriptor_contracts.ps1`. |
+| `Resource_Usage` | keep, needs_docs | APE-13/APE-14 buffer/image state vocabulary used by attachments, binding-group entries, and barrier verbs. |
 | `Sampler` | keep | Stable handle. |
 | `Semaphore_Signal` | defer | APE-17 timeline-signal edge sketch. |
 | `Semaphore_Wait` | defer | APE-17 timeline-wait edge sketch. |
@@ -272,6 +285,11 @@ Composite statuses are comma-separated.
 | `Submit_Info` | defer | APE-17 submission descriptor sketch. |
 | `Texture_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Timeline_Semaphore` | defer | APE-17 timeline semaphore handle sketch. |
+| `Transient_Allocator` | keep | Per-frame linear allocator handle (APE-19/APE-20). |
+| `Transient_Allocator_Desc` | keep | Creation descriptor for `create_transient_allocator`. |
+| `Transient_Slice` | keep | Allocator output: `(buffer, offset, size, mapped)` slice valid until next reset. |
+| `Transient_Usage` | keep | Role enum gating slice alignment and the allocator's bind-flag set. |
+| `Transient_Usage_Set` | keep | Bit set baked into the allocator's backing buffer at creation. |
 | `Vertex_Attribute_Desc` | keep, needs_docs, needs_test | Manual vertex layout override. |
 | `Vertex_Buffer_Layout` | keep, needs_docs, needs_test | Manual vertex layout override. |
 | `Vertex_Format` | keep, needs_docs | Public vertex attribute format enum. |

@@ -967,6 +967,8 @@ Context :: struct {
 	binding_group_layout_pool: Resource_Pool,
 	pipeline_layout_pool: Resource_Pool,
 	binding_group_pool: Resource_Pool,
+	transient_allocator_pool: Resource_Pool,
+	transient_allocator_states: map[Transient_Allocator]Transient_Allocator_State,
 	shader_states: map[Shader]Shader_State,
 	pipeline_states: map[Pipeline]Pipeline_State,
 	compute_pipeline_states: map[Compute_Pipeline]Compute_Pipeline_State,

@@ -164,10 +164,64 @@ Sampler_Invalid :: Sampler(0)
 Shader_Invalid :: Shader(0)
 ```
 
+### `TRANSIENT_INDEX_ALIGNMENT`
+
+```odin
+TRANSIENT_INDEX_ALIGNMENT :: 4
+```
+
+TRANSIENT_INDEX_ALIGNMENT is the public alignment for slices returned
+with `Transient_Usage.Index`.
+
+### `TRANSIENT_INDIRECT_ALIGNMENT`
+
+```odin
+TRANSIENT_INDIRECT_ALIGNMENT :: 4
+```
+
+TRANSIENT_INDIRECT_ALIGNMENT is the public alignment for slices returned
+with `Transient_Usage.Indirect`.
+
+### `TRANSIENT_STORAGE_ALIGNMENT`
+
+```odin
+TRANSIENT_STORAGE_ALIGNMENT :: 64
+```
+
+TRANSIENT_STORAGE_ALIGNMENT is the public alignment for slices returned
+with `Transient_Usage.Storage`.
+
+### `TRANSIENT_UNIFORM_ALIGNMENT`
+
+```odin
+TRANSIENT_UNIFORM_ALIGNMENT :: 256
+```
+
+TRANSIENT_UNIFORM_ALIGNMENT is the public alignment for slices returned
+with `Transient_Usage.Uniform`.
+256 is the strictest of the three target backends (D3D12 CB offset);
+using it on D3D11 too keeps per-frame heap usage portable across
+builds. See gfx-transient-allocator-note.md §4.
+
+### `TRANSIENT_VERTEX_ALIGNMENT`
+
+```odin
+TRANSIENT_VERTEX_ALIGNMENT :: 4
+```
+
+TRANSIENT_VERTEX_ALIGNMENT is the public alignment for slices returned
+with `Transient_Usage.Vertex`.
+
 ### `Timeline_Semaphore_Invalid`
 
 ```odin
 Timeline_Semaphore_Invalid :: Timeline_Semaphore(0)
+```
+
+### `Transient_Allocator_Invalid`
+
+```odin
+Transient_Allocator_Invalid :: Transient_Allocator(0)
 ```
 
 ### `View_Invalid`
@@ -620,6 +674,25 @@ create_timeline_semaphore :: proc(ctx: ^Context, initial_value: u64 = 0) -> Time
 create_timeline_semaphore allocates a Timeline_Semaphore with `initial_value`.
 Returns `Timeline_Semaphore_Invalid` on failure; check `last_error(ctx)`.
 
+### `create_transient_allocator`
+
+```odin
+create_transient_allocator :: proc(ctx: ^Context, desc: Transient_Allocator_Desc) -> (: Transient_Allocator, : bool) {...}
+```
+
+create_transient_allocator allocates a new per-frame linear allocator.
+Must be called on the Context thread. The returned allocator's owning
+thread is the caller and may be moved to a worker before the first
+`transient_alloc`, mirroring `Command_List` ownership. Returns
+`Transient_Allocator_Invalid` and `false` on validation/backend
+failure; check `last_error(ctx)`.
+example:
+  allocator, ok := gfx.create_transient_allocator(&ctx, {
+      label    = "frame uniforms",
+      capacity = 4 * 1024 * 1024,
+      usage    = { .Uniform },
+  })
+
 ### `create_view`
 
 ```odin
@@ -738,6 +811,18 @@ destroy_timeline_semaphore :: proc(ctx: ^Context, semaphore: Timeline_Semaphore)
 destroy_timeline_semaphore releases a Timeline_Semaphore.
 All in-flight submits that wait on or signal the semaphore must have
 completed (or be cancelled by Context shutdown) before destruction.
+
+### `destroy_transient_allocator`
+
+```odin
+destroy_transient_allocator :: proc(ctx: ^Context, allocator: Transient_Allocator) {...}
+```
+
+destroy_transient_allocator releases backing storage held by an allocator.
+All in-flight submits that read from the allocator's backing buffer
+must have completed before destruction; the allocator does not block
+on its own storage. `reset_transient_allocator` is the place to wait
+for previous-frame work to retire (note §6).
 
 ### `destroy_view`
 
@@ -986,6 +1071,27 @@ render_target_pass_desc :: proc(target: Render_Target, label: string, action: Pa
 
 render_target_pass_desc returns a Pass_Desc that targets the render target's attachment views.
 
+### `reset_transient_allocator`
+
+```odin
+reset_transient_allocator :: proc(ctx: ^Context, allocator: Transient_Allocator, frame_done: Semaphore_Wait) -> bool {...}
+```
+
+reset_transient_allocator returns the bump pointer to zero after the
+previous frame's GPU work has retired.
+`frame_done` names a `Timeline_Semaphore` value that must be reached
+before the reset proceeds; the call blocks the calling thread until
+then. Pass `{Timeline_Semaphore_Invalid, 0}` to assert that the caller
+has already waited (e.g. via `timeline_semaphore_wait` for its own
+frame pacing) and skip the wait.
+After the reset the persistently mapped pointer remains valid; only
+`Transient_Slice` offsets returned by the previous frame are stale.
+Returns false on validation or backend failure; check `last_error(ctx)`.
+Note: The timeline semaphore primitive is itself a sketch (see queue.odin).
+Until APE-3 / APE-17 stand up real submits, callers must pass the no-wait
+sentinel `{Timeline_Semaphore_Invalid, 0}` and serialize frame pacing
+themselves (vsync + immediate-mode `commit` already provides this).
+
 ### `resize`
 
 ```odin
@@ -1085,6 +1191,47 @@ timeline_semaphore_wait :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, va
 timeline_semaphore_wait blocks the calling thread until `value` is reached.
 `timeout_ns` of 0 polls; ~max u64 is "wait forever". Returns false on
 timeout or backend error; check `last_error(ctx)` to disambiguate.
+
+### `transient_alloc`
+
+```odin
+transient_alloc :: proc(allocator: Transient_Allocator, size: int, usage: Transient_Usage) -> (: Transient_Slice, : bool) {...}
+```
+
+transient_alloc carves a frame-scoped slice out of an allocator's
+backing buffer.
+`usage` selects alignment (TRANSIENT_*_ALIGNMENT) and must be a member
+of the allocator's `Transient_Usage_Set`. `size` is in bytes; the
+returned `Transient_Slice.size` is `size` rounded up to the role's
+alignment. Returns `Transient_Slice{}` and `false` on out-of-capacity
+or validation failure.
+The call must run on the allocator's owning thread; allocators are
+not internally thread-safe (note §2).
+example:
+  slice, ok := gfx.transient_alloc(allocator, size_of(Per_Frame_Uniforms), .Uniform)
+  if ok {
+      (^Per_Frame_Uniforms)(slice.mapped)^ = per_frame
+  }
+
+### `transient_allocator_capacity`
+
+```odin
+transient_allocator_capacity :: proc(allocator: Transient_Allocator) -> int {...}
+```
+
+transient_allocator_capacity reports the configured byte capacity per role.
+Useful for OOM diagnostics from the recorder thread. Returns 0 for an
+invalid handle.
+
+### `transient_allocator_used`
+
+```odin
+transient_allocator_used :: proc(allocator: Transient_Allocator) -> int {...}
+```
+
+transient_allocator_used reports how many bytes have been handed out
+since the last `reset_transient_allocator`, summed across roles.
+Includes alignment padding. Returns 0 for an invalid handle.
 
 ### `update_buffer`
 
@@ -1781,6 +1928,90 @@ Render_Target_Desc :: struct {label: string, width: i32, height: i32, sample_cou
 Render_Target_Desc creates the common image/view bundle for one offscreen render target.
 `sample_count` follows the Image_Desc zero-count convention: 0 means 1.
 
+### `Resource_Usage`
+
+```odin
+Resource_Usage :: enum {None, Sampled, Storage_Read, Storage_Write, Color_Target, Depth_Target_Read, Depth_Target_Write, Copy_Source, Copy_Dest, Indirect_Argument, Present}
+```
+
+Resource_Usage names the GPU role a Buffer or Image subresource is in at a
+point in the command stream. It is the public vocabulary for the barrier
+API (AAA roadmap item 18 / APE-14): pass attachment `initial_usage` /
+`final_usage`, binding-group entry usage, and the `from` / `to` fields of
+future explicit barrier verbs all use this enum. See
+docs/private/gfx-barriers-note.md §2 and §9 for the model.
+One usage per subresource at a time. The hybrid barrier model picked in
+APE-13 (auto inside a pass, explicit between passes/queues) keeps the user
+writing usages while the runtime translates to backend states.
+Backend mapping per value:
+  None
+    D3D11   no-op (D3D11 has no public state).
+    D3D12   D3D12_RESOURCE_STATE_COMMON.
+    Vulkan  VK_IMAGE_LAYOUT_UNDEFINED, no access mask.
+    Meaning: pre-first-use. The first transition out of None is auto-emitted
+    by §9.1 attachments or by the first barrier that names the resource.
+  Sampled
+    D3D11   SRV bind (informational).
+    D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.
+    Vulkan  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT.
+  Storage_Read
+    D3D11   SRV bind on a structured/byteaddress buffer or storage image
+            (informational; D3D11 does not split UAV read from write).
+    D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE on UAV-capable
+            resources used read-only this pass.
+    Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT.
+  Storage_Write
+    D3D11   UAV bind (informational).
+    D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
+    Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
+            the same view across two dispatches in one compute pass triggers
+            an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
+  Color_Target
+    D3D11   OMSetRenderTargets (informational).
+    D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
+    Vulkan  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT.
+  Depth_Target_Read
+    D3D11   OMSetRenderTargets with read-only DSV (informational).
+    D3D12   D3D12_RESOURCE_STATE_DEPTH_READ.
+    Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT. Used for early-Z
+            passes that bind the depth image as both attachment and sampled
+            texture (gfx-barriers-note.md case 4.6).
+  Depth_Target_Write
+    D3D11   OMSetRenderTargets with read/write DSV (informational).
+    D3D12   D3D12_RESOURCE_STATE_DEPTH_WRITE.
+    Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT.
+  Copy_Source
+    D3D11   CopyResource / CopySubresourceRegion source (informational).
+    D3D12   D3D12_RESOURCE_STATE_COPY_SOURCE.
+    Vulkan  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_ACCESS_2_TRANSFER_READ_BIT.
+  Copy_Dest
+    D3D11   CopyResource / CopySubresourceRegion destination, UpdateSubresource
+            target (informational).
+    D3D12   D3D12_RESOURCE_STATE_COPY_DEST.
+    Vulkan  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT.
+  Indirect_Argument
+    D3D11   ExecuteIndirect-style argument buffer bind (informational).
+    D3D12   D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT.
+    Vulkan  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT (buffers only — there is
+            no image layout for this state). Read by draw_indirect /
+            dispatch_indirect (AAA roadmap items 11-15).
+  Present
+    D3D11   IDXGISwapChain::Present source (informational).
+    D3D12   D3D12_RESOURCE_STATE_PRESENT (alias of COMMON).
+    Vulkan  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR. Only valid on swapchain images;
+            pass attachments use it as `initial_usage` / `final_usage` to
+            ride the §9.4 auto-transition path.
+
 ### `Sampler`
 
 ```odin
@@ -1959,6 +2190,68 @@ read or block on a value via `timeline_semaphore_value` and
 Binary semaphores (the swapchain acquire/present pair) are not exposed
 publicly. They live inside the swapchain wrapper and are managed by
 `present`; see §6 of the queue-submission note.
+
+### `Transient_Allocator`
+
+```odin
+Transient_Allocator :: distinct u64
+```
+
+Transient_Allocator is the opaque handle for a per-frame linear allocator.
+Created by `create_transient_allocator`, drained by
+`reset_transient_allocator`, fed by `transient_alloc`. Owned by exactly
+one thread at a time — the typical shape is one allocator per recorder
+thread. See gfx-transient-allocator-note.md §2.
+
+### `Transient_Allocator_Desc`
+
+```odin
+Transient_Allocator_Desc :: struct {label: string, capacity: int, usage: Transient_Usage_Set}
+```
+
+Transient_Allocator_Desc creates a `Transient_Allocator`.
+`capacity == 0` means "pick a backend default" (currently 4 MiB per
+requested role). `usage` must contain at least one role (note §2).
+`Transient_Usage.Indirect` composes only with `.Storage` for compute-
+driven indirect or alone for CPU-prepared indirect; see note §5.
+
+### `Transient_Slice`
+
+```odin
+Transient_Slice :: struct {buffer: Buffer, offset: int, size: int, mapped: rawptr}
+```
+
+Transient_Slice is one allocation out of a `Transient_Allocator`.
+`buffer` is the role-specific backing buffer for the requested usage;
+the slice lives at `[offset, offset + size)`. `mapped` is a CPU pointer
+into the persistently mapped backing buffer — write through it directly
+or cast to a typed pointer. Validity ends at the next
+`reset_transient_allocator` on the parent allocator; do not retain
+`mapped` across that boundary.
+`offset` is aligned per `TRANSIENT_*_ALIGNMENT` for the requested
+usage; `size` is rounded up to the same alignment so consecutive
+allocations stay aligned. See note §3 / §4.
+
+### `Transient_Usage`
+
+```odin
+Transient_Usage :: enum {Uniform, Storage, Vertex, Index, Indirect}
+```
+
+Transient_Usage names which role a transient allocation will fulfill.
+One usage per `transient_alloc` call. The allocator's
+`Transient_Usage_Set` (declared at creation) gates which roles the
+backing buffer may serve; asking for a role outside that set is a
+validation error. See note §3.
+
+### `Transient_Usage_Set`
+
+```odin
+Transient_Usage_Set :: bit_set[Transient_Usage]
+```
+
+Transient_Usage_Set is the bit set baked into the allocator's backing
+buffer at creation. Empty is rejected.
 
 ### `Vertex_Attribute_Desc`
 

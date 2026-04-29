@@ -129,7 +129,7 @@ main :: proc() {
 	}
 
 	gfx.shutdown(&ctx_leak)
-	expect_error_info(&ctx_leak, .Resource_Leak, "gfx.shutdown: leaked resources: buffers=1 images=0 views=0 samplers=0 shaders=0 pipelines=0 compute_pipelines=0 binding_group_layouts=0 pipeline_layouts=0 binding_groups=0")
+	expect_error_info(&ctx_leak, .Resource_Leak, "gfx.shutdown: leaked resources: buffers=1 images=0 views=0 samplers=0 shaders=0 pipelines=0 compute_pipelines=0 binding_group_layouts=0 pipeline_layouts=0 binding_groups=0 transient_allocators=0")
 
 	fmt.println("gfx error code validation passed")
 }
