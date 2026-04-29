@@ -1,5 +1,7 @@
 package main
 
+import "core:math"
+import "core:time"
 import ape_math "ape:samples/ape_math"
 import ape_sample "ape:samples/ape_sample"
 import app "ape:engine/app"
@@ -9,10 +11,38 @@ import shadow_depth_shader "ape:assets/shaders/generated/shadow_depth"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
 SHADOW_MAP_SIZE :: 1024
+CAMERA_BASE_FOV :: f32(60)
 
 Scene_Pass :: enum {
 	Shadow,
 	Lit,
+}
+
+Camera_Mode :: enum {
+	Orbit,
+	First_Person,
+}
+
+Camera_Controller :: struct {
+	mode: Camera_Mode,
+
+	target: ape_math.Vec3,
+	orbit_yaw: f32,
+	orbit_pitch: f32,
+	orbit_distance: f32,
+
+	fp_position: ape_math.Vec3,
+	fp_front: ape_math.Vec3,
+	fp_right: ape_math.Vec3,
+	fp_up: ape_math.Vec3,
+	fp_yaw: f32,
+	fp_pitch: f32,
+	fp_fov: f32,
+
+	toggle_down: bool,
+	mouse_ready: bool,
+	last_mouse_x: f64,
+	last_mouse_y: f64,
 }
 
 Object_Uniforms :: struct {
@@ -187,9 +217,15 @@ main :: proc() {
 
 	render_width := fb_width
 	render_height := fb_height
+	camera := make_camera_controller(scene.camera_pos, ape_math.Vec3{0, 0.45, 0.35})
+	last_tick := time.tick_now()
 	frame := 0
 	for !app.should_close(&window) {
+		app.begin_input_frame(&window)
 		app.poll_events()
+		delta_seconds := f32(time.duration_seconds(time.tick_lap_time(&last_tick)))
+		delta_seconds = clamp_f32(delta_seconds, 0, 0.1)
+		update_camera(&camera, &window, delta_seconds)
 
 		resize := ape_sample.must_resize_swapchain(&ctx, &window, &render_width, &render_height)
 		if !resize.active {
@@ -203,12 +239,13 @@ main :: proc() {
 		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
 		ape_sample.end_pass(&ctx)
 
-		view := ape_math.look_at_lh(scene.camera_pos, ape_math.Vec3{0, 0.45, 0.35}, ape_math.Vec3{0, 1, 0})
-		projection := ape_math.cube_projection(render_width, render_height)
+		camera_pos := camera_position(&camera)
+		view := camera_view(&camera)
+		projection := camera_projection(&camera, render_width, render_height)
 		frame_uniforms := Frame_Uniforms {
 			ape_view_proj = ape_math.mul(projection, view),
 			ape_light_pos = {scene.light_pos[0], scene.light_pos[1], scene.light_pos[2], 0},
-			ape_view_pos = {scene.camera_pos[0], scene.camera_pos[1], scene.camera_pos[2], 0},
+			ape_view_pos = {camera_pos[0], camera_pos[1], camera_pos[2], 0},
 			ape_shadow_map_size = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, 0},
 		}
 
@@ -267,4 +304,197 @@ apply_object_uniforms :: proc(ctx: ^gfx.Context, scene_pass: Scene_Pass, model, 
 
 apply_frame_uniforms :: proc(ctx: ^gfx.Context, uniforms: ^Frame_Uniforms) {
 	ape_sample.must_gfx(ctx, improved_shadows_shader.apply_uniform_FrameUniforms(ctx, uniforms), "frame uniform upload failed")
+}
+
+make_camera_controller :: proc(initial_position, target: ape_math.Vec3) -> Camera_Controller {
+	offset := ape_math.sub3(initial_position, target)
+	orbit_distance := length3(offset)
+	orbit_yaw := math.to_degrees_f32(math.atan2_f32(offset[0], offset[2]))
+	orbit_pitch := math.to_degrees_f32(math.asin_f32(offset[1] / orbit_distance))
+
+	front := ape_math.normalize3(ape_math.sub3(target, initial_position))
+	fp_yaw := math.to_degrees_f32(math.atan2_f32(front[0], front[2]))
+	fp_pitch := math.to_degrees_f32(math.asin_f32(front[1]))
+
+	camera := Camera_Controller {
+		mode = .Orbit,
+		target = target,
+		orbit_yaw = orbit_yaw,
+		orbit_pitch = orbit_pitch,
+		orbit_distance = orbit_distance,
+		fp_position = initial_position,
+		fp_yaw = fp_yaw,
+		fp_pitch = fp_pitch,
+		fp_fov = CAMERA_BASE_FOV,
+	}
+	update_first_person_camera_vectors(&camera)
+	return camera
+}
+
+update_camera :: proc(camera: ^Camera_Controller, window: ^app.Window, delta_seconds: f32) {
+	if app.key_down(window, .Escape) {
+		app.request_close(window)
+	}
+
+	toggle_down := app.key_down(window, .C)
+	if toggle_down && !camera.toggle_down {
+		camera.mode = camera.mode == .Orbit ? .First_Person : .Orbit
+		camera.mouse_ready = false
+	}
+	camera.toggle_down = toggle_down
+
+	mouse_x, mouse_y := app.cursor_position(window)
+	mouse_dx, mouse_dy: f64
+	left_down := app.mouse_button_down(window, .Left)
+	if left_down {
+		if camera.mouse_ready {
+			mouse_dx = mouse_x - camera.last_mouse_x
+			mouse_dy = mouse_y - camera.last_mouse_y
+		} else {
+			camera.mouse_ready = true
+		}
+	} else {
+		camera.mouse_ready = false
+	}
+	camera.last_mouse_x = mouse_x
+	camera.last_mouse_y = mouse_y
+
+	_, scroll_y := app.scroll_delta(window)
+
+	switch camera.mode {
+	case .Orbit:
+		update_orbit_camera(camera, mouse_dx, mouse_dy, scroll_y, left_down)
+	case .First_Person:
+		update_first_person_camera(camera, window, mouse_dx, mouse_dy, scroll_y, left_down, delta_seconds)
+	}
+}
+
+update_orbit_camera :: proc(camera: ^Camera_Controller, mouse_dx, mouse_dy, scroll_y: f64, rotating: bool) {
+	if rotating {
+		camera.orbit_yaw += f32(mouse_dx) * 1.0
+		camera.orbit_pitch += f32(mouse_dy) * 1.0
+		camera.orbit_pitch = clamp_f32(camera.orbit_pitch, -89, 89)
+	}
+
+	if scroll_y != 0 {
+		camera.orbit_distance -= f32(scroll_y) * 0.5
+		camera.orbit_distance = clamp_f32(camera.orbit_distance, 1.0, 20.0)
+	}
+}
+
+update_first_person_camera :: proc(
+	camera: ^Camera_Controller,
+	window: ^app.Window,
+	mouse_dx, mouse_dy, scroll_y: f64,
+	aiming: bool,
+	delta_seconds: f32,
+) {
+	if aiming {
+		camera.fp_yaw += f32(mouse_dx) * 0.1
+		camera.fp_pitch -= f32(mouse_dy) * 0.1
+		camera.fp_pitch = clamp_f32(camera.fp_pitch, -89, 89)
+		update_first_person_camera_vectors(camera)
+	}
+
+	if scroll_y != 0 {
+		camera.fp_fov -= f32(scroll_y)
+		camera.fp_fov = clamp_f32(camera.fp_fov, 20, 75)
+	}
+
+	velocity := 5.0 * delta_seconds
+	if app.key_down(window, .W) || app.key_down(window, .Up) {
+		camera.fp_position = add3(camera.fp_position, scale3(camera.fp_front, velocity))
+	}
+	if app.key_down(window, .S) || app.key_down(window, .Down) {
+		camera.fp_position = add3(camera.fp_position, scale3(camera.fp_front, -velocity))
+	}
+	if app.key_down(window, .A) || app.key_down(window, .Left) {
+		camera.fp_position = add3(camera.fp_position, scale3(camera.fp_right, -velocity))
+	}
+	if app.key_down(window, .D) || app.key_down(window, .Right) {
+		camera.fp_position = add3(camera.fp_position, scale3(camera.fp_right, velocity))
+	}
+}
+
+update_first_person_camera_vectors :: proc(camera: ^Camera_Controller) {
+	yaw := math.to_radians_f32(camera.fp_yaw)
+	pitch := math.to_radians_f32(camera.fp_pitch)
+	front := ape_math.Vec3 {
+		math.cos_f32(pitch) * math.sin_f32(yaw),
+		math.sin_f32(pitch),
+		math.cos_f32(pitch) * math.cos_f32(yaw),
+	}
+	camera.fp_front = ape_math.normalize3(front)
+	camera.fp_right = ape_math.normalize3(ape_math.cross3(ape_math.Vec3{0, 1, 0}, camera.fp_front))
+	camera.fp_up = ape_math.cross3(camera.fp_front, camera.fp_right)
+}
+
+camera_position :: proc(camera: ^Camera_Controller) -> ape_math.Vec3 {
+	switch camera.mode {
+	case .Orbit:
+		return orbit_camera_position(camera)
+	case .First_Person:
+		return camera.fp_position
+	}
+
+	return camera.fp_position
+}
+
+camera_view :: proc(camera: ^Camera_Controller) -> ape_math.Mat4 {
+	switch camera.mode {
+	case .Orbit:
+		return ape_math.look_at_lh(orbit_camera_position(camera), camera.target, ape_math.Vec3{0, 1, 0})
+	case .First_Person:
+		return ape_math.look_at_lh(camera.fp_position, add3(camera.fp_position, camera.fp_front), camera.fp_up)
+	}
+
+	return ape_math.identity()
+}
+
+camera_projection :: proc(camera: ^Camera_Controller, width, height: i32) -> ape_math.Mat4 {
+	aspect := f32(16.0 / 9.0)
+	if height > 0 {
+		aspect = f32(width) / f32(height)
+	}
+
+	fov := CAMERA_BASE_FOV
+	if camera.mode == .First_Person {
+		fov = camera.fp_fov
+	}
+
+	return ape_math.perspective_lh(math.to_radians_f32(fov), aspect, 0.1, 100)
+}
+
+orbit_camera_position :: proc(camera: ^Camera_Controller) -> ape_math.Vec3 {
+	yaw := math.to_radians_f32(camera.orbit_yaw)
+	pitch := math.to_radians_f32(camera.orbit_pitch)
+	cos_pitch := math.cos_f32(pitch)
+
+	return add3(camera.target, ape_math.Vec3 {
+		camera.orbit_distance * cos_pitch * math.sin_f32(yaw),
+		camera.orbit_distance * math.sin_f32(pitch),
+		camera.orbit_distance * cos_pitch * math.cos_f32(yaw),
+	})
+}
+
+add3 :: proc(a, b: ape_math.Vec3) -> ape_math.Vec3 {
+	return ape_math.Vec3{a[0] + b[0], a[1] + b[1], a[2] + b[2]}
+}
+
+scale3 :: proc(v: ape_math.Vec3, scalar: f32) -> ape_math.Vec3 {
+	return ape_math.Vec3{v[0] * scalar, v[1] * scalar, v[2] * scalar}
+}
+
+length3 :: proc(v: ape_math.Vec3) -> f32 {
+	return math.sqrt_f32(ape_math.dot3(v, v))
+}
+
+clamp_f32 :: proc(value, min_value, max_value: f32) -> f32 {
+	if value < min_value {
+		return min_value
+	}
+	if value > max_value {
+		return max_value
+	}
+	return value
 }
