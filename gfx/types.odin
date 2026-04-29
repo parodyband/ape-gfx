@@ -99,6 +99,110 @@ View_Kind :: enum {
 	Depth_Stencil_Attachment,
 }
 
+// Resource_Usage names the GPU role a Buffer or Image subresource is in at a
+// point in the command stream. It is the public vocabulary for the barrier
+// API (AAA roadmap item 18 / APE-14): pass attachment `initial_usage` /
+// `final_usage`, binding-group entry usage, and the `from` / `to` fields of
+// future explicit barrier verbs all use this enum. See
+// docs/private/gfx-barriers-note.md §2 and §9 for the model.
+//
+// One usage per subresource at a time. The hybrid barrier model picked in
+// APE-13 (auto inside a pass, explicit between passes/queues) keeps the user
+// writing usages while the runtime translates to backend states.
+//
+// Backend mapping per value:
+//
+//   None
+//     D3D11   no-op (D3D11 has no public state).
+//     D3D12   D3D12_RESOURCE_STATE_COMMON.
+//     Vulkan  VK_IMAGE_LAYOUT_UNDEFINED, no access mask.
+//     Meaning: pre-first-use. The first transition out of None is auto-emitted
+//     by §9.1 attachments or by the first barrier that names the resource.
+//
+//   Sampled
+//     D3D11   SRV bind (informational).
+//     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+//             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.
+//     Vulkan  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+//             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT.
+//
+//   Storage_Read
+//     D3D11   SRV bind on a structured/byteaddress buffer or storage image
+//             (informational; D3D11 does not split UAV read from write).
+//     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+//             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE on UAV-capable
+//             resources used read-only this pass.
+//     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+//             VK_ACCESS_2_SHADER_STORAGE_READ_BIT.
+//
+//   Storage_Write
+//     D3D11   UAV bind (informational).
+//     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
+//     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+//             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
+//             the same view across two dispatches in one compute pass triggers
+//             an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
+//
+//   Color_Target
+//     D3D11   OMSetRenderTargets (informational).
+//     D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
+//     Vulkan  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+//             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT.
+//
+//   Depth_Target_Read
+//     D3D11   OMSetRenderTargets with read-only DSV (informational).
+//     D3D12   D3D12_RESOURCE_STATE_DEPTH_READ.
+//     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+//             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT. Used for early-Z
+//             passes that bind the depth image as both attachment and sampled
+//             texture (gfx-barriers-note.md case 4.6).
+//
+//   Depth_Target_Write
+//     D3D11   OMSetRenderTargets with read/write DSV (informational).
+//     D3D12   D3D12_RESOURCE_STATE_DEPTH_WRITE.
+//     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+//             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT.
+//
+//   Copy_Source
+//     D3D11   CopyResource / CopySubresourceRegion source (informational).
+//     D3D12   D3D12_RESOURCE_STATE_COPY_SOURCE.
+//     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+//             VK_ACCESS_2_TRANSFER_READ_BIT.
+//
+//   Copy_Dest
+//     D3D11   CopyResource / CopySubresourceRegion destination, UpdateSubresource
+//             target (informational).
+//     D3D12   D3D12_RESOURCE_STATE_COPY_DEST.
+//     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+//             VK_ACCESS_2_TRANSFER_WRITE_BIT.
+//
+//   Indirect_Argument
+//     D3D11   ExecuteIndirect-style argument buffer bind (informational).
+//     D3D12   D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT.
+//     Vulkan  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT (buffers only — there is
+//             no image layout for this state). Read by draw_indirect /
+//             dispatch_indirect (AAA roadmap items 11-15).
+//
+//   Present
+//     D3D11   IDXGISwapChain::Present source (informational).
+//     D3D12   D3D12_RESOURCE_STATE_PRESENT (alias of COMMON).
+//     Vulkan  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR. Only valid on swapchain images;
+//             pass attachments use it as `initial_usage` / `final_usage` to
+//             ride the §9.4 auto-transition path.
+Resource_Usage :: enum {
+	None,
+	Sampled,
+	Storage_Read,
+	Storage_Write,
+	Color_Target,
+	Depth_Target_Read,
+	Depth_Target_Write,
+	Copy_Source,
+	Copy_Dest,
+	Indirect_Argument,
+	Present,
+}
+
 // Error_Code classifies the most recent context error for programmatic handling.
 Error_Code :: enum {
 	None,
