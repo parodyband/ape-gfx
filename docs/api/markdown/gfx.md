@@ -142,6 +142,14 @@ View_Invalid :: View(0)
 
 ## Procedures
 
+### `apply_binding_group`
+
+```odin
+apply_binding_group :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc, base_bindings: Bindings = {}) -> bool {...}
+```
+
+apply_binding_group validates a generated binding group and applies it with optional geometry bindings.
+
 ### `apply_bindings`
 
 ```odin
@@ -678,6 +686,14 @@ Backend :: enum {Auto, Null, D3D11, Vulkan}
 ```
 
 Backend selects the native graphics implementation used by a Context.
+
+### `Binding_Group_Desc`
+
+```odin
+Binding_Group_Desc :: struct {views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
+```
+
+Binding_Group_Desc supplies transient resource handles for a generated binding group layout.
 
 ### `Binding_Group_Layout_Desc`
 

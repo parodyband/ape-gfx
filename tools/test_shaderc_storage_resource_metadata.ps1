@@ -80,7 +80,8 @@ $ExpectedSnippets = @(
 	'binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc',
 	"desc.entries[0] = {",
 	"stages = {.Fragment}",
-	"desc.native_bindings[0] = {"
+	"desc.native_bindings[0] = {",
+	"set_group_view_output_image :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)"
 )
 
 foreach ($Snippet in $ExpectedSnippets) {

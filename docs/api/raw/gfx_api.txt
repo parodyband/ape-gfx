@@ -26,6 +26,9 @@
 		View_Invalid :: View(0)
 
 	procedures
+		apply_binding_group :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc, base_bindings: Bindings = {}) -> bool {...}
+			apply_binding_group validates a generated binding group and applies it with optional geometry bindings.
+
 		apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {...}
 			apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
 
@@ -234,6 +237,9 @@
 	types
 		Backend :: enum {Auto, Null, D3D11, Vulkan}
 			Backend selects the native graphics implementation used by a Context.
+
+		Binding_Group_Desc :: struct {views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
+			Binding_Group_Desc supplies transient resource handles for a generated binding group layout.
 
 		Binding_Group_Layout_Desc :: struct {label: string, entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc, native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc}
 			Binding_Group_Layout_Desc is generated from Slang reflection for future binding-group APIs.

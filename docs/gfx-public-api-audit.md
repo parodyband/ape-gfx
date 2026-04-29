@@ -65,6 +65,7 @@ Composite statuses are comma-separated.
 
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
+| `apply_binding_group` | defer | Transient generated view/sampler binding path. Evaluate in samples before committing to object-backed binding groups. |
 | `apply_bindings` | keep, needs_test | Core command. Expand validation tests around buffer/view/sampler slots. |
 | `apply_compute_pipeline` | keep, needs_test | Core compute command. Keep if compute is v0.1-stable. |
 | `apply_pipeline` | keep, needs_test | Core render command. |
@@ -136,6 +137,7 @@ Composite statuses are comma-separated.
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
 | `Backend` | keep | Stable backend selector. `Auto` behavior needs docs. |
+| `Binding_Group_Desc` | defer | Transient view/sampler handles for generated binding group layouts. Uniforms are still applied separately. |
 | `Binding_Group_Layout_Desc` | defer | Descriptor-only generated binding group layout data. Evaluate before adding public binding group handles. |
 | `Binding_Group_Layout_Entry_Desc` | defer | Logical generated binding entry descriptor. |
 | `Binding_Group_Native_Binding_Desc` | defer | Backend/stage native slot mapping for generated binding layouts. |

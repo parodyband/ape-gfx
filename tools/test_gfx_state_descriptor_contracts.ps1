@@ -403,6 +403,45 @@ main :: proc() {
 		os.exit(1)
 	}
 
+	group_base_bindings: gfx.Bindings
+	group_base_bindings.vertex_buffers[0] = {buffer = vertex_buffer}
+
+	valid_group: gfx.Binding_Group_Desc
+	valid_group.views[0] = sampled_view
+	valid_group.samplers[0] = sampler
+	if !gfx.apply_binding_group(&ctx, group_layout, valid_group, group_base_bindings) {
+		fmt.eprintln("valid binding group failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	missing_sampler_group := valid_group
+	missing_sampler_group.samplers[0] = gfx.Sampler_Invalid
+	if gfx.apply_binding_group(&ctx, group_layout, missing_sampler_group, group_base_bindings) {
+		fail("binding group with missing sampler unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: sampler slot 0 requires a sampler")
+
+	wrong_view_kind_group := valid_group
+	wrong_view_kind_group.views[0] = attachment_view
+	if gfx.apply_binding_group(&ctx, group_layout, wrong_view_kind_group, group_base_bindings) {
+		fail("binding group with wrong view kind unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: resource view slot 0 requires a sampled view")
+
+	extra_view_group := valid_group
+	extra_view_group.views[5] = sampled_view
+	if gfx.apply_binding_group(&ctx, group_layout, extra_view_group, group_base_bindings) {
+		fail("binding group with extra resource view unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: resource view slot 5 is not declared by layout")
+
+	base_with_resource := group_base_bindings
+	base_with_resource.views[0] = sampled_view
+	if gfx.apply_binding_group(&ctx, group_layout, valid_group, base_with_resource) {
+		fail("binding group with shader resources in base bindings unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: base bindings must not contain resource views or samplers")
+
 	sparse_bindings: gfx.Bindings
 	sparse_bindings.views[2] = sampled_view
 	sparse_bindings.samplers[3] = sampler

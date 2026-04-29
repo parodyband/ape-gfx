@@ -120,6 +120,8 @@ $ExpectedSnippets = @(
 	"target = gfx.Backend.D3D11",
 	"target = gfx.Backend.Vulkan",
 	"native_space = 0",
+	"set_group_view_input_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
+	"set_group_sampler_input_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler)",
 	"target = gfx.Backend.D3D11",
 	"target = gfx.Backend.Vulkan",
 	"native_slot = 4"

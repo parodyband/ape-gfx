@@ -318,8 +318,10 @@ main :: proc() {
 	texture_bindings: gfx.Bindings
 	texture_bindings.vertex_buffers[0] = {buffer = texture_vertex_buffer, offset = 0}
 	texture_bindings.index_buffer = {buffer = texture_index_buffer, offset = 0}
-	textured_quad_shader.set_view_ape_texture(&texture_bindings, offscreen_sample_view)
-	textured_quad_shader.set_sampler_ape_sampler(&texture_bindings, sampler)
+
+	texture_group: gfx.Binding_Group_Desc
+	textured_quad_shader.set_group_view_ape_texture(&texture_group, offscreen_sample_view)
+	textured_quad_shader.set_group_sampler_ape_sampler(&texture_group, sampler)
 
 	render_width := fb_width
 	render_height := fb_height
@@ -403,8 +405,8 @@ main :: proc() {
 			fmt.eprintln("display apply_pipeline failed: ", gfx.last_error(&ctx))
 			return
 		}
-		if !gfx.apply_bindings(&ctx, texture_bindings) {
-			fmt.eprintln("display apply_bindings failed: ", gfx.last_error(&ctx))
+		if !gfx.apply_binding_group(&ctx, texture_group_layout, texture_group, texture_bindings) {
+			fmt.eprintln("display apply_binding_group failed: ", gfx.last_error(&ctx))
 			return
 		}
 		if !gfx.draw(&ctx, 0, i32(len(texture_indices))) {

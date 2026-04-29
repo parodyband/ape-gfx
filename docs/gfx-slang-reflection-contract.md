@@ -210,7 +210,7 @@ The outer record stays common so tools can sort or match by backend, stage, refl
 - `native_bindings` preserve backend/stage native slot and space mappings.
 - `gfx.validate_binding_group_layout_desc` can validate the generated descriptor today; future binding-group objects can consume the same shape or a narrowed version of it.
 
-This helper is intentionally not a new binding path yet. Samples still use `gfx.Bindings` and generated `set_view_*`, `set_sampler_*`, and `apply_uniform_*` helpers.
+Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for the transient `gfx.Binding_Group_Desc` path. `gfx.apply_binding_group` can apply those view/sampler groups with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
 
 Logical slots are assigned per binding kind:
 
@@ -495,7 +495,8 @@ Planned order:
 - [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
 - [x] Settle generated binding record payload semantics before the generated binding-group contract.
 - [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
-- [ ] Next: decide whether `Binding_Group_Layout_Desc` should become an object-creation descriptor, stay generated metadata, or be narrowed before public binding groups.
+- [x] Add a transient `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
+- [ ] Next: decide whether this should become object-backed, remain transient, or be narrowed before public binding-group handles.
 - [ ] Then settle descriptor slot validation rules that binding groups should enforce before runtime calls.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
@@ -510,7 +511,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: use `d3d11_gfx_lab` to prototype a small `Binding_Group_Desc` or `apply_binding_group` call path for the display pass, then decide whether that reduces enough callsite friction to justify public binding-group handles.
+Next implementation breadcrumb: evaluate the new display-pass callsite in `d3d11_gfx_lab`. If it is a net improvement, try the same pattern in `improved_shadows`; if it feels noisy, narrow or remove the transient group path before adding object-backed binding groups.
 
 ## Validation
 
@@ -569,6 +570,8 @@ These generated names are intended to stay stable through v0.1:
 | `Binding_Record_Desc` | Generated binding contract record type. |
 | `binding_records` | Helper returning the generated binding contract records. |
 | `binding_group_layout_desc` | Helper returning descriptor-only generated binding group layout data. |
+| `set_group_view_<name>` | Helper for `gfx.Binding_Group_Desc.views`. |
+| `set_group_sampler_<name>` | Helper for `gfx.Binding_Group_Desc.samplers`. |
 | `VIEW_KIND_<name>` | Reflected `gfx.View_Kind`. |
 | `VIEW_ACCESS_<name>` | Reflected `gfx.Shader_Resource_Access`. |
 | `VIEW_FORMAT_<name>` | Reflected storage image format when relevant. |

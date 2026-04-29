@@ -277,6 +277,7 @@ Stable generated helpers:
 - Uniform structs and `apply_uniform_*` helpers when reflection is representable.
 - Simple packed vertex layout helpers such as `VERTEX_STRIDE`, `ATTR_*_OFFSET`, and `layout_desc`.
 - Descriptor-only binding group layout helpers such as `binding_group_layout_desc`.
+- Binding group resource setters such as `set_group_view_*` and `set_group_sampler_*`.
 - Compute thread-group constants and dispatch helpers.
 
 Generated vertex layout support is intentionally narrow:

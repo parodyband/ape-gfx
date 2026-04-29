@@ -533,11 +533,25 @@ set_view_diffuse_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	bindings.views[VIEW_diffuse_texture] = view
 }
 
+set_group_view_diffuse_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) {
+	if group == nil {
+		return
+	}
+	group.views[VIEW_diffuse_texture] = view
+}
+
 set_view_shadow_map :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	if bindings == nil {
 		return
 	}
 	bindings.views[VIEW_shadow_map] = view
+}
+
+set_group_view_shadow_map :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) {
+	if group == nil {
+		return
+	}
+	group.views[VIEW_shadow_map] = view
 }
 
 set_sampler_diffuse_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
@@ -547,9 +561,23 @@ set_sampler_diffuse_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sample
 	bindings.samplers[SMP_diffuse_sampler] = sampler
 }
 
+set_group_sampler_diffuse_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) {
+	if group == nil {
+		return
+	}
+	group.samplers[SMP_diffuse_sampler] = sampler
+}
+
 set_sampler_shadow_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
 	if bindings == nil {
 		return
 	}
 	bindings.samplers[SMP_shadow_sampler] = sampler
+}
+
+set_group_sampler_shadow_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) {
+	if group == nil {
+		return
+	}
+	group.samplers[SMP_shadow_sampler] = sampler
 }

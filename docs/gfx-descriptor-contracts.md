@@ -365,17 +365,21 @@ Rules:
 - The active backend must report compute support.
 - Graphics shaders are rejected before backend creation.
 
-## Binding_Group_Layout_Desc
+## Binding_Group_Layout_Desc And Binding_Group_Desc
 
-`Binding_Group_Layout_Desc` records a generated Slang binding-group layout. It is descriptor-only for now: it validates reflected layout data, but it does not create a GPU object or replace `Bindings`.
+`Binding_Group_Layout_Desc` records a generated Slang binding-group layout. `Binding_Group_Desc` supplies transient resource handles for that layout.
+
+This is not a GPU object yet. It is a narrow call path for generated views and samplers, with optional base geometry bindings for vertex and index buffers. Uniform block data still flows through `apply_uniforms` / generated `apply_uniform_*` helpers.
 
 Fields:
 
 | Field | Contract |
 | --- | --- |
-| `label` | Optional diagnostic label. |
-| `entries` | Sparse logical binding entries. Each active entry has a non-empty reflected name, at least one shader stage, valid binding kind, and a kind-specific logical slot. |
-| `native_bindings` | Sparse backend mappings for generated entries. Each active mapping names a backend target, stage, binding kind, logical slot, native slot, and native space. |
+| `Binding_Group_Layout_Desc.label` | Optional diagnostic label. |
+| `Binding_Group_Layout_Desc.entries` | Sparse logical binding entries. Each active entry has a non-empty reflected name, at least one shader stage, valid binding kind, and a kind-specific logical slot. |
+| `Binding_Group_Layout_Desc.native_bindings` | Sparse backend mappings for generated entries. Each active mapping names a backend target, stage, binding kind, logical slot, native slot, and native space. |
+| `Binding_Group_Desc.views` | Sparse logical resource view slots. Generated `set_group_view_*` helpers write these slots. |
+| `Binding_Group_Desc.samplers` | Sparse logical sampler slots. Generated `set_group_sampler_*` helpers write these slots. |
 
 Rules:
 
@@ -385,6 +389,9 @@ Rules:
 - Duplicate logical entries with the same kind and slot are rejected.
 - Native mappings must reference an existing logical entry whose stage set includes the native stage.
 - Native mappings are allowed only for concrete generated backend targets such as `.D3D11` and `.Vulkan`.
+- `apply_binding_group` requires every resource-view and sampler entry in the layout to have a matching handle in `Binding_Group_Desc`.
+- Extra active views or samplers that are not declared by the layout are rejected.
+- `base_bindings` passed to `apply_binding_group` may contain vertex and index buffers. It must not already contain views or samplers.
 
 Representative callsite:
 
@@ -394,9 +401,19 @@ if !gfx.validate_binding_group_layout_desc(&ctx, layout) {
 	fmt.eprintln("bad generated binding layout: ", gfx.last_error(&ctx))
 	return
 }
+
+geometry: gfx.Bindings
+geometry.vertex_buffers[0] = {buffer = vertex_buffer}
+geometry.index_buffer = {buffer = index_buffer}
+
+group: gfx.Binding_Group_Desc
+textured_quad_shader.set_group_view_ape_texture(&group, texture_view)
+textured_quad_shader.set_group_sampler_ape_sampler(&group, sampler)
+
+ok := gfx.apply_binding_group(&ctx, layout, group, geometry)
 ```
 
-This is a stepping stone toward optional binding-group objects. Normal draw code still uses generated helpers with `gfx.Bindings`.
+This is a stepping stone toward optional binding-group objects. Existing draw code can still use generated helpers with `gfx.Bindings` directly.
 
 ## Bindings
 

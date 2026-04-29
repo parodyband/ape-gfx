@@ -584,6 +584,12 @@ Binding_Group_Layout_Desc :: struct {
 	native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc,
 }
 
+// Binding_Group_Desc supplies transient resource handles for a generated binding group layout.
+Binding_Group_Desc :: struct {
+	views: [MAX_RESOURCE_VIEWS]View,
+	samplers: [MAX_SAMPLERS]Sampler,
+}
+
 // Shader_Vertex_Input_Desc carries Slang-reflected vertex input metadata.
 Shader_Vertex_Input_Desc :: struct {
 	active: bool,

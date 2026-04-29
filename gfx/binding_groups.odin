@@ -1,5 +1,26 @@
 package gfx
 
+// apply_binding_group validates a generated binding group and applies it with optional geometry bindings.
+apply_binding_group :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc, base_bindings: Bindings = {}) -> bool {
+	if !require_any_pass(ctx, "gfx.apply_binding_group") {
+		return false
+	}
+	if !validate_binding_group_layout_desc(ctx, layout) {
+		return false
+	}
+	if !validate_binding_group_desc(ctx, layout, group) {
+		return false
+	}
+	if binding_group_base_has_shader_resources(base_bindings) {
+		set_validation_error(ctx, "gfx.apply_binding_group: base bindings must not contain resource views or samplers")
+		return false
+	}
+
+	bindings := base_bindings
+	merge_binding_group(&bindings, layout, group)
+	return apply_bindings(ctx, bindings)
+}
+
 // validate_binding_group_layout_desc validates generated binding-group layout data.
 validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_Layout_Desc) -> bool {
 	if !require_initialized(ctx, "gfx.validate_binding_group_layout_desc") {
@@ -62,6 +83,124 @@ validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_La
 	}
 
 	return true
+}
+
+@(private)
+validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc) -> bool {
+	for entry in layout.entries {
+		if !entry.active {
+			continue
+		}
+
+		switch entry.kind {
+		case .Uniform_Block:
+			// Uniform block data still flows through apply_uniforms for this prototype.
+		case .Resource_View:
+			view := group.views[entry.slot]
+			if !view_valid(view) {
+				set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d requires a view", entry.slot)
+				return false
+			}
+			if !validate_binding_group_view(ctx, entry, view) {
+				return false
+			}
+		case .Sampler:
+			sampler := group.samplers[entry.slot]
+			if !sampler_valid(sampler) {
+				set_validation_errorf(ctx, "gfx.apply_binding_group: sampler slot %d requires a sampler", entry.slot)
+				return false
+			}
+			if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), "gfx.apply_binding_group", "sampler") {
+				return false
+			}
+		}
+	}
+
+	for view, slot in group.views {
+		if !view_valid(view) {
+			continue
+		}
+		if !binding_group_layout_has_entry(layout, .Resource_View, u32(slot)) {
+			set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d is not declared by layout", slot)
+			return false
+		}
+	}
+	for sampler, slot in group.samplers {
+		if !sampler_valid(sampler) {
+			continue
+		}
+		if !binding_group_layout_has_entry(layout, .Sampler, u32(slot)) {
+			set_validation_errorf(ctx, "gfx.apply_binding_group: sampler slot %d is not declared by layout", slot)
+			return false
+		}
+	}
+
+	return true
+}
+
+@(private)
+validate_binding_group_view :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, view: View) -> bool {
+	view_state := query_view_state(ctx, view)
+	if !view_state.valid {
+		set_invalid_handle_errorf(ctx, "gfx.apply_binding_group: resource view slot %d handle is invalid", entry.slot)
+		return false
+	}
+	if view_state.kind != entry.resource_view.view_kind {
+		set_validation_errorf(
+			ctx,
+			"gfx.apply_binding_group: resource view slot %d requires a %s view",
+			entry.slot,
+			view_kind_name(entry.resource_view.view_kind),
+		)
+		return false
+	}
+	if entry.resource_view.view_kind == .Storage_Image &&
+	   entry.resource_view.storage_image_format != .Invalid &&
+	   view_state.format != entry.resource_view.storage_image_format {
+		set_validation_errorf(ctx, "gfx.apply_binding_group: storage image slot %d format does not match layout", entry.slot)
+		return false
+	}
+	if entry.resource_view.view_kind == .Storage_Buffer &&
+	   entry.resource_view.storage_buffer_stride != 0 &&
+	   u32(view_state.storage_stride) != entry.resource_view.storage_buffer_stride {
+		set_validation_errorf(ctx, "gfx.apply_binding_group: storage buffer slot %d stride does not match layout", entry.slot)
+		return false
+	}
+
+	return true
+}
+
+@(private)
+merge_binding_group :: proc(bindings: ^Bindings, layout: Binding_Group_Layout_Desc, group: Binding_Group_Desc) {
+	for entry in layout.entries {
+		if !entry.active {
+			continue
+		}
+
+		switch entry.kind {
+		case .Uniform_Block:
+		case .Resource_View:
+			bindings.views[entry.slot] = group.views[entry.slot]
+		case .Sampler:
+			bindings.samplers[entry.slot] = group.samplers[entry.slot]
+		}
+	}
+}
+
+@(private)
+binding_group_base_has_shader_resources :: proc(bindings: Bindings) -> bool {
+	for view in bindings.views {
+		if view_valid(view) {
+			return true
+		}
+	}
+	for sampler in bindings.samplers {
+		if sampler_valid(sampler) {
+			return true
+		}
+	}
+
+	return false
 }
 
 @(private)
@@ -209,6 +348,35 @@ binding_group_layout_has_entry_for_native :: proc(desc: Binding_Group_Layout_Des
 	}
 
 	return false
+}
+
+@(private)
+binding_group_layout_has_entry :: proc(layout: Binding_Group_Layout_Desc, kind: Shader_Binding_Kind, slot: u32) -> bool {
+	for entry in layout.entries {
+		if entry.active && entry.kind == kind && entry.slot == slot {
+			return true
+		}
+	}
+
+	return false
+}
+
+@(private)
+view_kind_name :: proc(kind: View_Kind) -> string {
+	switch kind {
+	case .Sampled:
+		return "sampled"
+	case .Storage_Image:
+		return "storage image"
+	case .Storage_Buffer:
+		return "storage buffer"
+	case .Color_Attachment:
+		return "color attachment"
+	case .Depth_Stencil_Attachment:
+		return "depth-stencil attachment"
+	}
+
+	return "unknown"
 }
 
 @(private)

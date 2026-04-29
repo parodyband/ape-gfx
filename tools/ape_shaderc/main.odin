@@ -2587,11 +2587,21 @@ append_binding_helpers_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Rec
 			append_string(out, "\tif bindings == nil {\n\t\treturn\n\t}\n")
 			append_string(out, fmt.tprintf("\tbindings.views[VIEW_%s] = view\n", name))
 			append_string(out, "}\n\n")
+			append_string(out, fmt.tprintf("set_group_view_%s :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) ", name))
+			append_string(out, "{\n")
+			append_string(out, "\tif group == nil {\n\t\treturn\n\t}\n")
+			append_string(out, fmt.tprintf("\tgroup.views[VIEW_%s] = view\n", name))
+			append_string(out, "}\n\n")
 		case .Sampler:
 			append_string(out, fmt.tprintf("set_sampler_%s :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) ", name))
 			append_string(out, "{\n")
 			append_string(out, "\tif bindings == nil {\n\t\treturn\n\t}\n")
 			append_string(out, fmt.tprintf("\tbindings.samplers[SMP_%s] = sampler\n", name))
+			append_string(out, "}\n\n")
+			append_string(out, fmt.tprintf("set_group_sampler_%s :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) ", name))
+			append_string(out, "{\n")
+			append_string(out, "\tif group == nil {\n\t\treturn\n\t}\n")
+			append_string(out, fmt.tprintf("\tgroup.samplers[SMP_%s] = sampler\n", name))
 			append_string(out, "}\n\n")
 		}
 	}

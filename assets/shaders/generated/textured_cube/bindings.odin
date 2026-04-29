@@ -272,9 +272,23 @@ set_view_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	bindings.views[VIEW_ape_texture] = view
 }
 
+set_group_view_ape_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) {
+	if group == nil {
+		return
+	}
+	group.views[VIEW_ape_texture] = view
+}
+
 set_sampler_ape_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
 	if bindings == nil {
 		return
 	}
 	bindings.samplers[SMP_ape_sampler] = sampler
+}
+
+set_group_sampler_ape_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) {
+	if group == nil {
+		return
+	}
+	group.samplers[SMP_ape_sampler] = sampler
 }
