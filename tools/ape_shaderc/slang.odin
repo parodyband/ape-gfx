@@ -8,6 +8,20 @@ import "core:path/filepath"
 SlangResult :: i32
 SlangInt :: i64
 SlangUInt :: u64
+SlangProfileID :: u32
+SlangCompileTarget :: i32
+SlangTargetFlags :: u32
+SlangFloatingPointMode :: u32
+SlangLineDirectiveMode :: u32
+SlangMatrixLayoutMode :: u32
+SlangSessionFlags :: u32
+
+SLANG_API_VERSION :: u32(0)
+SLANG_LANGUAGE_VERSION_2025 :: u32(2025)
+SLANG_PROFILE_UNKNOWN :: SlangProfileID(0)
+SLANG_TARGET_DXBC :: SlangCompileTarget(8)
+SLANG_TARGET_SPIRV :: SlangCompileTarget(6)
+SLANG_MATRIX_LAYOUT_ROW_MAJOR :: SlangMatrixLayoutMode(1)
 
 Slang_Type_Kind :: enum u32 {
 	None,
@@ -100,7 +114,66 @@ ISlangBlob_VTable :: struct {
 	getBufferSize: proc "system" (this: ^ISlangBlob) -> uint,
 }
 
+ISlangGlobalSession :: struct #raw_union {
+	#subtype unknown: ISlangUnknown,
+	using vtable: ^ISlangGlobalSession_VTable,
+}
+
+ISlangSession :: struct #raw_union {
+	#subtype unknown: ISlangUnknown,
+	using vtable: ^ISlangSession_VTable,
+}
+
+ISlangGlobalSession_VTable :: struct {
+	using unknown_vtable: ISlangUnknown_VTable,
+	createSession: proc "system" (this: ^ISlangGlobalSession, desc: ^Slang_Session_Desc, out_session: ^^ISlangSession) -> SlangResult,
+	findProfile: proc "system" (this: ^ISlangGlobalSession, name: cstring) -> SlangProfileID,
+}
+
+ISlangSession_VTable :: struct {
+	using unknown_vtable: ISlangUnknown_VTable,
+	getGlobalSession: proc "system" (this: ^ISlangSession) -> ^ISlangGlobalSession,
+}
+
+Slang_Global_Session_Desc :: struct {
+	structureSize: u32,
+	apiVersion: u32,
+	languageVersion: u32,
+	enableGLSL: bool,
+	reserved: [16]u32,
+}
+
+Slang_Target_Desc :: struct {
+	structureSize: uint,
+	format: SlangCompileTarget,
+	profile: SlangProfileID,
+	flags: SlangTargetFlags,
+	floatingPointMode: SlangFloatingPointMode,
+	lineDirectiveMode: SlangLineDirectiveMode,
+	forceGLSLScalarBufferLayout: bool,
+	compilerOptionEntries: rawptr,
+	compilerOptionEntryCount: u32,
+}
+
+Slang_Session_Desc :: struct {
+	structureSize: uint,
+	targets: ^Slang_Target_Desc,
+	targetCount: SlangInt,
+	flags: SlangSessionFlags,
+	defaultMatrixLayoutMode: SlangMatrixLayoutMode,
+	searchPaths: rawptr,
+	searchPathCount: SlangInt,
+	preprocessorMacros: rawptr,
+	preprocessorMacroCount: SlangInt,
+	fileSystem: rawptr,
+	enableEffectAnnotations: bool,
+	allowGLSLSyntax: bool,
+	compilerOptionEntries: rawptr,
+	compilerOptionEntryCount: u32,
+}
+
 Slang_API :: struct {
+	slang_createGlobalSession2: proc "c" (desc: ^Slang_Global_Session_Desc, out_global_session: ^^ISlangGlobalSession) -> SlangResult,
 	spCreateSession: proc "c" (deprecated: cstring) -> rawptr,
 	spDestroySession: proc "c" (session: rawptr),
 	spCreateCompileRequest: proc "c" (session: rawptr) -> rawptr,
@@ -183,7 +256,8 @@ unload_slang_api :: proc(api: ^Slang_API) {
 }
 
 slang_api_valid :: proc(api: ^Slang_API) -> bool {
-	return api.spCreateSession != nil &&
+	return api.slang_createGlobalSession2 != nil &&
+	       api.spCreateSession != nil &&
 	       api.spDestroySession != nil &&
 	       api.spCreateCompileRequest != nil &&
 	       api.spDestroyCompileRequest != nil &&
@@ -220,4 +294,81 @@ slang_api_valid :: proc(api: ^Slang_API) -> bool {
 
 slang_failed :: proc(result: SlangResult) -> bool {
 	return result < 0
+}
+
+run_modern_slang_api_probe :: proc() -> bool {
+	slang: Slang_API
+	if !load_slang_api(&slang) {
+		return false
+	}
+	defer unload_slang_api(&slang)
+
+	return probe_modern_slang_api(&slang)
+}
+
+probe_modern_slang_api :: proc(api: ^Slang_API) -> bool {
+	global_desc := Slang_Global_Session_Desc {
+		structureSize = u32(size_of(Slang_Global_Session_Desc)),
+		apiVersion = SLANG_API_VERSION,
+		languageVersion = SLANG_LANGUAGE_VERSION_2025,
+	}
+
+	global_session: ^ISlangGlobalSession
+	result := api.slang_createGlobalSession2(&global_desc, &global_session)
+	if slang_failed(result) || global_session == nil {
+		fmt.eprintln("ape_shaderc: slang_createGlobalSession2 failed")
+		return false
+	}
+	defer release_slang_unknown(cast(^ISlangUnknown)global_session)
+
+	dxbc_profile := global_session.vtable.findProfile(global_session, cstring("sm_5_0"))
+	if dxbc_profile == SLANG_PROFILE_UNKNOWN {
+		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_5_0")
+		return false
+	}
+
+	spirv_profile := global_session.vtable.findProfile(global_session, cstring("glsl_450"))
+	if spirv_profile == SLANG_PROFILE_UNKNOWN {
+		fmt.eprintln("ape_shaderc: Slang could not resolve profile glsl_450")
+		return false
+	}
+
+	targets := [?]Slang_Target_Desc {
+		{
+			structureSize = uint(size_of(Slang_Target_Desc)),
+			format = SLANG_TARGET_DXBC,
+			profile = dxbc_profile,
+		},
+		{
+			structureSize = uint(size_of(Slang_Target_Desc)),
+			format = SLANG_TARGET_SPIRV,
+			profile = spirv_profile,
+		},
+	}
+
+	session_desc := Slang_Session_Desc {
+		structureSize = uint(size_of(Slang_Session_Desc)),
+		targets = &targets[0],
+		targetCount = SlangInt(len(targets)),
+		defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_ROW_MAJOR,
+	}
+
+	session: ^ISlangSession
+	result = global_session.vtable.createSession(global_session, &session_desc, &session)
+	if slang_failed(result) || session == nil {
+		fmt.eprintln("ape_shaderc: modern Slang createSession failed")
+		return false
+	}
+	defer release_slang_unknown(cast(^ISlangUnknown)session)
+
+	fmt.println("Modern Slang API probe passed")
+	return true
+}
+
+release_slang_unknown :: proc(object: ^ISlangUnknown) {
+	if object == nil {
+		return
+	}
+
+	object.vtable.release(object)
 }
