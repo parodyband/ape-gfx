@@ -8,11 +8,13 @@ import "core:path/filepath"
 import "core:strings"
 
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
-PACKAGE_VERSION :: u32(9)
-PACKAGE_HEADER_SIZE :: 20
-PACKAGE_STAGE_RECORD_SIZE :: 48
-PACKAGE_BINDING_RECORD_SIZE :: 60
+PACKAGE_VERSION :: u32(10)
+PACKAGE_HEADER_SIZE :: 28
+PACKAGE_STAGE_RECORD_SIZE :: 52
+PACKAGE_BINDING_RECORD_SIZE :: 64
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
+PACKAGE_PERMUTATION_AXIS_RECORD_SIZE :: 24
+PACKAGE_VARIANT_RECORD_SIZE :: 40
 
 Target :: enum u32 {
 	D3D11_DXBC,
@@ -3177,10 +3179,18 @@ write_package :: proc(
 	payload: [dynamic]byte
 	defer delete(payload)
 
+	// Default-only package: zero permutation axes, one variant covering every
+	// stage and binding. The variant key is empty so its hash is the FNV-1a
+	// seed; readers verify hash against the canonical key.
+	axis_count := 0
+	variant_count := 1
+
 	payload_start := PACKAGE_HEADER_SIZE +
 	                 PACKAGE_STAGE_RECORD_SIZE * len(stages) +
 	                 PACKAGE_BINDING_RECORD_SIZE * len(bindings) +
-	                 PACKAGE_VERTEX_INPUT_RECORD_SIZE * len(vertex_layout.attrs)
+	                 PACKAGE_VERTEX_INPUT_RECORD_SIZE * len(vertex_layout.attrs) +
+	                 PACKAGE_PERMUTATION_AXIS_RECORD_SIZE * axis_count +
+	                 PACKAGE_VARIANT_RECORD_SIZE * variant_count
 	for stage, index in stages {
 		entry_offset := payload_start + len(payload)
 		append_string(&payload, stage.entry)
@@ -3225,6 +3235,8 @@ write_package :: proc(
 	write_u32(&output, u32(len(stage_records)))
 	write_u32(&output, u32(len(binding_records)))
 	write_u32(&output, u32(len(vertex_layout.attrs)))
+	write_u32(&output, u32(axis_count))
+	write_u32(&output, u32(variant_count))
 
 	for record in stage_records {
 		write_u32(&output, u32(record.target))
@@ -3235,6 +3247,7 @@ write_package :: proc(
 		write_u64(&output, record.bytecode_size)
 		write_u64(&output, record.reflection_offset)
 		write_u64(&output, record.reflection_size)
+		write_u32(&output, 0) // variant index — default-only package
 	}
 
 	for record in binding_records {
@@ -3253,6 +3266,7 @@ write_package :: proc(
 		write_u32(&output, record.storage_buffer_stride)
 		write_u32(&output, record.space)
 		write_u32(&output, record.group)
+		write_u32(&output, 0) // variant index — default-only package
 	}
 
 	for attr, index in vertex_layout.attrs {
@@ -3262,6 +3276,20 @@ write_package :: proc(
 		write_u32(&output, package_vertex_format(attr.format))
 		write_u32(&output, 1)
 	}
+
+	// Permutation axes table: empty until APE-28 wires runtime lookup.
+
+	// Variant table: one default variant covering every stage and binding.
+	default_key_hash :: u64(0xcbf29ce484222325) // FNV-1a 64-bit seed (empty key)
+	write_u64(&output, default_key_hash)
+	write_u32(&output, 0) // key_offset
+	write_u32(&output, 0) // key_pair_count
+	write_u32(&output, 0) // stage_first
+	write_u32(&output, u32(len(stage_records)))
+	write_u32(&output, 0) // binding_first
+	write_u32(&output, u32(len(binding_records)))
+	write_u32(&output, 0) // name_offset
+	write_u32(&output, 0) // name_size
 
 	append_bytes(&output, payload[:])
 

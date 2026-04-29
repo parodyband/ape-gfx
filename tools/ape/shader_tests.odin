@@ -88,6 +88,7 @@ run_shader_tests :: proc(options: Shader_Test_Options) -> bool {
 			"invalid-vertex-layout",
 			"uniform-host-layout",
 			"storage-resource-metadata",
+			"ashader-roundtrip",
 		}
 		for test in tests {
 			if !run_shader_test_by_name(&test_ctx, test) {
@@ -119,6 +120,8 @@ run_shader_test_by_name :: proc(ctx: ^Shader_Test_Context, name: string) -> bool
 		return test_shaderc_uniform_host_layout(ctx)
 	case "storage-resource-metadata":
 		return test_shaderc_storage_resource_metadata(ctx)
+	case "ashader-roundtrip":
+		return test_ashader_roundtrip(ctx)
 	case:
 		fmt.eprintln("ape: unknown shader test: ", name)
 		return false
@@ -548,6 +551,63 @@ test_shaderc_storage_resource_metadata :: proc(ctx: ^Shader_Test_Context) -> boo
 	}
 
 	fmt.println("Shaderc storage resource metadata test passed")
+	return true
+}
+
+ASHADER_ROUNDTRIP_SOURCE :: `cbuffer FrameUniforms
+{
+	float4 tint;
+};
+
+Texture2D<float4> input_texture;
+SamplerState input_sampler;
+RWTexture2D<float4> output_image;
+
+[shader("compute")]
+[numthreads(8, 4, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
+{
+	float2 uv = float2(0.5, 0.5);
+	float4 color = input_texture.SampleLevel(input_sampler, uv, 0.0) * tint;
+	output_image[dispatch_id.xy] = color;
+}
+`
+
+test_ashader_roundtrip :: proc(ctx: ^Shader_Test_Context) -> bool {
+	test_dir := shader_test_dir(ctx, "shaderc_ashader_roundtrip")
+	source_path := filepath.join({test_dir, "ashader_roundtrip.slang"}, context.temp_allocator)
+	package_path := filepath.join({test_dir, "ashader_roundtrip.ashader"}, context.temp_allocator)
+	generated_path := filepath.join({test_dir, "bindings.odin"}, context.temp_allocator)
+
+	if !write_text_file(source_path, ASHADER_ROUNDTRIP_SOURCE) {
+		return false
+	}
+	if !run_shaderc_success(ctx, "ashader_roundtrip", .Compute, source_path, package_path, generated_path, test_dir) {
+		return false
+	}
+
+	tool_dir := repo_path(ctx.root, "build/tools")
+	if !ensure_directory(tool_dir) {
+		return false
+	}
+	checker_path := filepath.join({tool_dir, fmt.tprintf("ape_ashader_roundtrip_test%s", EXE_SUFFIX)}, context.temp_allocator)
+	build_command := [?]string {
+		"odin",
+		"build",
+		repo_path(ctx.root, "tools/ape_ashader_roundtrip_test"),
+		fmt.tprintf("-collection:ape=%s", ctx.root),
+		fmt.tprintf("-out:%s", checker_path),
+	}
+	if !run_command("build ape_ashader_roundtrip_test", build_command[:], ctx.root) {
+		return false
+	}
+
+	check_command := [?]string {checker_path, package_path}
+	if !run_command("ashader round-trip checker", check_command[:], ctx.root) {
+		return false
+	}
+
+	fmt.println("Shaderc .ashader round-trip test passed")
 	return true
 }
 
