@@ -141,11 +141,11 @@ Native constants include target and stage:
 ```odin
 D3D11_FS_VIEW_ape_texture :: 0
 D3D11_FS_VIEW_ape_texture_SPACE :: 0
-VK_FS_VIEW_ape_texture :: 32
+VK_FS_VIEW_ape_texture :: 0
 VK_FS_VIEW_ape_texture_SPACE :: 0
 D3D11_FS_SMP_ape_sampler :: 0
 D3D11_FS_SMP_ape_sampler_SPACE :: 0
-VK_FS_SMP_ape_sampler :: 64
+VK_FS_SMP_ape_sampler :: 1
 VK_FS_SMP_ape_sampler_SPACE :: 0
 ```
 
@@ -159,7 +159,7 @@ UB_FrameUniforms :: 0
 
 Use logical constants and generated helper procedures in application code. Native constants exist for diagnostics and backend metadata.
 
-Near-term direction: shader authors should not need routine manual `register(...)` annotations for ordinary samples. `ape_shaderc` should reflect Slang-assigned native slots, assign stable GFX logical slots from reflected names, and generate the named Odin helpers used by samples and applications. Manual register annotations remain available for compatibility and targeted backend experiments, not as the preferred sample style.
+Near-term direction: shader authors should not need routine manual `register(...)` annotations for ordinary samples. `ape_shaderc` reflects Slang-assigned native slots, including Vulkan-style `descriptorTableSlot` bindings, assigns stable GFX logical slots from reflected names, and generates the named Odin helpers used by samples and applications. Manual register annotations are reserved for targeted backend tests and debugging, not as the preferred sample style.
 
 Generated packages also expose a binding contract helper for tools, tests, and future higher-level binding APIs:
 
@@ -456,17 +456,18 @@ It fills:
 
 The current contract deliberately stops at reflected binding metadata and named helper procedures. The next design pass should build optional binding groups on top of this data instead of replacing `gfx.Bindings`.
 
-Near-term compiler work comes first. `ape_shaderc` should move from the older compile-request API and command-line-style arguments to Slang's modern session/component API before binding groups become a public `gfx` contract.
+`ape_shaderc` now uses Slang's modern session/module/component API as its only shader compile path. Reflection is read from the linked `ProgramLayout` plus entry-point metadata produced by that path.
 
 Planned order:
 
 - [x] Add an `ape_shaderc` batch mode so one tool invocation can compile all sample shaders.
 - [x] Keep PowerShell scripts as thin wrappers around the Odin tool for normal sample shader compilation.
 - [x] Bind and validate the minimum modern Slang API surface for `IGlobalSession`, `ISession`, target/profile setup, and session creation.
-- [x] Compile `triangle` through the modern module/component path and compare the generated `.ashader` contract and Odin bindings against the legacy compile-request path.
-- [ ] Next: move reflection extraction for one shader from legacy compile-request JSON to modern `ProgramLayout` and entry-point metadata.
-- [ ] Extend the modern Slang API surface for modules, entry points, component composition, linked programs, generated code blobs, program layouts, and entry-point metadata.
-- Preserve the current `.ashader` and generated Odin output while the new compiler path reaches parity.
+- [x] Use the modern module/component path for normal `.ashader` package generation.
+- [x] Read reflection JSON from modern `ProgramLayout` and used-binding data from entry-point metadata.
+- [ ] Next: replace ad-hoc generated binding checks with focused validation around `ProgramLayout` metadata, then design binding groups on top of that contract.
+- [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
+- Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
 
 Open questions:
@@ -485,7 +486,6 @@ Current shader reflection validation is covered by:
 ```powershell
 .\tools\compile_shaders.ps1 -All
 .\tools\test_shaderc_modern_api_probe.ps1
-.\tools\test_shaderc_modern_component_compile.ps1
 .\tools\test_shaderc_register_free_samples.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1

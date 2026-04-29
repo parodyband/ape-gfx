@@ -154,6 +154,11 @@ Shader_Build_Result :: struct {
 	compute_thread_group: Compute_Thread_Group_Size,
 }
 
+Modern_Slang_Context :: struct {
+	global_session: ^ISlangGlobalSession,
+	session: ^ISlangSession,
+}
+
 Options :: struct {
 	shader_name: string,
 	source_path: string,
@@ -163,7 +168,6 @@ Options :: struct {
 	kind: Shader_Kind,
 	all: bool,
 	probe_modern_api: bool,
-	compare_modern_compile: bool,
 }
 
 SAMPLE_SHADER_JOBS :: [?]Shader_Job {
@@ -202,8 +206,6 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 			options.all = true
 		} else if arg == "-probe-modern-api" {
 			options.probe_modern_api = true
-		} else if arg == "-compare-modern-compile" {
-			options.compare_modern_compile = true
 		} else if arg == "-shader-name" {
 			i += 1
 			if i >= len(args) {
@@ -255,28 +257,12 @@ parse_options :: proc(args: []string) -> (Options, bool) {
 
 	if options.probe_modern_api {
 		if options.all ||
-		   options.compare_modern_compile ||
 		   options.shader_name != "" ||
 		   kind_set ||
 		   options.source_path != "" ||
 		   options.package_path != "" ||
 		   options.generated_path != "" {
 			return {}, false
-		}
-
-		return options, true
-	}
-
-	if options.compare_modern_compile {
-		if options.all ||
-		   options.shader_name == "" ||
-		   options.package_path != "" ||
-		   options.generated_path != "" {
-			return {}, false
-		}
-
-		if options.source_path == "" {
-			options.source_path = filepath.join({"assets/shaders", fmt.tprintf("%s.slang", options.shader_name)})
 		}
 
 		return options, true
@@ -318,15 +304,11 @@ print_usage :: proc() {
 	fmt.eprintln("usage: ape_shaderc -shader-name <name> [-kind graphics|compute] [-source <path>] [-build-dir <dir>] [-package <path>] [-generated <path>]")
 	fmt.eprintln("       ape_shaderc -all [-build-dir <dir>]")
 	fmt.eprintln("       ape_shaderc -probe-modern-api")
-	fmt.eprintln("       ape_shaderc -compare-modern-compile -shader-name <name> [-kind graphics|compute] [-source <path>] [-build-dir <dir>]")
 }
 
 pack :: proc(options: Options) -> bool {
 	if options.probe_modern_api {
 		return run_modern_slang_api_probe()
-	}
-	if options.compare_modern_compile {
-		return compare_modern_component_compile(options)
 	}
 
 	slang: Slang_API
@@ -335,12 +317,11 @@ pack :: proc(options: Options) -> bool {
 	}
 	defer unload_slang_api(&slang)
 
-	session := slang.spCreateSession(nil)
-	if session == nil {
-		fmt.eprintln("ape_shaderc: failed to create Slang session")
+	ctx, context_ok := create_modern_slang_context(&slang)
+	if !context_ok {
 		return false
 	}
-	defer slang.spDestroySession(session)
+	defer destroy_modern_slang_context(&ctx)
 
 	if options.all {
 		for job in SAMPLE_SHADER_JOBS {
@@ -352,7 +333,7 @@ pack :: proc(options: Options) -> bool {
 			job_options.package_path = ""
 			job_options.generated_path = ""
 			complete_default_paths(&job_options)
-			if !pack_shader(&slang, session, job_options) {
+			if !pack_shader(&slang, ctx.session, job_options) {
 				return false
 			}
 		}
@@ -361,14 +342,14 @@ pack :: proc(options: Options) -> bool {
 		return true
 	}
 
-	return pack_shader(&slang, session, options)
+	return pack_shader(&slang, ctx.session, options)
 }
 
-pack_shader :: proc(slang: ^Slang_API, session: rawptr, options: Options) -> bool {
+pack_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Options) -> bool {
 	result: Shader_Build_Result
 	defer delete_shader_build_result(&result)
 
-	if !build_shader_legacy(slang, session, options, &result) {
+	if !build_shader(slang, session, options, &result) {
 		return false
 	}
 
@@ -384,128 +365,7 @@ pack_shader :: proc(slang: ^Slang_API, session: rawptr, options: Options) -> boo
 	return true
 }
 
-build_shader_legacy :: proc(slang: ^Slang_API, session: rawptr, options: Options, result: ^Shader_Build_Result) -> bool {
-	stages: [dynamic]Stage_Desc
-	defer delete(stages)
-	append_stage_descs(&stages, options)
-
-	result^ = {}
-
-	for stage in stages {
-		compiled_stage, compile_ok := compile_stage(
-			slang,
-			session,
-			options,
-			stage,
-			&result.bindings,
-			&result.uniform_blocks,
-			&result.vertex_layout,
-			&result.compute_thread_group,
-		)
-		if !compile_ok {
-			delete_shader_build_result(result)
-			return false
-		}
-		append(&result.compiled, compiled_stage)
-	}
-
-	if !assign_logical_binding_slots(&result.bindings) {
-		delete_shader_build_result(result)
-		return false
-	}
-
-	return true
-}
-
-compare_modern_component_compile :: proc(options: Options) -> bool {
-	legacy_options := options
-	legacy_options.compare_modern_compile = false
-	legacy_options.build_dir = filepath.join({options.build_dir, "legacy"})
-	legacy_options.package_path = filepath.join({legacy_options.build_dir, fmt.tprintf("%s.ashader", options.shader_name)})
-	legacy_options.generated_path = filepath.join({legacy_options.build_dir, "bindings.odin"})
-
-	modern_options := options
-	modern_options.compare_modern_compile = false
-	modern_options.build_dir = filepath.join({options.build_dir, "modern"})
-	modern_options.package_path = filepath.join({modern_options.build_dir, fmt.tprintf("%s.ashader", options.shader_name)})
-	modern_options.generated_path = filepath.join({modern_options.build_dir, "bindings.odin"})
-
-	slang: Slang_API
-	if !load_slang_api(&slang) {
-		return false
-	}
-	defer unload_slang_api(&slang)
-
-	legacy_session := slang.spCreateSession(nil)
-	if legacy_session == nil {
-		fmt.eprintln("ape_shaderc: failed to create legacy Slang session for comparison")
-		return false
-	}
-	defer slang.spDestroySession(legacy_session)
-
-	legacy_result: Shader_Build_Result
-	defer delete_shader_build_result(&legacy_result)
-	if !build_shader_legacy(&slang, legacy_session, legacy_options, &legacy_result) {
-		return false
-	}
-	if !write_generated_bindings(legacy_options, legacy_result.bindings[:], legacy_result.uniform_blocks[:], legacy_result.vertex_layout, legacy_result.compute_thread_group) {
-		return false
-	}
-	if !write_package(legacy_options, legacy_result.compiled[:], legacy_result.bindings[:], legacy_result.vertex_layout) {
-		return false
-	}
-
-	modern_compiled: [dynamic]Compiled_Stage
-	defer delete_compiled_stages(modern_compiled[:])
-	defer delete(modern_compiled)
-	if !compile_shader_modern_components(&slang, modern_options, &modern_compiled) {
-		return false
-	}
-	if len(modern_compiled) != len(legacy_result.compiled) {
-		fmt.eprintln("ape_shaderc: modern Slang compile produced a different stage count")
-		return false
-	}
-
-	for i in 0..<len(modern_compiled) {
-		legacy_stage := legacy_result.compiled[i]
-		modern_stage := &modern_compiled[i]
-		if modern_stage.target != legacy_stage.target ||
-		   modern_stage.stage != legacy_stage.stage ||
-		   modern_stage.entry != legacy_stage.entry {
-			fmt.eprintln("ape_shaderc: modern Slang compile produced a different stage order")
-			return false
-		}
-		if len(modern_stage.bytecode) == 0 {
-			fmt.eprintln("ape_shaderc: modern Slang compile produced empty bytecode for ", modern_stage.entry)
-			return false
-		}
-
-		modern_stage.reflection = copy_byte_slice(legacy_stage.reflection)
-		if modern_stage.reflection == nil {
-			fmt.eprintln("ape_shaderc: failed to copy legacy reflection for modern package comparison")
-			return false
-		}
-	}
-
-	if !write_generated_bindings(modern_options, legacy_result.bindings[:], legacy_result.uniform_blocks[:], legacy_result.vertex_layout, legacy_result.compute_thread_group) {
-		return false
-	}
-	if !write_package(modern_options, modern_compiled[:], legacy_result.bindings[:], legacy_result.vertex_layout) {
-		return false
-	}
-
-	if !file_bytes_match(legacy_options.generated_path, modern_options.generated_path, "generated Odin bindings") {
-		return false
-	}
-	if !package_contracts_match(legacy_options.package_path, modern_options.package_path) {
-		return false
-	}
-
-	fmt.println("Modern Slang component compile comparison passed for", options.shader_name)
-	return true
-}
-
-compile_shader_modern_components :: proc(slang: ^Slang_API, options: Options, out_compiled: ^[dynamic]Compiled_Stage) -> bool {
+create_modern_slang_context :: proc(slang: ^Slang_API) -> (Modern_Slang_Context, bool) {
 	global_desc := Slang_Global_Session_Desc {
 		structureSize = u32(size_of(Slang_Global_Session_Desc)),
 		apiVersion = SLANG_API_VERSION,
@@ -515,16 +375,16 @@ compile_shader_modern_components :: proc(slang: ^Slang_API, options: Options, ou
 	global_session: ^ISlangGlobalSession
 	result := slang.slang_createGlobalSession2(&global_desc, &global_session)
 	if slang_failed(result) || global_session == nil {
-		fmt.eprintln("ape_shaderc: slang_createGlobalSession2 failed for modern component compile")
-		return false
+		fmt.eprintln("ape_shaderc: slang_createGlobalSession2 failed")
+		return {}, false
 	}
-	defer release_slang_unknown(cast(^ISlangUnknown)global_session)
 
 	dxbc_profile := global_session.vtable.findProfile(global_session, cstring("sm_5_0"))
 	spirv_profile := global_session.vtable.findProfile(global_session, cstring("glsl_450"))
 	if dxbc_profile == SLANG_PROFILE_UNKNOWN || spirv_profile == SLANG_PROFILE_UNKNOWN {
 		fmt.eprintln("ape_shaderc: failed to resolve modern Slang target profiles")
-		return false
+		release_slang_unknown(cast(^ISlangUnknown)global_session)
+		return {}, false
 	}
 
 	targets := [?]Slang_Target_Desc {
@@ -542,9 +402,36 @@ compile_shader_modern_components :: proc(slang: ^Slang_API, options: Options, ou
 	result = global_session.vtable.createSession(global_session, &session_desc, &session)
 	if slang_failed(result) || session == nil {
 		fmt.eprintln("ape_shaderc: failed to create modern Slang session")
-		return false
+		release_slang_unknown(cast(^ISlangUnknown)global_session)
+		return {}, false
 	}
-	defer release_slang_unknown(cast(^ISlangUnknown)session)
+
+	return Modern_Slang_Context {
+		global_session = global_session,
+		session = session,
+	}, true
+}
+
+destroy_modern_slang_context :: proc(ctx: ^Modern_Slang_Context) {
+	if ctx == nil {
+		return
+	}
+
+	if ctx.session != nil {
+		release_slang_unknown(cast(^ISlangUnknown)ctx.session)
+	}
+	if ctx.global_session != nil {
+		release_slang_unknown(cast(^ISlangUnknown)ctx.global_session)
+	}
+	ctx^ = {}
+}
+
+build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Options, result: ^Shader_Build_Result) -> bool {
+	stages: [dynamic]Stage_Desc
+	defer delete(stages)
+	append_stage_descs(&stages, options)
+
+	result^ = {}
 
 	source_bytes, source_ok := os.read_entire_file(options.source_path)
 	if !source_ok {
@@ -584,22 +471,44 @@ compile_shader_modern_components :: proc(slang: ^Slang_API, options: Options, ou
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)module)
 
-	stages: [dynamic]Stage_Desc
-	defer delete(stages)
-	append_stage_descs(&stages, options)
-
 	for stage in stages {
-		compiled_stage, compile_ok := compile_modern_component_stage(session, module, stage)
+		compiled_stage, compile_ok := compile_modern_component_stage(
+			slang,
+			session,
+			module,
+			options,
+			stage,
+			&result.bindings,
+			&result.uniform_blocks,
+			&result.vertex_layout,
+			&result.compute_thread_group,
+		)
 		if !compile_ok {
+			delete_shader_build_result(result)
 			return false
 		}
-		append(out_compiled, compiled_stage)
+		append(&result.compiled, compiled_stage)
+	}
+
+	if !assign_logical_binding_slots(&result.bindings) {
+		delete_shader_build_result(result)
+		return false
 	}
 
 	return true
 }
 
-compile_modern_component_stage :: proc(session: ^ISlangSession, module: ^ISlangModule, stage: Stage_Desc) -> (Compiled_Stage, bool) {
+compile_modern_component_stage :: proc(
+	slang: ^Slang_API,
+	session: ^ISlangSession,
+	module: ^ISlangModule,
+	options: Options,
+	stage: Stage_Desc,
+	bindings: ^[dynamic]Binding_Record,
+	uniform_blocks: ^[dynamic]Uniform_Block,
+	vertex_layout: ^Generated_Vertex_Layout,
+	compute_thread_group: ^Compute_Thread_Group_Size,
+) -> (Compiled_Stage, bool) {
 	slang_stage, slang_stage_ok := slang_stage_for_stage(stage.stage)
 	if !slang_stage_ok {
 		fmt.eprintln("ape_shaderc: unsupported modern Slang stage: ", stage.entry)
@@ -647,7 +556,8 @@ compile_modern_component_stage :: proc(session: ^ISlangSession, module: ^ISlangM
 		fmt.eprintln("ape_shaderc: modern Slang failed to create composite component for ", stage.entry)
 		return {}, false
 	}
-	// Keep our cleanup reference independent from Slang's link-time component ownership.
+	// Slang's linked component keeps internal ownership tied to the composite.
+	// Holding our own reference avoids release-order heap corruption on exit.
 	_ = (cast(^ISlangUnknown)composite).vtable.addRef(cast(^ISlangUnknown)composite)
 	defer release_slang_unknown(cast(^ISlangUnknown)composite)
 
@@ -700,12 +610,130 @@ compile_modern_component_stage :: proc(session: ^ISlangSession, module: ^ISlangM
 		return {}, false
 	}
 
+	reflection_blob: rawptr
+	layout: rawptr
+	reflection, reflection_ok := get_modern_reflection_json(slang, linked, target_index, &layout, &reflection_blob)
+	if !reflection_ok {
+		delete(bytecode)
+		return {}, false
+	}
+	defer release_slang_blob(reflection_blob)
+
+	metadata: ^ISlangMetadata
+	if !get_modern_entry_point_metadata(linked, target_index, &metadata) {
+		delete(bytecode)
+		delete(reflection)
+		return {}, false
+	}
+	defer release_slang_unknown(cast(^ISlangUnknown)metadata)
+
+	if !collect_bindings_from_reflection(slang, metadata, layout, stage, reflection, bindings, uniform_blocks) {
+		delete(bytecode)
+		delete(reflection)
+		return {}, false
+	}
+
+	if stage.stage == .Vertex && stage.entry == "vs_main" {
+		stage_vertex_layout: Generated_Vertex_Layout
+		if !collect_vertex_layout_from_json(options, stage, reflection, &stage_vertex_layout) {
+			delete(bytecode)
+			delete(reflection)
+			delete_vertex_layout(&stage_vertex_layout)
+			return {}, false
+		}
+		if !merge_vertex_layout(vertex_layout, &stage_vertex_layout) {
+			delete(bytecode)
+			delete(reflection)
+			delete_vertex_layout(&stage_vertex_layout)
+			return {}, false
+		}
+		delete_vertex_layout(&stage_vertex_layout)
+	}
+
+	if stage.stage == .Compute && stage.entry == "cs_main" {
+		stage_compute_thread_group: Compute_Thread_Group_Size
+		if !collect_compute_thread_group_from_json(options, stage, reflection, &stage_compute_thread_group) {
+			delete(bytecode)
+			delete(reflection)
+			return {}, false
+		}
+		if !merge_compute_thread_group(compute_thread_group, stage_compute_thread_group) {
+			delete(bytecode)
+			delete(reflection)
+			return {}, false
+		}
+	}
+
+	if !write_stage_artifact(stage.reflection_path, reflection, "reflection") {
+		delete(bytecode)
+		delete(reflection)
+		return {}, false
+	}
+
 	return Compiled_Stage {
 		target = stage.target,
 		stage = stage.stage,
 		entry = stage.entry,
 		bytecode = bytecode,
+		reflection = reflection,
 	}, true
+}
+
+get_modern_reflection_json :: proc(
+	slang: ^Slang_API,
+	linked: ^ISlangComponentType,
+	target_index: SlangInt,
+	out_layout: ^rawptr,
+	out_blob: ^rawptr,
+) -> ([]byte, bool) {
+	diagnostics: ^ISlangBlob
+	layout := linked.vtable.getLayout(linked, target_index, &diagnostics)
+	if diagnostics != nil {
+		if layout == nil {
+			print_slang_blob_diagnostics(diagnostics)
+		}
+		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
+	}
+	if layout == nil {
+		fmt.eprintln("ape_shaderc: modern Slang returned no program layout")
+		return nil, false
+	}
+	out_layout^ = layout
+
+	result := slang.spReflection_ToJson(layout, nil, out_blob)
+	if slang_failed(result) || out_blob^ == nil {
+		fmt.eprintln("ape_shaderc: failed to serialize modern Slang reflection JSON")
+		return nil, false
+	}
+
+	reflection := copy_blob_bytes(out_blob^)
+	if reflection == nil {
+		fmt.eprintln("ape_shaderc: failed to copy modern Slang reflection JSON")
+		return nil, false
+	}
+
+	return reflection, true
+}
+
+get_modern_entry_point_metadata :: proc(
+	linked: ^ISlangComponentType,
+	target_index: SlangInt,
+	out_metadata: ^^ISlangMetadata,
+) -> bool {
+	diagnostics: ^ISlangBlob
+	result := linked.vtable.getEntryPointMetadata(linked, 0, target_index, out_metadata, &diagnostics)
+	if diagnostics != nil {
+		if slang_failed(result) || out_metadata^ == nil {
+			print_slang_blob_diagnostics(diagnostics)
+		}
+		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
+	}
+	if slang_failed(result) || out_metadata^ == nil {
+		fmt.eprintln("ape_shaderc: modern Slang returned no entry-point metadata")
+		return false
+	}
+
+	return true
 }
 
 slang_stage_for_stage :: proc(stage: Stage) -> (SlangStage, bool) {
@@ -781,203 +809,9 @@ append_stage_descs :: proc(stages: ^[dynamic]Stage_Desc, options: Options) {
 	})
 }
 
-compile_stage :: proc(
-	slang: ^Slang_API,
-	session: rawptr,
-	options: Options,
-	stage: Stage_Desc,
-	bindings: ^[dynamic]Binding_Record,
-	uniform_blocks: ^[dynamic]Uniform_Block,
-	vertex_layout: ^Generated_Vertex_Layout,
-	compute_thread_group: ^Compute_Thread_Group_Size,
-) -> (Compiled_Stage, bool) {
-	request := slang.spCreateCompileRequest(session)
-	if request == nil {
-		fmt.eprintln("ape_shaderc: failed to create Slang compile request")
-		return {}, false
-	}
-	defer slang.spDestroyCompileRequest(request)
-
-	bytecode_dir, _ := filepath.split(stage.bytecode_path)
-	if bytecode_dir != "" && !ensure_directory(bytecode_dir) {
-		return {}, false
-	}
-
-	args := make_stage_args(options.source_path, stage)
-	defer delete(args)
-
-	c_args, c_args_ok := clone_c_args(args[:])
-	if !c_args_ok {
-		fmt.eprintln("ape_shaderc: failed to allocate Slang arguments")
-		return {}, false
-	}
-
-	result := slang.spProcessCommandLineArguments(request, raw_data(c_args), i32(len(c_args)))
-	if slang_failed(result) {
-		fmt.eprintln("ape_shaderc: Slang argument processing failed for ", options.source_path, ":", stage.entry)
-		print_slang_diagnostics(slang, request)
-		return {}, false
-	}
-
-	result = slang.spCompile(request)
-	if slang_failed(result) {
-		fmt.eprintln("ape_shaderc: Slang compile failed for ", options.source_path, ":", stage.entry)
-		print_slang_diagnostics(slang, request)
-		return {}, false
-	}
-
-	bytecode_blob: rawptr
-	result = slang.spGetEntryPointCodeBlob(request, 0, 0, &bytecode_blob)
-	if slang_failed(result) || bytecode_blob == nil {
-		fmt.eprintln("ape_shaderc: failed to retrieve Slang bytecode for ", options.source_path, ":", stage.entry)
-		print_slang_diagnostics(slang, request)
-		return {}, false
-	}
-	defer release_slang_blob(bytecode_blob)
-
-	bytecode := copy_blob_bytes(bytecode_blob)
-	if bytecode == nil {
-		fmt.eprintln("ape_shaderc: failed to copy Slang bytecode for ", options.source_path, ":", stage.entry)
-		return {}, false
-	}
-
-	reflection := slang.spGetReflection(request)
-	if reflection == nil {
-		delete(bytecode)
-		fmt.eprintln("ape_shaderc: Slang returned no reflection for ", options.source_path, ":", stage.entry)
-		return {}, false
-	}
-
-	reflection_blob: rawptr
-	result = slang.spReflection_ToJson(reflection, request, &reflection_blob)
-	if slang_failed(result) || reflection_blob == nil {
-		delete(bytecode)
-		fmt.eprintln("ape_shaderc: failed to serialize Slang reflection for ", options.source_path, ":", stage.entry)
-		print_slang_diagnostics(slang, request)
-		return {}, false
-	}
-	defer release_slang_blob(reflection_blob)
-
-	reflection_json := copy_blob_bytes(reflection_blob)
-	if reflection_json == nil {
-		delete(bytecode)
-		fmt.eprintln("ape_shaderc: failed to copy Slang reflection JSON")
-		return {}, false
-	}
-
-	if !collect_bindings_from_reflection(slang, request, reflection, stage, reflection_json, bindings, uniform_blocks) {
-		delete(bytecode)
-		delete(reflection_json)
-		return {}, false
-	}
-
-	if stage.stage == .Vertex && stage.entry == "vs_main" {
-		stage_vertex_layout: Generated_Vertex_Layout
-		if !collect_vertex_layout_from_json(options, stage, reflection_json, &stage_vertex_layout) {
-			delete(bytecode)
-			delete(reflection_json)
-			delete_vertex_layout(&stage_vertex_layout)
-			return {}, false
-		}
-		if !merge_vertex_layout(vertex_layout, &stage_vertex_layout) {
-			delete(bytecode)
-			delete(reflection_json)
-			delete_vertex_layout(&stage_vertex_layout)
-			return {}, false
-		}
-		delete_vertex_layout(&stage_vertex_layout)
-	}
-
-	if stage.stage == .Compute && stage.entry == "cs_main" {
-		stage_compute_thread_group: Compute_Thread_Group_Size
-		if !collect_compute_thread_group_from_json(options, stage, reflection_json, &stage_compute_thread_group) {
-			delete(bytecode)
-			delete(reflection_json)
-			return {}, false
-		}
-		if !merge_compute_thread_group(compute_thread_group, stage_compute_thread_group) {
-			delete(bytecode)
-			delete(reflection_json)
-			return {}, false
-		}
-	}
-
-	if !write_stage_artifact(stage.bytecode_path, bytecode, "bytecode") {
-		delete(bytecode)
-		delete(reflection_json)
-		return {}, false
-	}
-	if !write_stage_artifact(stage.reflection_path, reflection_json, "reflection") {
-		delete(bytecode)
-		delete(reflection_json)
-		return {}, false
-	}
-
-	return Compiled_Stage {
-		target = stage.target,
-		stage = stage.stage,
-		entry = stage.entry,
-		bytecode = bytecode,
-		reflection = reflection_json,
-	}, true
-}
-
-make_stage_args :: proc(source_path: string, stage: Stage_Desc) -> [dynamic]string {
-	args: [dynamic]string
-	append(&args, source_path)
-	append(&args, "-entry")
-	append(&args, stage.entry)
-
-	switch stage.target {
-	case .D3D11_DXBC:
-		append(&args, "-target")
-		append(&args, "dxbc")
-		append(&args, "-profile")
-		switch stage.stage {
-		case .Vertex:
-			append(&args, "vs_5_0")
-		case .Fragment:
-			append(&args, "ps_5_0")
-		case .Compute:
-			append(&args, "cs_5_0")
-		}
-	case .Vulkan_SPIRV:
-		append(&args, "-target")
-		append(&args, "spirv")
-		append(&args, "-profile")
-		append(&args, "glsl_450+spirv_1_3")
-		append(&args, "-fvk-b-shift")
-		append(&args, "0")
-		append(&args, "0")
-		append(&args, "-fvk-t-shift")
-		append(&args, "32")
-		append(&args, "0")
-		append(&args, "-fvk-s-shift")
-		append(&args, "64")
-		append(&args, "0")
-	}
-	append(&args, "-o")
-	append(&args, stage.bytecode_path)
-
-	return args
-}
-
-clone_c_args :: proc(args: []string) -> ([]cstring, bool) {
-	c_args := make([]cstring, len(args), context.temp_allocator)
-	for arg, index in args {
-		c_arg, err := strings.clone_to_cstring(arg, context.temp_allocator)
-		if err != nil {
-			return nil, false
-		}
-		c_args[index] = c_arg
-	}
-
-	return c_args, true
-}
-
 collect_bindings_from_reflection :: proc(
 	slang: ^Slang_API,
-	request: rawptr,
+	metadata: ^ISlangMetadata,
 	reflection: rawptr,
 	stage: Stage_Desc,
 	reflection_json: []byte,
@@ -997,26 +831,18 @@ collect_bindings_from_reflection :: proc(
 		}
 
 		category := slang.spReflectionTypeLayout_GetParameterCategory(type_layout)
-		kind, kind_ok := binding_kind_from_category(category)
-		if !kind_ok {
-			continue
-		}
-
 		slot := slang.spReflectionParameter_GetBindingIndex(parameter)
 		space := slang.spReflectionParameter_GetBindingSpace(parameter)
 		used := false
-		result := slang.spIsParameterLocationUsed(
-			request,
-			0,
-			0,
+		result := metadata.vtable.isParameterLocationUsed(
+			metadata,
 			category,
 			SlangUInt(space),
 			SlangUInt(slot),
 			&used,
 		)
 		if slang_failed(result) {
-			fmt.eprintln("ape_shaderc: failed to query Slang parameter usage")
-			print_slang_diagnostics(slang, request)
+			fmt.eprintln("ape_shaderc: failed to query Slang entry-point parameter usage")
 			return false
 		}
 		if !used {
@@ -1041,6 +867,14 @@ collect_bindings_from_reflection :: proc(
 				return false
 			}
 			name = cloned_name
+		}
+
+		kind, kind_ok := binding_kind_from_category(category)
+		if !kind_ok && category == .Descriptor_Table_Slot {
+			kind, kind_ok = binding_kind_from_descriptor_json(reflection_json, name, slot)
+		}
+		if !kind_ok {
+			continue
 		}
 
 		binding_size: u32
@@ -1625,6 +1459,91 @@ binding_kind_from_category :: proc(category: Slang_Parameter_Category) -> (Bindi
 	return .Uniform_Block, false
 }
 
+binding_kind_from_descriptor_json :: proc(reflection_json: []byte, name: string, slot: u32) -> (Binding_Kind, bool) {
+	value, err := json.parse(reflection_json)
+	defer json.destroy_value(value)
+	if err != nil {
+		return .Uniform_Block, false
+	}
+
+	root, root_ok := json_object(value)
+	if !root_ok {
+		return .Uniform_Block, false
+	}
+
+	parameters_value, parameters_ok := json_field(root, "parameters")
+	if !parameters_ok {
+		return .Uniform_Block, false
+	}
+
+	parameters, parameters_array_ok := json_array(parameters_value)
+	if !parameters_array_ok {
+		return .Uniform_Block, false
+	}
+
+	for parameter_value in parameters {
+		parameter, parameter_ok := json_object(parameter_value)
+		if !parameter_ok {
+			continue
+		}
+
+		parameter_name, parameter_name_ok := json_string_field(parameter, "name")
+		if !parameter_name_ok || parameter_name != name {
+			continue
+		}
+
+		binding_value, binding_ok := json_field(parameter, "binding")
+		if !binding_ok {
+			continue
+		}
+		binding, binding_object_ok := json_object(binding_value)
+		if !binding_object_ok {
+			continue
+		}
+
+		parameter_binding_kind, parameter_binding_kind_ok := json_string_field(binding, "kind")
+		if !parameter_binding_kind_ok || parameter_binding_kind != "descriptorTableSlot" {
+			continue
+		}
+		parameter_slot, parameter_slot_ok := json_u32_field(binding, "index")
+		if !parameter_slot_ok || parameter_slot != slot {
+			continue
+		}
+
+		type_value, type_ok := json_field(parameter, "type")
+		if !type_ok {
+			return .Uniform_Block, false
+		}
+
+		return binding_kind_from_json_type(type_value)
+	}
+
+	return .Uniform_Block, false
+}
+
+binding_kind_from_json_type :: proc(type_value: json.Value) -> (Binding_Kind, bool) {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return .Uniform_Block, false
+	}
+
+	type_kind, type_kind_ok := json_string_field(type_object, "kind")
+	if !type_kind_ok {
+		return .Uniform_Block, false
+	}
+
+	switch type_kind {
+	case "constantBuffer", "parameterBlock":
+		return .Uniform_Block, true
+	case "samplerState":
+		return .Sampler, true
+	case "resource", "shaderStorageBuffer", "structuredBuffer":
+		return .Resource_View, true
+	}
+
+	return .Uniform_Block, false
+}
+
 resource_view_metadata_from_json :: proc(
 	reflection_json: []byte,
 	name: string,
@@ -1703,6 +1622,8 @@ json_binding_kind_from_category :: proc(category: Slang_Parameter_Category) -> (
 		return "shaderResource", true
 	case .Unordered_Access:
 		return "unorderedAccess", true
+	case .Descriptor_Table_Slot:
+		return "descriptorTableSlot", true
 	}
 
 	return "", false
@@ -1731,7 +1652,7 @@ resource_view_metadata_from_type_json :: proc(type_value: json.Value, binding_ki
 	base_shape, base_shape_ok := json_string_field(type_object, "baseShape")
 	if type_kind == "resource" && base_shape_ok {
 		if resource_shape_is_texture(base_shape) {
-			if binding_kind == "unorderedAccess" {
+			if binding_kind == "unorderedAccess" || access == .Write || access == .Read_Write {
 				format, format_ok := storage_image_format_from_type_json(type_object)
 				if !format_ok {
 					return .Storage_Image, access, .Invalid, 0, false
@@ -1932,6 +1853,9 @@ resource_access_from_json :: proc(type_object: json.Object, binding_kind: string
 	}
 	if binding_kind == "unorderedAccess" {
 		return .Read_Write
+	}
+	if binding_kind == "descriptorTableSlot" {
+		return .Read
 	}
 
 	return .Unknown
@@ -2167,12 +2091,6 @@ write_stage_artifact :: proc(path: string, bytes: []byte, label: string) -> bool
 	return true
 }
 
-copy_byte_slice :: proc(bytes: []byte) -> []byte {
-	out := make([]byte, len(bytes))
-	copy(out, bytes)
-	return out
-}
-
 copy_raw_bytes :: proc(ptr: rawptr, size: uint) -> []byte {
 	if ptr == nil || size == 0 {
 		return nil
@@ -2219,20 +2137,6 @@ release_slang_blob :: proc(blob: rawptr) {
 
 	blob_iface := cast(^ISlangBlob)blob
 	blob_iface.vtable.release(blob_iface)
-}
-
-print_slang_diagnostics :: proc(slang: ^Slang_API, request: rawptr) {
-	if request == nil {
-		return
-	}
-
-	diagnostics := slang.spGetDiagnosticOutput(request)
-	if diagnostics != nil {
-		message := string(diagnostics)
-		if message != "" {
-			fmt.eprintln(message)
-		}
-	}
 }
 
 delete_compiled_stages :: proc(stages: []Compiled_Stage) {
@@ -2754,298 +2658,6 @@ write_package :: proc(
 	}
 
 	return true
-}
-
-Package_Stage_Contract :: struct {
-	target: u32,
-	stage: u32,
-	entry: string,
-	bytecode_size: u64,
-	reflection: []byte,
-}
-
-Package_Binding_Contract :: struct {
-	target: u32,
-	stage: u32,
-	kind: u32,
-	slot: u32,
-	space: u32,
-	logical_slot: u32,
-	name: string,
-	used: u32,
-	size: u32,
-	view_kind: u32,
-	access: u32,
-	storage_image_format: u32,
-	storage_buffer_stride: u32,
-}
-
-Package_Vertex_Input_Contract :: struct {
-	semantic: string,
-	semantic_index: u32,
-	format: u32,
-	used: u32,
-}
-
-Package_Contract :: struct {
-	bytes: []byte,
-	version: u32,
-	stages: []Package_Stage_Contract,
-	bindings: []Package_Binding_Contract,
-	vertex_inputs: []Package_Vertex_Input_Contract,
-}
-
-file_bytes_match :: proc(a_path, b_path, label: string) -> bool {
-	a, a_ok := os.read_entire_file(a_path)
-	if !a_ok {
-		fmt.eprintln("ape_shaderc: failed to read ", label, ": ", a_path)
-		return false
-	}
-	defer delete(a)
-
-	b, b_ok := os.read_entire_file(b_path)
-	if !b_ok {
-		fmt.eprintln("ape_shaderc: failed to read ", label, ": ", b_path)
-		return false
-	}
-	defer delete(b)
-
-	if !byte_slices_match(a, b) {
-		fmt.eprintln("ape_shaderc: modern Slang comparison changed ", label)
-		return false
-	}
-
-	return true
-}
-
-package_contracts_match :: proc(legacy_path, modern_path: string) -> bool {
-	legacy, legacy_ok := parse_package_contract(legacy_path)
-	if !legacy_ok {
-		return false
-	}
-	defer delete_package_contract(&legacy)
-
-	modern, modern_ok := parse_package_contract(modern_path)
-	if !modern_ok {
-		return false
-	}
-	defer delete_package_contract(&modern)
-
-	if legacy.version != modern.version ||
-	   len(legacy.stages) != len(modern.stages) ||
-	   len(legacy.bindings) != len(modern.bindings) ||
-	   len(legacy.vertex_inputs) != len(modern.vertex_inputs) {
-		fmt.eprintln("ape_shaderc: modern Slang .ashader contract counts differ")
-		return false
-	}
-
-	for stage, index in legacy.stages {
-		other := modern.stages[index]
-		if stage.target != other.target ||
-		   stage.stage != other.stage ||
-		   stage.entry != other.entry ||
-		   !byte_slices_match(stage.reflection, other.reflection) ||
-		   other.bytecode_size == 0 {
-			fmt.eprintln("ape_shaderc: modern Slang .ashader stage contract differs at index ", index)
-			return false
-		}
-	}
-
-	for binding, index in legacy.bindings {
-		other := modern.bindings[index]
-		if binding != other {
-			fmt.eprintln("ape_shaderc: modern Slang .ashader binding contract differs at index ", index)
-			return false
-		}
-	}
-
-	for vertex_input, index in legacy.vertex_inputs {
-		other := modern.vertex_inputs[index]
-		if vertex_input != other {
-			fmt.eprintln("ape_shaderc: modern Slang .ashader vertex input contract differs at index ", index)
-			return false
-		}
-	}
-
-	return true
-}
-
-parse_package_contract :: proc(path: string) -> (Package_Contract, bool) {
-	bytes, ok := os.read_entire_file(path)
-	if !ok {
-		fmt.eprintln("ape_shaderc: failed to read .ashader package: ", path)
-		return {}, false
-	}
-
-	fail :: proc(contract: ^Package_Contract, message: string) -> (Package_Contract, bool) {
-		fmt.eprintln(message)
-		delete_package_contract(contract)
-		return {}, false
-	}
-
-	contract := Package_Contract{bytes = bytes}
-	if len(bytes) < PACKAGE_HEADER_SIZE {
-		return fail(&contract, "ape_shaderc: .ashader package is too small")
-	}
-	if read_package_u32(bytes, 0) != PACKAGE_MAGIC {
-		return fail(&contract, "ape_shaderc: .ashader package has invalid magic")
-	}
-
-	contract.version = read_package_u32(bytes, 4)
-	if contract.version != PACKAGE_VERSION {
-		return fail(&contract, "ape_shaderc: .ashader package version does not match ape_shaderc")
-	}
-
-	stage_count := read_package_u32(bytes, 8)
-	binding_count := read_package_u32(bytes, 12)
-	vertex_input_count := read_package_u32(bytes, 16)
-	record_bytes := PACKAGE_HEADER_SIZE +
-	                int(stage_count) * PACKAGE_STAGE_RECORD_SIZE +
-	                int(binding_count) * PACKAGE_BINDING_RECORD_SIZE +
-	                int(vertex_input_count) * PACKAGE_VERTEX_INPUT_RECORD_SIZE
-	if record_bytes > len(bytes) {
-		return fail(&contract, "ape_shaderc: .ashader package records exceed file size")
-	}
-
-	contract.stages = make([]Package_Stage_Contract, int(stage_count))
-	for i in 0..<int(stage_count) {
-		offset := PACKAGE_HEADER_SIZE + i * PACKAGE_STAGE_RECORD_SIZE
-		entry_offset := read_package_u32(bytes, offset + 8)
-		entry_size := read_package_u32(bytes, offset + 12)
-		bytecode_offset := read_package_u64(bytes, offset + 16)
-		bytecode_size := read_package_u64(bytes, offset + 24)
-		reflection_offset := read_package_u64(bytes, offset + 32)
-		reflection_size := read_package_u64(bytes, offset + 40)
-
-		entry_bytes, entry_ok := package_byte_range(bytes, u64(entry_offset), u64(entry_size))
-		reflection_bytes, reflection_ok := package_byte_range(bytes, reflection_offset, reflection_size)
-		_, bytecode_ok := package_byte_range(bytes, bytecode_offset, bytecode_size)
-		if !entry_ok || !reflection_ok || !bytecode_ok {
-			return fail(&contract, "ape_shaderc: .ashader package has invalid stage ranges")
-		}
-
-		contract.stages[i] = Package_Stage_Contract {
-			target = read_package_u32(bytes, offset + 0),
-			stage = read_package_u32(bytes, offset + 4),
-			entry = string(entry_bytes),
-			bytecode_size = bytecode_size,
-			reflection = reflection_bytes,
-		}
-	}
-
-	binding_records_offset := PACKAGE_HEADER_SIZE + int(stage_count) * PACKAGE_STAGE_RECORD_SIZE
-	if binding_count > 0 {
-		contract.bindings = make([]Package_Binding_Contract, int(binding_count))
-		for i in 0..<int(binding_count) {
-			offset := binding_records_offset + i * PACKAGE_BINDING_RECORD_SIZE
-			name_offset := read_package_u32(bytes, offset + 16)
-			name_size := read_package_u32(bytes, offset + 20)
-			name_bytes, name_ok := package_byte_range(bytes, u64(name_offset), u64(name_size))
-			if !name_ok {
-				return fail(&contract, "ape_shaderc: .ashader package has invalid binding name range")
-			}
-
-			contract.bindings[i] = Package_Binding_Contract {
-				target = read_package_u32(bytes, offset + 0),
-				stage = read_package_u32(bytes, offset + 4),
-				kind = read_package_u32(bytes, offset + 8),
-				slot = read_package_u32(bytes, offset + 12),
-				name = string(name_bytes),
-				used = read_package_u32(bytes, offset + 24),
-				size = read_package_u32(bytes, offset + 28),
-				logical_slot = read_package_u32(bytes, offset + 32),
-				view_kind = read_package_u32(bytes, offset + 36),
-				access = read_package_u32(bytes, offset + 40),
-				storage_image_format = read_package_u32(bytes, offset + 44),
-				storage_buffer_stride = read_package_u32(bytes, offset + 48),
-				space = read_package_u32(bytes, offset + 52),
-			}
-		}
-	}
-
-	vertex_records_offset := binding_records_offset + int(binding_count) * PACKAGE_BINDING_RECORD_SIZE
-	if vertex_input_count > 0 {
-		contract.vertex_inputs = make([]Package_Vertex_Input_Contract, int(vertex_input_count))
-		for i in 0..<int(vertex_input_count) {
-			offset := vertex_records_offset + i * PACKAGE_VERTEX_INPUT_RECORD_SIZE
-			semantic_offset := read_package_u32(bytes, offset + 0)
-			semantic_size := read_package_u32(bytes, offset + 4)
-			semantic_bytes, semantic_ok := package_byte_range(bytes, u64(semantic_offset), u64(semantic_size))
-			if !semantic_ok {
-				return fail(&contract, "ape_shaderc: .ashader package has invalid vertex semantic range")
-			}
-
-			contract.vertex_inputs[i] = Package_Vertex_Input_Contract {
-				semantic = string(semantic_bytes),
-				semantic_index = read_package_u32(bytes, offset + 8),
-				format = read_package_u32(bytes, offset + 12),
-				used = read_package_u32(bytes, offset + 16),
-			}
-		}
-	}
-
-	return contract, true
-}
-
-delete_package_contract :: proc(contract: ^Package_Contract) {
-	if contract == nil {
-		return
-	}
-
-	if contract.stages != nil {
-		delete(contract.stages)
-	}
-	if contract.bindings != nil {
-		delete(contract.bindings)
-	}
-	if contract.vertex_inputs != nil {
-		delete(contract.vertex_inputs)
-	}
-	if contract.bytes != nil {
-		delete(contract.bytes)
-	}
-	contract^ = {}
-}
-
-package_byte_range :: proc(bytes: []byte, offset, size: u64) -> ([]byte, bool) {
-	if !package_range_valid(bytes, offset, size) {
-		return nil, false
-	}
-
-	start := int(offset)
-	end := start + int(size)
-	return bytes[start:end], true
-}
-
-package_range_valid :: proc(bytes: []byte, offset, size: u64) -> bool {
-	byte_count := u64(len(bytes))
-	return offset <= byte_count && size <= byte_count - offset
-}
-
-byte_slices_match :: proc(a, b: []byte) -> bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for value, index in a {
-		if b[index] != value {
-			return false
-		}
-	}
-
-	return true
-}
-
-read_package_u32 :: proc(bytes: []byte, offset: int) -> u32 {
-	return u32(bytes[offset + 0]) |
-	       u32(bytes[offset + 1]) << 8 |
-	       u32(bytes[offset + 2]) << 16 |
-	       u32(bytes[offset + 3]) << 24
-}
-
-read_package_u64 :: proc(bytes: []byte, offset: int) -> u64 {
-	return u64(read_package_u32(bytes, offset + 0)) |
-	       u64(read_package_u32(bytes, offset + 4)) << 32
 }
 
 package_vertex_format :: proc(format: Generated_Vertex_Format) -> u32 {

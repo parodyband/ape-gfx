@@ -11,13 +11,13 @@ $SourcePath = Join-Path $TestDir "compute_storage.slang"
 $PackagePath = Join-Path $TestDir "compute_storage.ashader"
 $GeneratedDir = Join-Path $TestDir "generated"
 $GeneratedPath = Join-Path $GeneratedDir "bindings.odin"
-$LegacyGeneratedPath = Join-Path $TestDir "bindings.odin"
+$StaleGeneratedPath = Join-Path $TestDir "bindings.odin"
 $OutPath = Join-Path $TestDir "d3d11_compute_pass.exe"
 $MainPath = Join-Path $TestDir "main.odin"
 
 New-Item -ItemType Directory -Force -Path $TestDir | Out-Null
 New-Item -ItemType Directory -Force -Path $GeneratedDir | Out-Null
-Remove-Item -LiteralPath $LegacyGeneratedPath -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $StaleGeneratedPath -ErrorAction SilentlyContinue
 
 Set-Content -LiteralPath $SourcePath -Value @'
 RWTexture2D<float4> output_image : register(u0);

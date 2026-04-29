@@ -116,13 +116,13 @@ VK_VS_UB_FrameUniforms :: 1
 VK_VS_UB_FrameUniforms_SPACE :: 0
 VK_FS_UB_FrameUniforms :: 1
 VK_FS_UB_FrameUniforms_SPACE :: 0
-VK_FS_VIEW_diffuse_texture :: 32
+VK_FS_VIEW_diffuse_texture :: 2
 VK_FS_VIEW_diffuse_texture_SPACE :: 0
-VK_FS_VIEW_shadow_map :: 33
+VK_FS_VIEW_shadow_map :: 3
 VK_FS_VIEW_shadow_map_SPACE :: 0
-VK_FS_SMP_diffuse_sampler :: 64
+VK_FS_SMP_diffuse_sampler :: 4
 VK_FS_SMP_diffuse_sampler_SPACE :: 0
-VK_FS_SMP_shadow_sampler :: 65
+VK_FS_SMP_shadow_sampler :: 5
 VK_FS_SMP_shadow_sampler_SPACE :: 0
 
 BINDING_RECORD_COUNT :: 14
@@ -290,7 +290,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("diffuse_texture"),
 		logical_slot = 0,
-		native_slot = 32,
+		native_slot = 2,
 		native_space = 0,
 		size = 0,
 		view_kind = gfx.View_Kind.Sampled,
@@ -304,7 +304,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("shadow_map"),
 		logical_slot = 1,
-		native_slot = 33,
+		native_slot = 3,
 		native_space = 0,
 		size = 0,
 		view_kind = gfx.View_Kind.Sampled,
@@ -318,7 +318,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		kind = gfx.Shader_Binding_Kind.Sampler,
 		name = cstring("diffuse_sampler"),
 		logical_slot = 0,
-		native_slot = 64,
+		native_slot = 4,
 		native_space = 0,
 		size = 0,
 		view_kind = gfx.View_Kind.Sampled,
@@ -332,7 +332,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		kind = gfx.Shader_Binding_Kind.Sampler,
 		name = cstring("shadow_sampler"),
 		logical_slot = 1,
-		native_slot = 65,
+		native_slot = 5,
 		native_space = 0,
 		size = 0,
 		view_kind = gfx.View_Kind.Sampled,

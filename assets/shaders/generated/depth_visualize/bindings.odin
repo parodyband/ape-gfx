@@ -46,9 +46,9 @@ VIEW_ACCESS_ape_texture :: gfx.Shader_Resource_Access.Read
 D3D11_FS_SMP_ape_sampler :: 0
 D3D11_FS_SMP_ape_sampler_SPACE :: 0
 SMP_ape_sampler :: 0
-VK_FS_VIEW_ape_texture :: 32
+VK_FS_VIEW_ape_texture :: 0
 VK_FS_VIEW_ape_texture_SPACE :: 0
-VK_FS_SMP_ape_sampler :: 64
+VK_FS_SMP_ape_sampler :: 1
 VK_FS_SMP_ape_sampler_SPACE :: 0
 
 BINDING_RECORD_COUNT :: 4
@@ -104,7 +104,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("ape_texture"),
 		logical_slot = 0,
-		native_slot = 32,
+		native_slot = 0,
 		native_space = 0,
 		size = 0,
 		view_kind = gfx.View_Kind.Sampled,
@@ -118,7 +118,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		kind = gfx.Shader_Binding_Kind.Sampler,
 		name = cstring("ape_sampler"),
 		logical_slot = 0,
-		native_slot = 64,
+		native_slot = 1,
 		native_space = 0,
 		size = 0,
 		view_kind = gfx.View_Kind.Sampled,

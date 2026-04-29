@@ -118,6 +118,16 @@ ISlangBlob_VTable :: struct {
 	getBufferSize: proc "system" (this: ^ISlangBlob) -> uint,
 }
 
+ISlangCastable :: struct #raw_union {
+	#subtype unknown: ISlangUnknown,
+	using vtable: ^ISlangCastable_VTable,
+}
+
+ISlangCastable_VTable :: struct {
+	using unknown_vtable: ISlangUnknown_VTable,
+	castAs: proc "system" (this: ^ISlangCastable, uuid: rawptr) -> rawptr,
+}
+
 ISlangGlobalSession :: struct #raw_union {
 	#subtype unknown: ISlangUnknown,
 	using vtable: ^ISlangGlobalSession_VTable,
@@ -141,6 +151,11 @@ ISlangEntryPoint :: struct #raw_union {
 ISlangModule :: struct #raw_union {
 	#subtype component: ISlangComponentType,
 	using vtable: ^ISlangModule_VTable,
+}
+
+ISlangMetadata :: struct #raw_union {
+	#subtype castable: ISlangCastable,
+	using vtable: ^ISlangMetadata_VTable,
 }
 
 ISlangGlobalSession_VTable :: struct {
@@ -168,7 +183,7 @@ ISlangSession_VTable :: struct {
 	getTypeRTTIMangledName: rawptr,
 	getTypeConformanceWitnessMangledName: rawptr,
 	getTypeConformanceWitnessSequentialID: rawptr,
-	createCompileRequest: rawptr,
+	reserved_interface_slot_11: rawptr,
 	createTypeConformanceComponentType: rawptr,
 	loadModuleFromIRBlob: rawptr,
 	getLoadedModuleCount: rawptr,
@@ -207,8 +222,30 @@ ISlangComponentType_VTable :: struct {
 	renameEntryPoint: rawptr,
 	linkWithOptions: rawptr,
 	getTargetCode: rawptr,
-	getTargetMetadata: rawptr,
-	getEntryPointMetadata: rawptr,
+	getTargetMetadata: proc "system" (
+		this: ^ISlangComponentType,
+		target_index: SlangInt,
+		out_metadata: ^^ISlangMetadata,
+		out_diagnostics: ^^ISlangBlob,
+	) -> SlangResult,
+	getEntryPointMetadata: proc "system" (
+		this: ^ISlangComponentType,
+		entry_point_index: SlangInt,
+		target_index: SlangInt,
+		out_metadata: ^^ISlangMetadata,
+		out_diagnostics: ^^ISlangBlob,
+	) -> SlangResult,
+}
+
+ISlangMetadata_VTable :: struct {
+	using castable_vtable: ISlangCastable_VTable,
+	isParameterLocationUsed: proc "system" (
+		this: ^ISlangMetadata,
+		category: Slang_Parameter_Category,
+		space_index: SlangUInt,
+		register_index: SlangUInt,
+		out_used: ^bool,
+	) -> SlangResult,
 }
 
 ISlangEntryPoint_VTable :: struct {
@@ -277,15 +314,6 @@ Slang_Session_Desc :: struct {
 
 Slang_API :: struct {
 	slang_createGlobalSession2: proc "c" (desc: ^Slang_Global_Session_Desc, out_global_session: ^^ISlangGlobalSession) -> SlangResult,
-	spCreateSession: proc "c" (deprecated: cstring) -> rawptr,
-	spDestroySession: proc "c" (session: rawptr),
-	spCreateCompileRequest: proc "c" (session: rawptr) -> rawptr,
-	spDestroyCompileRequest: proc "c" (request: rawptr),
-	spProcessCommandLineArguments: proc "c" (request: rawptr, args: [^]cstring, arg_count: i32) -> SlangResult,
-	spCompile: proc "c" (request: rawptr) -> SlangResult,
-	spGetEntryPointCodeBlob: proc "c" (request: rawptr, entry_point_index: i32, target_index: i32, out_blob: ^rawptr) -> SlangResult,
-	spGetDiagnosticOutput: proc "c" (request: rawptr) -> cstring,
-	spGetReflection: proc "c" (request: rawptr) -> rawptr,
 	spReflection_ToJson: proc "c" (reflection: rawptr, request: rawptr, out_blob: ^rawptr) -> SlangResult,
 	spReflection_GetParameterCount: proc "c" (reflection: rawptr) -> u32,
 	spReflection_GetParameterByIndex: proc "c" (reflection: rawptr, index: u32) -> rawptr,
@@ -309,15 +337,6 @@ Slang_API :: struct {
 	spReflectionType_GetRowCount: proc "c" (typ: rawptr) -> u32,
 	spReflectionType_GetColumnCount: proc "c" (typ: rawptr) -> u32,
 	spReflectionType_GetScalarType: proc "c" (typ: rawptr) -> Slang_Scalar_Type,
-	spIsParameterLocationUsed: proc "c" (
-		request: rawptr,
-		entry_point_index: SlangInt,
-		target_index: SlangInt,
-		category: Slang_Parameter_Category,
-		space_index: SlangUInt,
-		register_index: SlangUInt,
-		out_used: ^bool,
-	) -> SlangResult,
 	handle: dynlib.Library,
 }
 
@@ -360,15 +379,6 @@ unload_slang_api :: proc(api: ^Slang_API) {
 
 slang_api_valid :: proc(api: ^Slang_API) -> bool {
 	return api.slang_createGlobalSession2 != nil &&
-	       api.spCreateSession != nil &&
-	       api.spDestroySession != nil &&
-	       api.spCreateCompileRequest != nil &&
-	       api.spDestroyCompileRequest != nil &&
-	       api.spProcessCommandLineArguments != nil &&
-	       api.spCompile != nil &&
-	       api.spGetEntryPointCodeBlob != nil &&
-	       api.spGetDiagnosticOutput != nil &&
-	       api.spGetReflection != nil &&
 	       api.spReflection_ToJson != nil &&
 	       api.spReflection_GetParameterCount != nil &&
 	       api.spReflection_GetParameterByIndex != nil &&
@@ -391,8 +401,7 @@ slang_api_valid :: proc(api: ^Slang_API) -> bool {
 	       api.spReflectionType_GetElementType != nil &&
 	       api.spReflectionType_GetRowCount != nil &&
 	       api.spReflectionType_GetColumnCount != nil &&
-	       api.spReflectionType_GetScalarType != nil &&
-	       api.spIsParameterLocationUsed != nil
+	       api.spReflectionType_GetScalarType != nil
 }
 
 slang_failed :: proc(result: SlangResult) -> bool {
