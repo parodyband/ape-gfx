@@ -463,7 +463,8 @@ Planned order:
 - [x] Add an `ape_shaderc` batch mode so one tool invocation can compile all sample shaders.
 - [x] Keep PowerShell scripts as thin wrappers around the Odin tool for normal sample shader compilation.
 - [x] Bind and validate the minimum modern Slang API surface for `IGlobalSession`, `ISession`, target/profile setup, and session creation.
-- [ ] Next: compile one shader through the modern module/component path and compare generated `.ashader` packages and Odin bindings against the legacy compile-request path.
+- [x] Compile `triangle` through the modern module/component path and compare the generated `.ashader` contract and Odin bindings against the legacy compile-request path.
+- [ ] Next: move reflection extraction for one shader from legacy compile-request JSON to modern `ProgramLayout` and entry-point metadata.
 - [ ] Extend the modern Slang API surface for modules, entry points, component composition, linked programs, generated code blobs, program layouts, and entry-point metadata.
 - Preserve the current `.ashader` and generated Odin output while the new compiler path reaches parity.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
@@ -484,6 +485,7 @@ Current shader reflection validation is covered by:
 ```powershell
 .\tools\compile_shaders.ps1 -All
 .\tools\test_shaderc_modern_api_probe.ps1
+.\tools\test_shaderc_modern_component_compile.ps1
 .\tools\test_shaderc_register_free_samples.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1

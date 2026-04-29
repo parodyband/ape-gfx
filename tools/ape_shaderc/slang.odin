@@ -10,6 +10,7 @@ SlangInt :: i64
 SlangUInt :: u64
 SlangProfileID :: u32
 SlangCompileTarget :: i32
+SlangStage :: u32
 SlangTargetFlags :: u32
 SlangFloatingPointMode :: u32
 SlangLineDirectiveMode :: u32
@@ -21,6 +22,9 @@ SLANG_LANGUAGE_VERSION_2025 :: u32(2025)
 SLANG_PROFILE_UNKNOWN :: SlangProfileID(0)
 SLANG_TARGET_DXBC :: SlangCompileTarget(8)
 SLANG_TARGET_SPIRV :: SlangCompileTarget(6)
+SLANG_STAGE_VERTEX :: SlangStage(1)
+SLANG_STAGE_FRAGMENT :: SlangStage(5)
+SLANG_STAGE_COMPUTE :: SlangStage(6)
 SLANG_MATRIX_LAYOUT_ROW_MAJOR :: SlangMatrixLayoutMode(1)
 
 Slang_Type_Kind :: enum u32 {
@@ -124,6 +128,21 @@ ISlangSession :: struct #raw_union {
 	using vtable: ^ISlangSession_VTable,
 }
 
+ISlangComponentType :: struct #raw_union {
+	#subtype unknown: ISlangUnknown,
+	using vtable: ^ISlangComponentType_VTable,
+}
+
+ISlangEntryPoint :: struct #raw_union {
+	#subtype component: ISlangComponentType,
+	using vtable: ^ISlangEntryPoint_VTable,
+}
+
+ISlangModule :: struct #raw_union {
+	#subtype component: ISlangComponentType,
+	using vtable: ^ISlangModule_VTable,
+}
+
 ISlangGlobalSession_VTable :: struct {
 	using unknown_vtable: ISlangUnknown_VTable,
 	createSession: proc "system" (this: ^ISlangGlobalSession, desc: ^Slang_Session_Desc, out_session: ^^ISlangSession) -> SlangResult,
@@ -133,6 +152,90 @@ ISlangGlobalSession_VTable :: struct {
 ISlangSession_VTable :: struct {
 	using unknown_vtable: ISlangUnknown_VTable,
 	getGlobalSession: proc "system" (this: ^ISlangSession) -> ^ISlangGlobalSession,
+	loadModule: proc "system" (this: ^ISlangSession, module_name: cstring, out_diagnostics: ^^ISlangBlob) -> ^ISlangModule,
+	loadModuleFromSource: proc "system" (this: ^ISlangSession, module_name: cstring, path: cstring, source: ^ISlangBlob, out_diagnostics: ^^ISlangBlob) -> ^ISlangModule,
+	createCompositeComponentType: proc "system" (
+		this: ^ISlangSession,
+		component_types: [^]^ISlangComponentType,
+		component_type_count: SlangInt,
+		out_composite_component_type: ^^ISlangComponentType,
+		out_diagnostics: ^^ISlangBlob,
+	) -> SlangResult,
+	specializeType: rawptr,
+	getTypeLayout: rawptr,
+	getContainerType: rawptr,
+	getDynamicType: rawptr,
+	getTypeRTTIMangledName: rawptr,
+	getTypeConformanceWitnessMangledName: rawptr,
+	getTypeConformanceWitnessSequentialID: rawptr,
+	createCompileRequest: rawptr,
+	createTypeConformanceComponentType: rawptr,
+	loadModuleFromIRBlob: rawptr,
+	getLoadedModuleCount: rawptr,
+	getLoadedModule: rawptr,
+	isBinaryModuleUpToDate: rawptr,
+	loadModuleFromSourceString: proc "system" (
+		this: ^ISlangSession,
+		module_name: cstring,
+		path: cstring,
+		source: cstring,
+		out_diagnostics: ^^ISlangBlob,
+	) -> ^ISlangModule,
+}
+
+ISlangComponentType_VTable :: struct {
+	using unknown_vtable: ISlangUnknown_VTable,
+	getSession: proc "system" (this: ^ISlangComponentType) -> ^ISlangSession,
+	getLayout: proc "system" (this: ^ISlangComponentType, target_index: SlangInt, out_diagnostics: ^^ISlangBlob) -> rawptr,
+	getSpecializationParamCount: proc "system" (this: ^ISlangComponentType) -> SlangInt,
+	getEntryPointCode: proc "system" (
+		this: ^ISlangComponentType,
+		entry_point_index: SlangInt,
+		target_index: SlangInt,
+		out_code: ^^ISlangBlob,
+		out_diagnostics: ^^ISlangBlob,
+	) -> SlangResult,
+	getResultAsFileSystem: rawptr,
+	getEntryPointHash: rawptr,
+	specialize: rawptr,
+	link: proc "system" (
+		this: ^ISlangComponentType,
+		out_linked_component_type: ^^ISlangComponentType,
+		out_diagnostics: ^^ISlangBlob,
+	) -> SlangResult,
+	getEntryPointHostCallable: rawptr,
+	renameEntryPoint: rawptr,
+	linkWithOptions: rawptr,
+	getTargetCode: rawptr,
+	getTargetMetadata: rawptr,
+	getEntryPointMetadata: rawptr,
+}
+
+ISlangEntryPoint_VTable :: struct {
+	using component_vtable: ISlangComponentType_VTable,
+	getFunctionReflection: proc "system" (this: ^ISlangEntryPoint) -> rawptr,
+}
+
+ISlangModule_VTable :: struct {
+	using component_vtable: ISlangComponentType_VTable,
+	findEntryPointByName: proc "system" (this: ^ISlangModule, name: cstring, out_entry_point: ^^ISlangEntryPoint) -> SlangResult,
+	getDefinedEntryPointCount: proc "system" (this: ^ISlangModule) -> i32,
+	getDefinedEntryPoint: proc "system" (this: ^ISlangModule, index: i32, out_entry_point: ^^ISlangEntryPoint) -> SlangResult,
+	serialize: rawptr,
+	writeToFile: rawptr,
+	getName: proc "system" (this: ^ISlangModule) -> cstring,
+	getFilePath: proc "system" (this: ^ISlangModule) -> cstring,
+	getUniqueIdentity: proc "system" (this: ^ISlangModule) -> cstring,
+	findAndCheckEntryPoint: proc "system" (
+		this: ^ISlangModule,
+		name: cstring,
+		stage: SlangStage,
+		out_entry_point: ^^ISlangEntryPoint,
+		out_diagnostics: ^^ISlangBlob,
+	) -> SlangResult,
+	getDependencyFileCount: rawptr,
+	getDependencyFilePath: rawptr,
+	getModuleReflection: rawptr,
 }
 
 Slang_Global_Session_Desc :: struct {
