@@ -449,7 +449,7 @@
 
 
 	fullpath:
-		<repo>/engine/gfx
+		<repo>/gfx
 	files:
 		backend_d3d11.odin
 		backend_null.odin

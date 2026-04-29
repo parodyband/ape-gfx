@@ -18,9 +18,9 @@ package main
 
 import "core:fmt"
 import "core:os"
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
-import shader_assets "ape:engine/shader"
+import app "ape:app"
+import gfx "ape:gfx"
+import shader_assets "ape:shader"
 import triangle_shader "ape:assets/shaders/generated/triangle"
 
 main :: proc() {

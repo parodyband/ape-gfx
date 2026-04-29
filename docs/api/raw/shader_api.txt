@@ -26,6 +26,6 @@
 
 
 	fullpath:
-		<repo>/engine/shader
+		<repo>/shader
 	files:
 		metadata.odin

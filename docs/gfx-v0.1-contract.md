@@ -2,7 +2,7 @@
 
 Date: 2026-04-28
 
-This document defines the intended `v0.1` contract for `engine/gfx`. It is the line between the low-level graphics framework we are hardening and the engine or renderer layers we are intentionally not building yet.
+This document defines the intended `v0.1` contract for `gfx`. It is the line between the low-level graphics framework we are hardening and the engine or renderer layers we are intentionally not building yet.
 
 `v0.1` is D3D11-first. Vulkan, Linux, compressed texture assets, renderer systems, and higher-level game framework decisions stay outside this contract until the D3D11-backed API stops moving.
 
@@ -12,7 +12,7 @@ This document defines the intended `v0.1` contract for `engine/gfx`. It is the l
 
 Stable means user code should be able to rely on the shape for normal `v0.1` use. We can still fix bugs and improve diagnostics without changing the public call pattern.
 
-- `engine/gfx` remains the public low-level graphics package.
+- `gfx` remains the public low-level graphics package.
 - One `gfx.Context` owns backend state, the implicit window swapchain, resources, command state, and diagnostics.
 - Resource handles are opaque generational IDs. Zero is always invalid.
 - Resource lifetime is explicit: create with `create_*`, release with `destroy` or `destroy_*`.
@@ -28,7 +28,7 @@ Stable means user code should be able to rely on the shape for normal `v0.1` use
 - Human-readable errors remain available through `last_error`.
 - Public query helpers expose backend-free state through `query_features`, `query_limits`, `query_backend_limits`, and `query_*_state`.
 - Slang is the shader authoring and reflection source.
-- `.ashader` packages loaded through `engine/shader` are the expected runtime shader input.
+- `.ashader` packages loaded through `shader` are the expected runtime shader input.
 - Generated Slang bindings are the recommended way to set resource slots, uniform blocks, compute dispatch sizing, and simple vertex layouts.
 - D3D11 is the production backend for this contract.
 - `Null` is stable for command-flow smoke tests.
@@ -40,7 +40,7 @@ Provisional means the feature exists and is useful, but we expect to refine deta
 - The binary `.ashader` container format can still change before a tagged release.
 - Generated binding helper names for documented v0.1 shader shapes are listed in `docs/gfx-slang-reflection-contract.md`; less common future shapes may still refine helper naming.
 - D3D11 compute, storage image views, and storage buffer views are present, but the storage/compute surface should keep evolving only from real use cases.
-- `engine/app` is a minimal sample/windowing facade. It is not the long-term platform contract.
+- `app` is a minimal sample/windowing facade. It is not the long-term platform contract.
 - `samples/ape_sample` shader reload helpers are dev/sample utilities, not core `gfx` API.
 - Generated API Markdown format under `docs/api` is a validation aid. The public API is the Odin package itself.
 - Vulkan SPIR-V output from `ape_shaderc` is useful for future backend work, but no Vulkan runtime contract exists yet.
@@ -73,9 +73,9 @@ Unsupported means user code should not depend on it. If a call path exists accid
 
 The supported package boundary is:
 
-- `engine/gfx`: public low-level graphics API.
-- `engine/shader`: `.ashader` package loading and conversion to `gfx.Shader_Desc`.
-- `engine/app`: sample-grade desktop window creation and native-window access.
+- `gfx`: public low-level graphics API.
+- `shader`: `.ashader` package loading and conversion to `gfx.Shader_Desc`.
+- `app`: sample-grade desktop window creation and native-window access.
 
 Backend implementation files, generated build outputs, and sample helper packages are not part of the stable framework API.
 
@@ -98,9 +98,9 @@ odin build samples\d3d11_triangle -collection:ape="D:\path\to\ape_gfx"
 A normal application imports the public packages:
 
 ```odin
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
-import shader_assets "ape:engine/shader"
+import app "ape:app"
+import gfx "ape:gfx"
+import shader_assets "ape:shader"
 ```
 
 Generated shader bindings are imported per shader:
@@ -265,7 +265,7 @@ Stable shader flow:
 
 1. Author `.slang` files under `assets/shaders`.
 2. Compile with `tools/compile_shaders.ps1`.
-3. Load `.ashader` packages with `engine/shader`.
+3. Load `.ashader` packages with `shader`.
 4. Create `gfx.Shader` from `gfx.Shader_Desc`.
 5. Use generated bindings for layouts, uniforms, slots, and compute dispatch sizing.
 

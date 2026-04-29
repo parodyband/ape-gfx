@@ -2,8 +2,8 @@ package ape_sample
 
 import "core:fmt"
 import "core:os"
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
+import app "ape:app"
+import gfx "ape:gfx"
 
 must :: proc(ok: bool, message: string) {
 	if ok {

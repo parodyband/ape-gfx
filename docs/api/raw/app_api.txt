@@ -59,7 +59,7 @@
 
 
 	fullpath:
-		<repo>/engine/app
+		<repo>/app
 	files:
 		native_windows.odin
 		window.odin

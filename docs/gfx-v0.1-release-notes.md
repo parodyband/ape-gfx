@@ -2,7 +2,7 @@
 
 Date: 2026-04-28
 
-Status: v0.1 release notes for the current D3D11-first `engine/gfx` contract.
+Status: v0.1 release notes for the current D3D11-first `gfx` contract.
 
 `v0.1` is the point where Ape GFX stops being a loose prototype and becomes a usable low-level graphics API surface. It is still intentionally narrow: D3D11 on Windows is the real backend, Slang is the shader path, and the API is scoped to the graphics abstraction rather than a full engine or renderer.
 
@@ -24,7 +24,7 @@ The contract is documented in `docs/gfx-v0.1-contract.md`.
 
 This release is meant for a renderer or desktop game layer that wants to own higher-level decisions itself. The supported use case is:
 
-- create a desktop window with `engine/app`
+- create a desktop window with `app`
 - initialize one D3D11 `gfx.Context`
 - create buffers, images, views, samplers, shaders, and pipelines
 - render to the implicit window swapchain or explicit offscreen attachments
@@ -42,7 +42,7 @@ That sample renders a depth-tested cube into an offscreen color/depth target, th
 
 ## Stable In v0.1
 
-The stable API surface is the low-level `engine/gfx` package:
+The stable API surface is the low-level `gfx` package:
 
 - `Context`
 - `Buffer`
@@ -69,7 +69,7 @@ The normal flow is:
 
 1. Write `.slang` files under `assets/shaders`.
 2. Compile with `tools/compile_shaders.ps1`.
-3. Load `.ashader` packages through `engine/shader`.
+3. Load `.ashader` packages through `shader`.
 4. Create `gfx.Shader` handles from `gfx.Shader_Desc`.
 5. Use generated Odin bindings for slots, uniforms, vertex layouts, and compute dispatch sizing.
 
@@ -194,7 +194,7 @@ These pieces exist, but should not be treated as long-term frozen yet:
 - `.ashader` binary container versioning.
 - Generated binding helper naming for less common shader shapes beyond the documented v0.1 contract.
 - Storage and compute ergonomics beyond the current D3D11 compute samples.
-- `engine/app` as a sample-grade windowing layer.
+- `app` as a sample-grade windowing layer.
 - `samples/ape_sample` hot reload helpers.
 - Generated Markdown API docs format.
 

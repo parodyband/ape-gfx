@@ -303,7 +303,7 @@ Rules:
 - Resource view metadata accepts sampled, storage image, and storage buffer view kinds only.
 - Storage image metadata currently accepts `.Invalid`, `.RGBA32F`, or `.R32F` reflected formats.
 - Storage buffer metadata stride must be `0` for raw buffers or 4-byte aligned.
-- Most code should call `shader.shader_desc(...)` from `engine/shader` instead of handwriting this descriptor.
+- Most code should call `shader.shader_desc(...)` from `shader` instead of handwriting this descriptor.
 
 Representative callsite:
 

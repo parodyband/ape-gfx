@@ -1,7 +1,7 @@
 package ape_sample
 
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
+import app "ape:app"
+import gfx "ape:gfx"
 
 Resize_Result :: struct {
 	active: bool,

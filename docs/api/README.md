@@ -18,4 +18,4 @@ These docs are checked in so API drift is visible in normal diffs.
 
 ## Status
 
-The `gfx` docs are filtered with Odin private-file/private-symbol annotations for backend internals and include first-pass comments on the public API. The current decision is to keep `engine/gfx` as the public package instead of adding a smaller facade package; explicit descriptors and handles are the intended low-level API. `tools/test_api_docs_public_surface.ps1` guards against backend internals leaking back into generated API docs.
+The `gfx` docs are filtered with Odin private-file/private-symbol annotations for backend internals and include first-pass comments on the public API. The current decision is to keep `gfx` as the public package instead of adding a smaller facade package; explicit descriptors and handles are the intended low-level API. `tools/test_api_docs_public_surface.ps1` guards against backend internals leaking back into generated API docs.

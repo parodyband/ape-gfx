@@ -1,8 +1,8 @@
 package main
 
 import "core:fmt"
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
+import app "ape:app"
+import gfx "ape:gfx"
 import ape_sample "ape:samples/ape_sample"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)

@@ -3,7 +3,7 @@
 Date: 2026-04-27
 Source: `docs/api/markdown/gfx.md`
 
-This audit records the v0.1 public surface for `engine/gfx`. It classifies every symbol so future API work starts from a concrete baseline.
+This audit records the v0.1 public surface for `gfx`. It classifies every symbol so future API work starts from a concrete baseline.
 
 ## Status Key
 
@@ -25,7 +25,7 @@ Composite statuses are comma-separated.
 - `range` is the primary data-span helper. `range_slice` and `range_fixed_array` are private overload implementations. `range_raw` stays public as the explicit raw-pointer escape hatch.
 - `query_*` names are acceptable for v0.1.
 - Public `Swapchain` handles are removed from v0.1. A `Pass_Desc` with no explicit attachments targets the context's implicit window swapchain.
-- `Shader_Desc` remains public low-level API because `.ashader` loading produces it, but user-facing docs should steer most users through `engine/shader`.
+- `Shader_Desc` remains public low-level API because `.ashader` loading produces it, but user-facing docs should steer most users through `shader`.
 - Typed errors are assigned explicitly. Remaining error work is representative coverage for backend/device-loss paths.
 - Core descriptors have contract docs and representative validation coverage.
 
@@ -192,7 +192,7 @@ Composite statuses are comma-separated.
 | `Shader` | keep | Stable handle. |
 | `Shader_Binding_Desc` | keep, needs_docs | Reflection metadata in `Shader_Desc`. Most users should not handwrite it. |
 | `Shader_Binding_Kind` | keep, needs_docs | Reflection metadata enum. |
-| `Shader_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. Low-level shader descriptor produced by `engine/shader`. |
+| `Shader_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. Low-level shader descriptor produced by `shader`. |
 | `Shader_Resource_Access` | keep, needs_docs | Reflection metadata enum. |
 | `Shader_Stage` | keep | Shader stage enum. |
 | `Shader_Stage_Desc` | keep, needs_docs | Low-level backend bytecode stage descriptor. |

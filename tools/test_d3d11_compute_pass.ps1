@@ -91,10 +91,10 @@ package main
 
 import "core:fmt"
 import "core:os"
-import app "ape:engine/app"
+import app "ape:app"
 import compute_storage_shader "ape:build/validation_tests/d3d11_compute_pass/generated"
-import gfx "ape:engine/gfx"
-import shader_assets "ape:engine/shader"
+import gfx "ape:gfx"
+import shader_assets "ape:shader"
 
 Item :: struct {
 	value: [4]f32,

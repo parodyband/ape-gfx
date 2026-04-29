@@ -23,7 +23,7 @@ This document records the v0.1 `gfx.Error_Code` contract. Human-readable message
 | `Wrong_Context` | A live handle belongs to another `gfx.Context`. | `tools/test_gfx_error_codes.ps1` |
 | `Stale_Handle` | A handle names a destroyed resource or an old generation. | `tools/test_gfx_error_codes.ps1` |
 | `Backend` | The native backend returned a failure that is not classified as validation, unsupported, or device loss. | `tools/test_d3d11_error_codes.ps1` |
-| `Device_Lost` | The native backend reports device removal, reset, hang, or internal driver loss. | D3D11 HRESULT mapping in `engine/gfx/backend_d3d11.odin`; deterministic runtime trigger is deferred |
+| `Device_Lost` | The native backend reports device removal, reset, hang, or internal driver loss. | D3D11 HRESULT mapping in `gfx/backend_d3d11.odin`; deterministic runtime trigger is deferred |
 | `Resource_Leak` | `shutdown` found live resources still owned by the context. | `tools/test_gfx_error_codes.ps1` |
 
 ## D3D11 Device Loss

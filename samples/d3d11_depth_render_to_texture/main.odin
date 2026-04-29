@@ -4,10 +4,10 @@ import "core:fmt"
 import "core:time"
 import ape_math "ape:samples/ape_math"
 import ape_sample "ape:samples/ape_sample"
-import app "ape:engine/app"
+import app "ape:app"
 import cube_shader_bindings "ape:assets/shaders/generated/cube"
 import depth_visualize_shader "ape:assets/shaders/generated/depth_visualize"
-import gfx "ape:engine/gfx"
+import gfx "ape:gfx"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
 RENDER_TARGET_SIZE :: 512

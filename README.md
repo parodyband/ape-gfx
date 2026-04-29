@@ -10,7 +10,7 @@ This repo is not trying to be a full game engine yet. No renderer layer, no mate
 
 ## Current status
 
-`engine/gfx` now has a `v0.1` graphics API contract:
+`gfx` now has a `v0.1` graphics API contract:
 
 - explicit handles for `Buffer`, `Image`, `View`, `Sampler`, `Shader`, `Pipeline`, and `Compute_Pipeline`
 - Odin-style `create_*` procedures that return `(handle, ok)`
@@ -101,14 +101,14 @@ defer gfx.destroy(&ctx, vertex_buffer)
 
 ## Packages
 
-- `engine/gfx`: public graphics API, validation, and backend dispatch
-- `engine/shader`: `.ashader` loading and conversion to `gfx.Shader_Desc`
-- `engine/app`: small window/event layer used by samples
+- `gfx`: public graphics API, validation, and backend dispatch
+- `shader`: `.ashader` loading and conversion to `gfx.Shader_Desc`
+- `app`: small window/event layer used by samples
 - `tools/ape_shaderc`: Slang compiler/package tool
 - `samples/ape_sample`: shared sample helpers for resize handling and shader reload
 - `samples/ape_math`: sample-only matrix helpers
 
-Only `engine/gfx`, `engine/shader`, and the sample-grade `engine/app` package are part of the current framework boundary.
+Only `gfx`, `shader`, and the sample-grade `app` package are part of the current framework boundary.
 
 ## Shaders
 

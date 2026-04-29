@@ -16,8 +16,8 @@ package main
 
 import "core:fmt"
 import "core:os"
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
+import app "ape:app"
+import gfx "ape:gfx"
 
 fail :: proc(message: string) {
 	fmt.eprintln(message)

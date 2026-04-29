@@ -233,16 +233,16 @@ These docs are checked in so API drift is visible in normal diffs.
 
 ## Status
 
-The `gfx` docs are filtered with Odin private-file/private-symbol annotations for backend internals and include first-pass comments on the public API. The current decision is to keep `engine/gfx` as the public package instead of adding a smaller facade package; explicit descriptors and handles are the intended low-level API. `tools/test_api_docs_public_surface.ps1` guards against backend internals leaking back into generated API docs.
+The `gfx` docs are filtered with Odin private-file/private-symbol annotations for backend internals and include first-pass comments on the public API. The current decision is to keep `gfx` as the public package instead of adding a smaller facade package; explicit descriptors and handles are the intended low-level API. `tools/test_api_docs_public_surface.ps1` guards against backend internals leaking back into generated API docs.
 '@
 
 	Set-Content -LiteralPath $Target -Value $Content -Encoding utf8
 	Write-Host "Wrote $Target"
 }
 
-$GfxRaw = Write-OdinDoc -Name "gfx_api" -PackagePath "engine\gfx"
-$AppRaw = Write-OdinDoc -Name "app_api" -PackagePath "engine\app"
-$ShaderRaw = Write-OdinDoc -Name "shader_api" -PackagePath "engine\shader"
+$GfxRaw = Write-OdinDoc -Name "gfx_api" -PackagePath "gfx"
+$AppRaw = Write-OdinDoc -Name "app_api" -PackagePath "app"
+$ShaderRaw = Write-OdinDoc -Name "shader_api" -PackagePath "shader"
 Convert-RawDocToMarkdown -Name "gfx" -Title "gfx" -RawPath $GfxRaw
 Convert-RawDocToMarkdown -Name "app" -Title "app" -RawPath $AppRaw
 Convert-RawDocToMarkdown -Name "shader" -Title "shader" -RawPath $ShaderRaw

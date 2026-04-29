@@ -1,7 +1,7 @@
 package main
 
 import "core:fmt"
-import gfx "ape:engine/gfx"
+import gfx "ape:gfx"
 
 main :: proc() {
 	desc := gfx.Desc {

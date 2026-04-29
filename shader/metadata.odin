@@ -1,7 +1,7 @@
 package shader
 
 import "core:os"
-import gfx "ape:engine/gfx"
+import gfx "ape:gfx"
 
 @(private)
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"

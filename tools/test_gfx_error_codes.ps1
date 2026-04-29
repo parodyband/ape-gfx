@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "native.ps1")
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$GfxSources = Get-ChildItem -LiteralPath (Join-Path $Root.Path "engine\gfx") -Filter "*.odin"
+$GfxSources = Get-ChildItem -LiteralPath (Join-Path $Root.Path "gfx") -Filter "*.odin"
 $GfxSourceText = ($GfxSources | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
 
 if ($GfxSourceText -match "\binfer_error_code\b") {
@@ -32,7 +32,7 @@ package main
 
 import "core:fmt"
 import "core:os"
-import gfx "ape:engine/gfx"
+import gfx "ape:gfx"
 
 fail :: proc(message: string) {
 	fmt.eprintln(message)

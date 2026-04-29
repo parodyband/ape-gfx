@@ -16,8 +16,8 @@ package main
 
 import "core:fmt"
 import "core:os"
-import app "ape:engine/app"
-import gfx "ape:engine/gfx"
+import app "ape:app"
+import gfx "ape:gfx"
 
 expect_error_info :: proc(ctx: ^gfx.Context, expected_code: gfx.Error_Code, expected_message: string) {
 	info := gfx.last_error_info(ctx)

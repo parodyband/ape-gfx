@@ -4,9 +4,9 @@ import "core:fmt"
 import "core:time"
 import ape_math "ape:samples/ape_math"
 import ape_sample "ape:samples/ape_sample"
-import app "ape:engine/app"
+import app "ape:app"
 import cube_shader "ape:assets/shaders/generated/cube"
-import gfx "ape:engine/gfx"
+import gfx "ape:gfx"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
 ROTATION_RADIANS_PER_SECOND :: f32(0.5)

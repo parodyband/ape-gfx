@@ -4,8 +4,8 @@ import "core:fmt"
 import "core:os"
 import os2 "core:os/os2"
 import "core:time"
-import gfx "ape:engine/gfx"
-import shader_assets "ape:engine/shader"
+import gfx "ape:gfx"
+import shader_assets "ape:shader"
 
 SHADER_RELOAD_DEFAULT_DEBOUNCE :: 250 * time.Millisecond
 

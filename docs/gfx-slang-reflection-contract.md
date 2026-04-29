@@ -2,7 +2,7 @@
 
 Date: 2026-04-28
 
-This document defines the current v0.1 reflection contract between Slang source files, `tools/ape_shaderc`, generated Odin binding packages, `.ashader` packages, `engine/shader`, and `engine/gfx`.
+This document defines the current v0.1 reflection contract between Slang source files, `tools/ape_shaderc`, generated Odin binding packages, `.ashader` packages, `shader`, and `gfx`.
 
 The goal is narrow and practical: simple desktop-game shaders should generate safe Odin helpers, while unsupported shader shapes should fail during shader compilation with useful messages.
 
@@ -38,8 +38,8 @@ assets/shaders/*.slang
   -> tools/ape_shaderc
   -> build/shaders/*.ashader
   -> assets/shaders/generated/<shader>/bindings.odin
-  -> engine/shader.load
-  -> engine/shader.shader_desc
+  -> shader.load
+  -> shader.shader_desc
   -> gfx.create_shader
 ```
 
@@ -101,15 +101,15 @@ Current writer version:
 PACKAGE_VERSION = 8
 ```
 
-`engine/shader` currently reads package versions `1` through `8` and rejects versions newer than the runtime knows about.
+`shader` currently reads package versions `1` through `8` and rejects versions newer than the runtime knows about.
 
 Version policy for v0.1:
 
 - The package format remains provisional until a tagged v0.1 release.
 - Increment the package version whenever the binary record layout changes.
-- Keep `engine/shader` able to read older package versions when practical.
+- Keep `shader` able to read older package versions when practical.
 - Do not expect old runtimes to read newer packages.
-- Regenerate shader packages and bindings when `ape_shaderc` or `engine/shader` changes.
+- Regenerate shader packages and bindings when `ape_shaderc` or `shader` changes.
 
 ## Generated Binding Package
 
@@ -125,7 +125,7 @@ The package name is:
 <shader>_shader
 ```
 
-The generated file imports `gfx "ape:engine/gfx"` only when helpers or constants need `gfx` types.
+The generated file imports `gfx "ape:gfx"` only when helpers or constants need `gfx` types.
 
 Generated files are build artifacts, but they are checked in because they are part of the sample and validation workflow. Do not edit them by hand.
 
@@ -440,7 +440,7 @@ ape_shaderc: reflected compute thread group size differs across targets
 
 ## Runtime Shader Descriptor
 
-`engine/shader.shader_desc(pkg, target, label)` converts a package into `gfx.Shader_Desc`.
+`shader.shader_desc(pkg, target, label)` converts a package into `gfx.Shader_Desc`.
 
 It fills:
 
