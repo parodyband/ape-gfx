@@ -7,6 +7,7 @@ MAX_RESOURCE_VIEWS :: 32
 MAX_SAMPLERS :: 16
 MAX_UNIFORM_BLOCKS :: 16
 MAX_SHADER_BINDINGS :: 64
+MAX_BINDING_GROUP_ENTRIES :: MAX_SHADER_BINDINGS
 MAX_IMAGE_MIPS :: 16
 
 COLOR_MASK_R :: u8(1 << 0)
@@ -215,6 +216,9 @@ Shader_Stage :: enum {
 	Fragment,
 	Compute,
 }
+
+// Shader_Stage_Set is a bit set of shader stages used by reflected layouts.
+Shader_Stage_Set :: bit_set[Shader_Stage; u32]
 
 @(private)
 Pass_Kind :: enum {
@@ -536,6 +540,48 @@ Shader_Binding_Desc :: struct {
 	access: Shader_Resource_Access,
 	storage_image_format: Pixel_Format,
 	storage_buffer_stride: u32,
+}
+
+// Binding_Group_Uniform_Block_Layout_Desc describes one reflected uniform block entry.
+Binding_Group_Uniform_Block_Layout_Desc :: struct {
+	size: u32,
+}
+
+// Binding_Group_Resource_View_Layout_Desc describes one reflected resource view entry.
+Binding_Group_Resource_View_Layout_Desc :: struct {
+	view_kind: View_Kind,
+	access: Shader_Resource_Access,
+	storage_image_format: Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
+// Binding_Group_Layout_Entry_Desc describes one logical entry in a generated binding group.
+Binding_Group_Layout_Entry_Desc :: struct {
+	active: bool,
+	stages: Shader_Stage_Set,
+	kind: Shader_Binding_Kind,
+	slot: u32,
+	name: string,
+	uniform_block: Binding_Group_Uniform_Block_Layout_Desc,
+	resource_view: Binding_Group_Resource_View_Layout_Desc,
+}
+
+// Binding_Group_Native_Binding_Desc maps one logical binding entry to a backend native slot.
+Binding_Group_Native_Binding_Desc :: struct {
+	active: bool,
+	target: Backend,
+	stage: Shader_Stage,
+	kind: Shader_Binding_Kind,
+	slot: u32,
+	native_slot: u32,
+	native_space: u32,
+}
+
+// Binding_Group_Layout_Desc is generated from Slang reflection for future binding-group APIs.
+Binding_Group_Layout_Desc :: struct {
+	label: string,
+	entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc,
+	native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc,
 }
 
 // Shader_Vertex_Input_Desc carries Slang-reflected vertex input metadata.

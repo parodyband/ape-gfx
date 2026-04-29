@@ -365,6 +365,39 @@ Rules:
 - The active backend must report compute support.
 - Graphics shaders are rejected before backend creation.
 
+## Binding_Group_Layout_Desc
+
+`Binding_Group_Layout_Desc` records a generated Slang binding-group layout. It is descriptor-only for now: it validates reflected layout data, but it does not create a GPU object or replace `Bindings`.
+
+Fields:
+
+| Field | Contract |
+| --- | --- |
+| `label` | Optional diagnostic label. |
+| `entries` | Sparse logical binding entries. Each active entry has a non-empty reflected name, at least one shader stage, valid binding kind, and a kind-specific logical slot. |
+| `native_bindings` | Sparse backend mappings for generated entries. Each active mapping names a backend target, stage, binding kind, logical slot, native slot, and native space. |
+
+Rules:
+
+- Uniform entries require a nonzero reflected size.
+- Resource-view entries use the same view-kind, access, storage-image-format, and storage-buffer-stride rules as `Shader_Binding_Desc`.
+- Sampler entries currently have no payload.
+- Duplicate logical entries with the same kind and slot are rejected.
+- Native mappings must reference an existing logical entry whose stage set includes the native stage.
+- Native mappings are allowed only for concrete generated backend targets such as `.D3D11` and `.Vulkan`.
+
+Representative callsite:
+
+```odin
+layout := textured_quad_shader.binding_group_layout_desc("material bindings")
+if !gfx.validate_binding_group_layout_desc(&ctx, layout) {
+	fmt.eprintln("bad generated binding layout: ", gfx.last_error(&ctx))
+	return
+}
+```
+
+This is a stepping stone toward optional binding-group objects. Normal draw code still uses generated helpers with `gfx.Bindings`.
+
 ## Bindings
 
 `Bindings` supplies transient buffers, resource views, and samplers for the currently active render or compute pass.

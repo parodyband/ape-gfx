@@ -109,6 +109,40 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	return records
 }
 
+binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc {
+	desc: gfx.Binding_Group_Layout_Desc
+	desc.label = label
+	desc.entries[0] = {
+		active = true,
+		stages = {.Vertex},
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		slot = 0,
+		name = "FrameUniforms",
+		uniform_block = {
+			size = 64,
+		},
+	}
+	desc.native_bindings[0] = {
+		active = true,
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Vertex,
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	desc.native_bindings[1] = {
+		active = true,
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Vertex,
+		kind = gfx.Shader_Binding_Kind.Uniform_Block,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	return desc
+}
+
 
 apply_uniform_FrameUniforms :: proc(ctx: ^gfx.Context, value: ^$T) -> bool {
 	#assert(size_of(T) == SIZE_FrameUniforms)

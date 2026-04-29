@@ -276,6 +276,7 @@ Stable generated helpers:
 - View metadata constants such as `VIEW_KIND_*`, `VIEW_ACCESS_*`, `VIEW_FORMAT_*`, and `VIEW_STRIDE_*`.
 - Uniform structs and `apply_uniform_*` helpers when reflection is representable.
 - Simple packed vertex layout helpers such as `VERTEX_STRIDE`, `ATTR_*_OFFSET`, and `layout_desc`.
+- Descriptor-only binding group layout helpers such as `binding_group_layout_desc`.
 - Compute thread-group constants and dispatch helpers.
 
 Generated vertex layout support is intentionally narrow:

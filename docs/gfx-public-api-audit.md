@@ -47,6 +47,7 @@ Composite statuses are comma-separated.
 | `COLOR_MASK_RGBA` | keep, needs_docs | Stable combined color-write mask. |
 | `Compute_Pipeline_Invalid` | keep | Stable invalid sentinel. |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
+| `MAX_BINDING_GROUP_ENTRIES` | defer | Descriptor-only generated binding layout limit. Keep while binding-group API shape is evaluated. |
 | `MAX_COLOR_ATTACHMENTS` | keep | Public fixed array limit. |
 | `MAX_IMAGE_MIPS` | keep | Public fixed array limit. |
 | `MAX_RESOURCE_VIEWS` | keep | Public fixed array limit. |
@@ -125,6 +126,7 @@ Composite statuses are comma-separated.
 | `shutdown` | keep, needs_test | Context teardown and leak reporting. |
 | `update_buffer` | keep, needs_test | Stable dynamic/stream buffer update. |
 | `update_image` | keep, needs_test | Stable dynamic image update. |
+| `validate_binding_group_layout_desc` | defer | Validates generated descriptor-only binding group layouts. Not a GPU object creation path yet. |
 | `view_valid` | keep, needs_test | Simple sentinel check. |
 | `destroy` | keep | Primary ergonomic destroy overload. |
 | `range` | keep | Primary data-span overload. |
@@ -134,6 +136,11 @@ Composite statuses are comma-separated.
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
 | `Backend` | keep | Stable backend selector. `Auto` behavior needs docs. |
+| `Binding_Group_Layout_Desc` | defer | Descriptor-only generated binding group layout data. Evaluate before adding public binding group handles. |
+| `Binding_Group_Layout_Entry_Desc` | defer | Logical generated binding entry descriptor. |
+| `Binding_Group_Native_Binding_Desc` | defer | Backend/stage native slot mapping for generated binding layouts. |
+| `Binding_Group_Resource_View_Layout_Desc` | defer | Resource-view payload for generated binding layout entries. |
+| `Binding_Group_Uniform_Block_Layout_Desc` | defer | Uniform-block payload for generated binding layout entries. |
 | `Bindings` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Blend_Factor` | keep, needs_docs | Pipeline state enum. |
 | `Blend_Op` | keep, needs_docs | Pipeline state enum. |
@@ -196,6 +203,7 @@ Composite statuses are comma-separated.
 | `Shader_Resource_Access` | keep, needs_docs | Reflection metadata enum. |
 | `Shader_Stage` | keep | Shader stage enum. |
 | `Shader_Stage_Desc` | keep, needs_docs | Low-level backend bytecode stage descriptor. |
+| `Shader_Stage_Set` | keep, needs_docs | Public stage bit set used by generated binding group layout descriptors. |
 | `Shader_Vertex_Input_Desc` | keep, needs_docs | Reflection metadata in `Shader_Desc`. |
 | `Stencil_Attachment_Action` | keep, needs_docs | Pass action descriptor. |
 | `Storage_Buffer_View_Desc` | keep | Covered as part of `View_Desc` contract. |

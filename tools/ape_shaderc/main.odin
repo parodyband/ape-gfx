@@ -99,6 +99,18 @@ Binding_Record :: struct {
 	storage_buffer_stride: u32,
 }
 
+Binding_Group_Layout_Entry :: struct {
+	kind: Binding_Kind,
+	logical_slot: u32,
+	name: string,
+	stages: [3]bool,
+	size: u32,
+	view_kind: Resource_View_Kind,
+	access: Resource_Access,
+	storage_image_format: Storage_Image_Format,
+	storage_buffer_stride: u32,
+}
+
 Reflection_Parameter :: struct {
 	name: string,
 	binding_kind: string,
@@ -2288,6 +2300,9 @@ write_generated_bindings :: proc(
 		if !append_binding_contract_odin(&out, bindings) {
 			return false
 		}
+		if !append_binding_group_layout_odin(&out, bindings) {
+			return false
+		}
 		if !append_binding_helpers_odin(&out, bindings, uniform_blocks) {
 			return false
 		}
@@ -2397,6 +2412,145 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 	append_string(out, "}\n\n")
 
 	return true
+}
+
+append_binding_group_layout_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Record) -> bool {
+	entries: [dynamic]Binding_Group_Layout_Entry
+	defer delete(entries)
+
+	if !collect_binding_group_layout_entries(&entries, bindings) {
+		return false
+	}
+
+	append_string(out, "binding_group_layout_desc :: proc(label: string = \"\") -> gfx.Binding_Group_Layout_Desc {\n")
+	append_string(out, "\tdesc: gfx.Binding_Group_Layout_Desc\n")
+	append_string(out, "\tdesc.label = label\n")
+
+	for entry, index in entries {
+		append_string(out, fmt.tprintf("\tdesc.entries[%d] = ", index))
+		append_string(out, "{\n")
+		append_string(out, "\t\tactive = true,\n")
+		append_string(out, "\t\tstages = ")
+		append_stage_set_odin(out, entry.stages)
+		append_string(out, ",\n")
+		append_string(out, fmt.tprintf("\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(entry.kind)))
+		append_string(out, fmt.tprintf("\t\tslot = %d,\n", entry.logical_slot))
+		append_string(out, fmt.tprintf("\t\tname = \"%s\",\n", entry.name))
+
+		switch entry.kind {
+		case .Uniform_Block:
+			append_string(out, "\t\tuniform_block = {\n")
+			append_string(out, fmt.tprintf("\t\t\tsize = %d,\n", entry.size))
+			append_string(out, "\t\t},\n")
+		case .Resource_View:
+			append_string(out, "\t\tresource_view = {\n")
+			append_string(out, fmt.tprintf("\t\t\tview_kind = gfx.View_Kind.%s,\n", resource_view_kind_odin(entry.view_kind)))
+			append_string(out, fmt.tprintf("\t\t\taccess = gfx.Shader_Resource_Access.%s,\n", resource_access_odin(entry.access)))
+			append_string(out, fmt.tprintf("\t\t\tstorage_image_format = gfx.Pixel_Format.%s,\n", storage_image_format_odin(entry.storage_image_format)))
+			append_string(out, fmt.tprintf("\t\t\tstorage_buffer_stride = %d,\n", entry.storage_buffer_stride))
+			append_string(out, "\t\t},\n")
+		case .Sampler:
+		}
+
+		append_string(out, "\t}\n")
+	}
+
+	for binding, index in bindings {
+		append_string(out, fmt.tprintf("\tdesc.native_bindings[%d] = ", index))
+		append_string(out, "{\n")
+		append_string(out, "\t\tactive = true,\n")
+		append_string(out, fmt.tprintf("\t\ttarget = gfx.Backend.%s,\n", backend_odin(binding.target)))
+		append_string(out, fmt.tprintf("\t\tstage = gfx.Shader_Stage.%s,\n", stage_odin(binding.stage)))
+		append_string(out, fmt.tprintf("\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(binding.kind)))
+		append_string(out, fmt.tprintf("\t\tslot = %d,\n", binding.logical_slot))
+		append_string(out, fmt.tprintf("\t\tnative_slot = %d,\n", binding.slot))
+		append_string(out, fmt.tprintf("\t\tnative_space = %d,\n", binding.space))
+		append_string(out, "\t}\n")
+	}
+
+	append_string(out, "\treturn desc\n")
+	append_string(out, "}\n\n")
+
+	return true
+}
+
+collect_binding_group_layout_entries :: proc(entries: ^[dynamic]Binding_Group_Layout_Entry, bindings: []Binding_Record) -> bool {
+	for binding in bindings {
+		entry_index, entry_found := binding_group_layout_entry_index(entries[:], binding)
+		if !entry_found {
+			entry := Binding_Group_Layout_Entry {
+				kind = binding.kind,
+				logical_slot = binding.logical_slot,
+				name = binding.name,
+				size = binding.size,
+				view_kind = binding.view_kind,
+				access = binding.access,
+				storage_image_format = binding.storage_image_format,
+				storage_buffer_stride = binding.storage_buffer_stride,
+			}
+			entry.stages[int(binding.stage)] = true
+			append(entries, entry)
+			continue
+		}
+
+		entry := &entries^[entry_index]
+		if !binding_group_layout_entry_payload_matches(entry^, binding) {
+			fmt.eprintln("ape_shaderc: inconsistent reflected binding payload for generated group entry: ", binding.name)
+			return false
+		}
+		entry.stages[int(binding.stage)] = true
+	}
+
+	return true
+}
+
+binding_group_layout_entry_index :: proc(entries: []Binding_Group_Layout_Entry, binding: Binding_Record) -> (int, bool) {
+	for entry, index in entries {
+		if entry.kind == binding.kind &&
+		   entry.logical_slot == binding.logical_slot &&
+		   entry.name == binding.name {
+			return index, true
+		}
+	}
+
+	return -1, false
+}
+
+binding_group_layout_entry_payload_matches :: proc(entry: Binding_Group_Layout_Entry, binding: Binding_Record) -> bool {
+	if entry.kind != binding.kind || entry.logical_slot != binding.logical_slot || entry.name != binding.name {
+		return false
+	}
+
+	switch binding.kind {
+	case .Uniform_Block:
+		return entry.size == binding.size
+	case .Resource_View:
+		return entry.view_kind == binding.view_kind &&
+		       entry.access == binding.access &&
+		       entry.storage_image_format == binding.storage_image_format &&
+		       entry.storage_buffer_stride == binding.storage_buffer_stride
+	case .Sampler:
+		return true
+	}
+
+	return false
+}
+
+append_stage_set_odin :: proc(out: ^[dynamic]byte, stages: [3]bool) {
+	append_string(out, "{")
+	wrote_stage := false
+	for has_stage, index in stages {
+		if !has_stage {
+			continue
+		}
+		if wrote_stage {
+			append_string(out, ", ")
+		}
+		append_string(out, ".")
+		append_string(out, stage_odin(Stage(index)))
+		wrote_stage = true
+	}
+	append_string(out, "}")
 }
 
 append_binding_helpers_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Record, uniform_blocks: []Uniform_Block) -> bool {

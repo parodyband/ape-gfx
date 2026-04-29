@@ -129,6 +129,68 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	return records
 }
 
+binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc {
+	desc: gfx.Binding_Group_Layout_Desc
+	desc.label = label
+	desc.entries[0] = {
+		active = true,
+		stages = {.Fragment},
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		slot = 0,
+		name = "ape_texture",
+		resource_view = {
+			view_kind = gfx.View_Kind.Sampled,
+			access = gfx.Shader_Resource_Access.Read,
+			storage_image_format = gfx.Pixel_Format.Invalid,
+			storage_buffer_stride = 0,
+		},
+	}
+	desc.entries[1] = {
+		active = true,
+		stages = {.Fragment},
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		slot = 0,
+		name = "ape_sampler",
+	}
+	desc.native_bindings[0] = {
+		active = true,
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	desc.native_bindings[1] = {
+		active = true,
+		target = gfx.Backend.D3D11,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	desc.native_bindings[2] = {
+		active = true,
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	desc.native_bindings[3] = {
+		active = true,
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		slot = 0,
+		native_slot = 1,
+		native_space = 0,
+	}
+	return desc
+}
+
 
 set_view_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	if bindings == nil {

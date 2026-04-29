@@ -62,6 +62,12 @@ Compute_Pipeline_Invalid :: Compute_Pipeline(0)
 Image_Invalid :: Image(0)
 ```
 
+### `MAX_BINDING_GROUP_ENTRIES`
+
+```odin
+MAX_BINDING_GROUP_ENTRIES :: MAX_SHADER_BINDINGS
+```
+
 ### `MAX_COLOR_ATTACHMENTS`
 
 ```odin
@@ -631,6 +637,14 @@ update_image :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bool {...}
 
 update_image writes CPU data into a dynamic image subregion.
 
+### `validate_binding_group_layout_desc`
+
+```odin
+validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_Layout_Desc) -> bool {...}
+```
+
+validate_binding_group_layout_desc validates generated binding-group layout data.
+
 ### `view_valid`
 
 ```odin
@@ -664,6 +678,46 @@ Backend :: enum {Auto, Null, D3D11, Vulkan}
 ```
 
 Backend selects the native graphics implementation used by a Context.
+
+### `Binding_Group_Layout_Desc`
+
+```odin
+Binding_Group_Layout_Desc :: struct {label: string, entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc, native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc}
+```
+
+Binding_Group_Layout_Desc is generated from Slang reflection for future binding-group APIs.
+
+### `Binding_Group_Layout_Entry_Desc`
+
+```odin
+Binding_Group_Layout_Entry_Desc :: struct {active: bool, stages: Shader_Stage_Set, kind: Shader_Binding_Kind, slot: u32, name: string, uniform_block: Binding_Group_Uniform_Block_Layout_Desc, resource_view: Binding_Group_Resource_View_Layout_Desc}
+```
+
+Binding_Group_Layout_Entry_Desc describes one logical entry in a generated binding group.
+
+### `Binding_Group_Native_Binding_Desc`
+
+```odin
+Binding_Group_Native_Binding_Desc :: struct {active: bool, target: Backend, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, native_space: u32}
+```
+
+Binding_Group_Native_Binding_Desc maps one logical binding entry to a backend native slot.
+
+### `Binding_Group_Resource_View_Layout_Desc`
+
+```odin
+Binding_Group_Resource_View_Layout_Desc :: struct {view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
+```
+
+Binding_Group_Resource_View_Layout_Desc describes one reflected resource view entry.
+
+### `Binding_Group_Uniform_Block_Layout_Desc`
+
+```odin
+Binding_Group_Uniform_Block_Layout_Desc :: struct {size: u32}
+```
+
+Binding_Group_Uniform_Block_Layout_Desc describes one reflected uniform block entry.
 
 ### `Bindings`
 
@@ -1146,6 +1200,14 @@ Shader_Stage_Desc :: struct {stage: Shader_Stage, entry: string, bytecode: Range
 ```
 
 Shader_Stage_Desc provides backend bytecode for one shader stage.
+
+### `Shader_Stage_Set`
+
+```odin
+Shader_Stage_Set :: bit_set[Shader_Stage]
+```
+
+Shader_Stage_Set is a bit set of shader stages used by reflected layouts.
 
 ### `Shader_Vertex_Input_Desc`
 

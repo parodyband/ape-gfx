@@ -300,6 +300,17 @@ main :: proc() {
 	}
 	defer ape_sample.reloadable_shader_program_destroy(&ctx, &texture_program)
 
+	cube_group_layout := cube_shader.binding_group_layout_desc("lab cube bindings")
+	if !gfx.validate_binding_group_layout_desc(&ctx, cube_group_layout) {
+		fmt.eprintln("cube binding group layout validation failed: ", gfx.last_error(&ctx))
+		return
+	}
+	texture_group_layout := textured_quad_shader.binding_group_layout_desc("lab display bindings")
+	if !gfx.validate_binding_group_layout_desc(&ctx, texture_group_layout) {
+		fmt.eprintln("texture binding group layout validation failed: ", gfx.last_error(&ctx))
+		return
+	}
+
 	cube_bindings: gfx.Bindings
 	cube_bindings.vertex_buffers[0] = {buffer = cube_vertex_buffer, offset = 0}
 	cube_bindings.index_buffer = {buffer = cube_index_buffer, offset = 0}

@@ -190,6 +190,8 @@ Binding_Record_Desc :: struct {
 }
 
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
+
+binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc
 ```
 
 This is the first explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical slots, native slots, and native spaces available for later binding group and pipeline layout design.
@@ -201,6 +203,14 @@ This is the first explicit Slang-generated binding layout contract. It keeps the
 - `Sampler` records have no payload today.
 
 The outer record stays common so tools can sort or match by backend, stage, reflected name, logical slot, native slot, and native space without switching on the payload first.
+
+`binding_group_layout_desc` folds those records into descriptor-only `gfx.Binding_Group_Layout_Desc` data:
+
+- `entries` describe logical binding entries by kind, logical slot, reflected name, stage set, and kind-specific payload.
+- `native_bindings` preserve backend/stage native slot and space mappings.
+- `gfx.validate_binding_group_layout_desc` can validate the generated descriptor today; future binding-group objects can consume the same shape or a narrowed version of it.
+
+This helper is intentionally not a new binding path yet. Samples still use `gfx.Bindings` and generated `set_view_*`, `set_sampler_*`, and `apply_uniform_*` helpers.
 
 Logical slots are assigned per binding kind:
 
@@ -484,7 +494,8 @@ Planned order:
 - [x] Add focused descriptor-table validation for register-free constant buffers, sampled textures, samplers, storage images, and storage buffers across D3D11 and Vulkan records.
 - [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
 - [x] Settle generated binding record payload semantics before the generated binding-group contract.
-- [ ] Next: design the first generated binding-group contract on top of reflected names, logical slots, native slots, and native spaces.
+- [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
+- [ ] Next: decide whether `Binding_Group_Layout_Desc` should become an object-creation descriptor, stay generated metadata, or be narrowed before public binding groups.
 - [ ] Then settle descriptor slot validation rules that binding groups should enforce before runtime calls.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
@@ -492,14 +503,14 @@ Planned order:
 
 Open questions:
 
-- Whether generated `Binding_Record_Desc` arrays should directly produce a `Binding_Group_Layout_Desc` helper, or whether the generated package should expose a smaller intermediate group contract first.
+- Whether generated `Binding_Group_Layout_Desc` should remain a descriptor-only reflection contract or become the input to a public `create_binding_group_layout` API.
 - How `ParameterBlock<>` should map to logical binding groups when Slang assigns target-specific native groups or spaces.
 - Whether a `Pipeline_Layout` object should exist only when it enables reuse across multiple generated shader packages.
 - How D3D11 should emulate groups by flattening reflected group entries into stage slots while Vulkan later maps them to descriptor sets.
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: generate a first single-group `Binding_Group_Layout_Desc` helper from `binding_records()` for one sample, then use `d3d11_gfx_lab` to decide whether the helper shape feels better than hand-authored binding arrays.
+Next implementation breadcrumb: use `d3d11_gfx_lab` to prototype a small `Binding_Group_Desc` or `apply_binding_group` call path for the display pass, then decide whether that reduces enough callsite friction to justify public binding-group handles.
 
 ## Validation
 
@@ -557,6 +568,7 @@ These generated names are intended to stay stable through v0.1:
 | `Binding_Resource_View_Desc` | Generated resource-view record payload. |
 | `Binding_Record_Desc` | Generated binding contract record type. |
 | `binding_records` | Helper returning the generated binding contract records. |
+| `binding_group_layout_desc` | Helper returning descriptor-only generated binding group layout data. |
 | `VIEW_KIND_<name>` | Reflected `gfx.View_Kind`. |
 | `VIEW_ACCESS_<name>` | Reflected `gfx.Shader_Resource_Access`. |
 | `VIEW_FORMAT_<name>` | Reflected storage image format when relevant. |

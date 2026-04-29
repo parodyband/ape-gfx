@@ -82,6 +82,71 @@ main :: proc() {
 	}
 	expect_error_info(&ctx, .Validation, "gfx.create_sampler: min_filter is invalid")
 
+	group_layout: gfx.Binding_Group_Layout_Desc
+	group_layout.label = "valid generated-style binding group layout"
+	group_layout.entries[0] = {
+		active = true,
+		stages = {.Fragment},
+		kind = .Resource_View,
+		slot = 0,
+		name = "ape_texture",
+		resource_view = {
+			view_kind = .Sampled,
+			access = .Read,
+		},
+	}
+	group_layout.entries[1] = {
+		active = true,
+		stages = {.Fragment},
+		kind = .Sampler,
+		slot = 0,
+		name = "ape_sampler",
+	}
+	group_layout.native_bindings[0] = {
+		active = true,
+		target = .D3D11,
+		stage = .Fragment,
+		kind = .Resource_View,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	group_layout.native_bindings[1] = {
+		active = true,
+		target = .D3D11,
+		stage = .Fragment,
+		kind = .Sampler,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+	}
+	if !gfx.validate_binding_group_layout_desc(&ctx, group_layout) {
+		fmt.eprintln("valid binding group layout failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	duplicate_group_layout := group_layout
+	duplicate_group_layout.entries[2] = group_layout.entries[0]
+	if gfx.validate_binding_group_layout_desc(&ctx, duplicate_group_layout) {
+		fail("binding group layout with duplicate resource view unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.validate_binding_group_layout_desc: duplicate resource view entry at slot 0")
+
+	missing_entry_layout := group_layout
+	missing_entry_layout.native_bindings[2] = {
+		active = true,
+		target = .D3D11,
+		stage = .Fragment,
+		kind = .Resource_View,
+		slot = 4,
+		native_slot = 4,
+		native_space = 0,
+	}
+	if gfx.validate_binding_group_layout_desc(&ctx, missing_entry_layout) {
+		fail("binding group layout with missing logical entry unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.validate_binding_group_layout_desc: native binding 2 references missing resource view entry slot 4")
+
 	bytecode := [?]u8{1, 2, 3, 4}
 
 	empty_shader, empty_shader_ok := gfx.create_shader(&ctx, {})
