@@ -56,6 +56,32 @@ graphics_shader_desc :: proc(bytecode: []u8) -> gfx.Shader_Desc {
 	return desc
 }
 
+graphics_shader_desc_with_texture_bindings :: proc(bytecode: []u8) -> gfx.Shader_Desc {
+	desc := graphics_shader_desc(bytecode)
+	desc.has_binding_metadata = true
+	desc.bindings[0] = {
+		active = true,
+		stage = .Fragment,
+		kind = .Resource_View,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		name = "ape_texture",
+		view_kind = .Sampled,
+		access = .Read,
+	}
+	desc.bindings[1] = {
+		active = true,
+		stage = .Fragment,
+		kind = .Sampler,
+		slot = 0,
+		native_slot = 0,
+		native_space = 0,
+		name = "ape_sampler",
+	}
+	return desc
+}
+
 main :: proc() {
 	ctx, ok := gfx.init({backend = .Null, label = "state descriptor contracts"})
 	if !ok {
@@ -207,7 +233,7 @@ main :: proc() {
 	}
 	expect_error_info(&ctx, .Validation, "gfx.create_shader: uniform binding metadata index 0 requires nonzero size")
 
-	shader_desc := graphics_shader_desc(bytecode[:])
+	shader_desc := graphics_shader_desc_with_texture_bindings(bytecode[:])
 	shader, shader_ok := gfx.create_shader(&ctx, shader_desc)
 	if !shader_ok || !gfx.shader_valid(shader) {
 		fmt.eprintln("valid graphics shader failed: ", gfx.last_error(&ctx))
@@ -409,10 +435,42 @@ main :: proc() {
 	valid_group: gfx.Binding_Group_Desc
 	valid_group.views[0] = sampled_view
 	valid_group.samplers[0] = sampler
+	if gfx.apply_binding_group(&ctx, group_layout, valid_group, group_base_bindings) {
+		fail("binding group without applied pipeline unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: requires an applied graphics pipeline")
+
+	if !gfx.apply_pipeline(&ctx, pipeline) {
+		fmt.eprintln("apply_pipeline failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
 	if !gfx.apply_binding_group(&ctx, group_layout, valid_group, group_base_bindings) {
 		fmt.eprintln("valid binding group failed: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
+
+	wrong_slot_layout := group_layout
+	wrong_slot_layout.entries[0].slot = 1
+	wrong_slot_layout.native_bindings[0].slot = 1
+	wrong_slot_layout.native_bindings[0].native_slot = 1
+	wrong_slot_group := valid_group
+	wrong_slot_group.views[0] = gfx.View_Invalid
+	wrong_slot_group.views[1] = sampled_view
+	if gfx.apply_binding_group(&ctx, wrong_slot_layout, wrong_slot_group, group_base_bindings) {
+		fail("binding group layout for unused pipeline slot unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout resource view slot 1 for fragment is not used by current pipeline")
+
+	missing_required_layout := group_layout
+	missing_required_layout.entries[1] = {}
+	missing_required_layout.native_bindings[1] = {}
+	missing_required_group := valid_group
+	missing_required_group.samplers[0] = gfx.Sampler_Invalid
+	if gfx.apply_binding_group(&ctx, missing_required_layout, missing_required_group, group_base_bindings) {
+		fail("binding group layout missing current pipeline sampler unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout is missing current pipeline fragment sampler slot 0")
 
 	missing_sampler_group := valid_group
 	missing_sampler_group.samplers[0] = gfx.Sampler_Invalid

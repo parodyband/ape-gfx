@@ -401,6 +401,16 @@ delete_resource_pools :: proc(ctx: ^Context) {
 		delete(ctx.shader_states)
 		ctx.shader_states = nil
 	}
+	if ctx.pipeline_states != nil {
+		delete(ctx.pipeline_states)
+		ctx.pipeline_states = nil
+	}
+	if ctx.compute_pipeline_states != nil {
+		delete(ctx.compute_pipeline_states)
+		ctx.compute_pipeline_states = nil
+	}
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 }
 
 @(private)

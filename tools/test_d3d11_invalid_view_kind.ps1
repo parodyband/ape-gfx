@@ -117,6 +117,27 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, storage_view)
 
+	sampled_view, sampled_view_ok := gfx.create_view(&ctx, {
+		label = "valid sampled view for binding group validation",
+		texture = {
+			image = storage_image,
+		},
+	})
+	if !sampled_view_ok {
+		fmt.eprintln("sampled view creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, sampled_view)
+
+	sampler, sampler_ok := gfx.create_sampler(&ctx, {
+		label = "valid sampler for binding group validation",
+	})
+	if !sampler_ok {
+		fmt.eprintln("sampler creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, sampler)
+
 	if !gfx.begin_pass(&ctx, {
 		label = "swapchain",
 		action = gfx.default_pass_action(),
@@ -128,6 +149,22 @@ main :: proc() {
 
 	if !gfx.apply_pipeline(&ctx, pipeline) {
 		fmt.eprintln("apply_pipeline failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	group_layout := textured_quad_shader.binding_group_layout_desc("wrong native binding group layout")
+	group_layout.native_bindings[0].native_slot = 2
+	group: gfx.Binding_Group_Desc
+	textured_quad_shader.set_group_view_ape_texture(&group, sampled_view)
+	textured_quad_shader.set_group_sampler_ape_sampler(&group, sampler)
+	if gfx.apply_binding_group(&ctx, group_layout, group) {
+		fmt.eprintln("binding group with mismatched native slot unexpectedly succeeded")
+		os.exit(1)
+	}
+
+	expected_group_error := "gfx.apply_binding_group: native fragment resource view slot 0 does not match current pipeline"
+	if gfx.last_error(&ctx) != expected_group_error {
+		fmt.eprintln("invalid binding group failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 

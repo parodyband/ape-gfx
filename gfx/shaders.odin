@@ -313,6 +313,9 @@ shader_state_from_desc :: proc(desc: Shader_Desc) -> Shader_State {
 	for input, index in desc.vertex_inputs {
 		state.vertex_inputs[index] = input
 	}
+	for binding, index in desc.bindings {
+		state.bindings[index] = binding
+	}
 
 	return state
 }

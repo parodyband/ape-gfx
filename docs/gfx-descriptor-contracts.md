@@ -389,6 +389,9 @@ Rules:
 - Duplicate logical entries with the same kind and slot are rejected.
 - Native mappings must reference an existing logical entry whose stage set includes the native stage.
 - Native mappings are allowed only for concrete generated backend targets such as `.D3D11` and `.Vulkan`.
+- `apply_binding_group` requires an applied graphics or compute pipeline.
+- The layout must match the current pipeline's reflected binding metadata: logical slot, stage, reflected name, kind payload, and native slot/space for the active backend.
+- Layouts missing a resource-view or sampler required by the current pipeline are rejected before handles are applied.
 - `apply_binding_group` requires every resource-view and sampler entry in the layout to have a matching handle in `Binding_Group_Desc`.
 - Extra active views or samplers that are not declared by the layout are rejected.
 - `base_bindings` passed to `apply_binding_group` may contain vertex and index buffers. It must not already contain views or samplers.

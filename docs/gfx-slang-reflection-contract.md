@@ -497,8 +497,8 @@ Planned order:
 - [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
 - [x] Add a transient `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
 - [x] Exercise transient binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and a shared material-resource pass.
-- [ ] Next: tighten binding group validation around pipeline compatibility and slot/stage expectations before adding object-backed binding group handles.
-- [ ] Then decide whether binding groups should become public GPU objects, remain transient descriptors, or be narrowed to generated helper data.
+- [x] Tighten `apply_binding_group` validation so generated layouts must match the currently applied pipeline's reflected logical slots, stages, names, payload metadata, and backend native slots.
+- [ ] Next: decide whether binding groups should become public GPU objects, remain transient descriptors, or be narrowed to generated helper data.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
@@ -512,7 +512,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: add a focused binding-group validation pass that rejects generated groups whose reflected resource/sampler slots do not line up with the currently applied shader pipeline. The improved shadows migration proves the reuse goal, but it also shows that `apply_binding_group` should fail earlier and more specifically when a layout/group pair does not match the active pipeline.
+Next implementation breadcrumb: decide whether transient binding groups are the final v0.1 shape or whether `gfx.create_binding_group_layout` / `gfx.create_binding_group` handles are worth adding now. Make that decision from the current samples first: if the only benefit is caching validation, keep the transient path; if the samples keep threading layout descriptors awkwardly or recreate the same descriptor data every frame, add object-backed handles.
 
 ## Validation
 

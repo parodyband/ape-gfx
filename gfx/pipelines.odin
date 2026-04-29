@@ -29,6 +29,7 @@ create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (Pipeline, bool) 
 		return Pipeline_Invalid, false
 	}
 
+	track_pipeline_state(ctx, handle, desc)
 	return handle, true
 }
 
@@ -42,6 +43,7 @@ destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {
 	}
 
 	backend_destroy_pipeline(ctx, pipeline)
+	untrack_pipeline_state(ctx, pipeline)
 	release_resource_id(&ctx.pipeline_pool, u64(pipeline))
 }
 
@@ -77,6 +79,7 @@ create_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> (
 		return Compute_Pipeline_Invalid, false
 	}
 
+	track_compute_pipeline_state(ctx, handle, desc)
 	return handle, true
 }
 
@@ -90,7 +93,84 @@ destroy_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) {
 	}
 
 	backend_destroy_compute_pipeline(ctx, pipeline)
+	untrack_compute_pipeline_state(ctx, pipeline)
 	release_resource_id(&ctx.compute_pipeline_pool, u64(pipeline))
+}
+
+@(private)
+track_pipeline_state :: proc(ctx: ^Context, pipeline: Pipeline, desc: Pipeline_Desc) {
+	if ctx == nil || !pipeline_valid(pipeline) {
+		return
+	}
+	if ctx.pipeline_states == nil {
+		ctx.pipeline_states = make(map[Pipeline]Pipeline_State)
+	}
+
+	ctx.pipeline_states[pipeline] = {
+		valid = true,
+		shader = desc.shader,
+	}
+}
+
+@(private)
+untrack_pipeline_state :: proc(ctx: ^Context, pipeline: Pipeline) {
+	if ctx == nil {
+		return
+	}
+	if ctx.pipeline_states != nil {
+		delete_key(&ctx.pipeline_states, pipeline)
+	}
+	if ctx.current_pipeline == pipeline {
+		ctx.current_pipeline = Pipeline_Invalid
+	}
+}
+
+@(private)
+query_pipeline_state :: proc(ctx: ^Context, pipeline: Pipeline) -> (Pipeline_State, bool) {
+	if ctx == nil || ctx.pipeline_states == nil {
+		return {}, false
+	}
+
+	state, ok := ctx.pipeline_states[pipeline]
+	return state, ok && state.valid
+}
+
+@(private)
+track_compute_pipeline_state :: proc(ctx: ^Context, pipeline: Compute_Pipeline, desc: Compute_Pipeline_Desc) {
+	if ctx == nil || !compute_pipeline_valid(pipeline) {
+		return
+	}
+	if ctx.compute_pipeline_states == nil {
+		ctx.compute_pipeline_states = make(map[Compute_Pipeline]Compute_Pipeline_State)
+	}
+
+	ctx.compute_pipeline_states[pipeline] = {
+		valid = true,
+		shader = desc.shader,
+	}
+}
+
+@(private)
+untrack_compute_pipeline_state :: proc(ctx: ^Context, pipeline: Compute_Pipeline) {
+	if ctx == nil {
+		return
+	}
+	if ctx.compute_pipeline_states != nil {
+		delete_key(&ctx.compute_pipeline_states, pipeline)
+	}
+	if ctx.current_compute_pipeline == pipeline {
+		ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	}
+}
+
+@(private)
+query_compute_pipeline_state :: proc(ctx: ^Context, pipeline: Compute_Pipeline) -> (Compute_Pipeline_State, bool) {
+	if ctx == nil || ctx.compute_pipeline_states == nil {
+		return {}, false
+	}
+
+	state, ok := ctx.compute_pipeline_states[pipeline]
+	return state, ok && state.valid
 }
 
 @(private)

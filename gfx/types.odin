@@ -724,8 +724,21 @@ Shader_State :: struct {
 	has_fragment: bool,
 	has_compute: bool,
 	has_binding_metadata: bool,
+	bindings: [MAX_SHADER_BINDINGS]Shader_Binding_Desc,
 	has_vertex_input_metadata: bool,
 	vertex_inputs: [MAX_VERTEX_ATTRIBUTES]Shader_Vertex_Input_Desc,
+}
+
+@(private)
+Pipeline_State :: struct {
+	valid: bool,
+	shader: Shader,
+}
+
+@(private)
+Compute_Pipeline_State :: struct {
+	valid: bool,
+	shader: Shader,
 }
 
 // Context owns all GPU resources and current frame state for one backend instance.
@@ -745,6 +758,10 @@ Context :: struct {
 	pipeline_pool: Resource_Pool,
 	compute_pipeline_pool: Resource_Pool,
 	shader_states: map[Shader]Shader_State,
+	pipeline_states: map[Pipeline]Pipeline_State,
+	compute_pipeline_states: map[Compute_Pipeline]Compute_Pipeline_State,
+	current_pipeline: Pipeline,
+	current_compute_pipeline: Compute_Pipeline,
 	pass_color_attachments: [MAX_COLOR_ATTACHMENTS]View,
 	pass_depth_stencil_attachment: View,
 	backend_data: rawptr,

@@ -20,6 +20,8 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	}
 
 	capture_pass_attachments(ctx, desc)
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 	ctx.in_pass = true
 	ctx.pass_kind = .Render
 	return true
@@ -35,7 +37,15 @@ apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 		return false
 	}
 
-	return backend_apply_pipeline(ctx, pipeline)
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	if !backend_apply_pipeline(ctx, pipeline) {
+		return false
+	}
+
+	ctx.current_pipeline = pipeline
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	return true
 }
 
 // begin_compute_pass starts a compute-only pass.
@@ -60,6 +70,8 @@ begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool 
 	}
 
 	clear_pass_attachments(ctx)
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 	ctx.in_pass = true
 	ctx.pass_kind = .Compute
 	return true
@@ -75,7 +87,15 @@ apply_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) -> boo
 		return false
 	}
 
-	return backend_apply_compute_pipeline(ctx, pipeline)
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	if !backend_apply_compute_pipeline(ctx, pipeline) {
+		return false
+	}
+
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = pipeline
+	return true
 }
 
 // apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
@@ -155,6 +175,8 @@ end_pass :: proc(ctx: ^Context) -> bool {
 
 	ok := backend_end_pass(ctx)
 	clear_pass_attachments(ctx)
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 	ctx.in_pass = false
 	ctx.pass_kind = .None
 	return ok
@@ -177,6 +199,8 @@ end_compute_pass :: proc(ctx: ^Context) -> bool {
 
 	ok := backend_end_compute_pass(ctx)
 	clear_pass_attachments(ctx)
+	ctx.current_pipeline = Pipeline_Invalid
+	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 	ctx.in_pass = false
 	ctx.pass_kind = .None
 	return ok
