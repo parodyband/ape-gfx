@@ -250,6 +250,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"build_d3d11_textured_quad.ps1",
 		"build_d3d11_transient_uniforms.ps1",
 		"build_d3d11_triangle.ps1",
+		"build_d3d11_triangle_indirect.ps1",
 		"build_d3d11_triangle_minimal.ps1",
 	}
 	if !options.skip_d3d11_builds {
@@ -277,6 +278,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"run_d3d11_textured_quad.ps1",
 		"run_d3d11_transient_uniforms.ps1",
 		"run_d3d11_triangle.ps1",
+		"run_d3d11_triangle_indirect.ps1",
 		"run_d3d11_triangle_minimal.ps1",
 	}
 	if !options.skip_d3d11_runs {

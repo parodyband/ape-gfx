@@ -40,6 +40,7 @@ Composite statuses are comma-separated.
 | `Buffer_Invalid` | keep | Stable invalid sentinel. |
 | `Binding_Group_Invalid` | keep | Stable invalid sentinel for object-backed binding groups. |
 | `Binding_Group_Layout_Invalid` | keep | Stable invalid sentinel for object-backed binding group layouts. |
+| `Binding_Heap_Invalid` | defer | APE-23/APE-25 bindless binding heap sentinel. Stays public when bindless ships in a non-D3D11 backend. |
 | `COLOR_MASK_A` | keep, needs_docs | Stable color-write mask bit. |
 | `COLOR_MASK_B` | keep, needs_docs | Stable color-write mask bit. |
 | `COLOR_MASK_G` | keep, needs_docs | Stable color-write mask bit. |
@@ -47,9 +48,14 @@ Composite statuses are comma-separated.
 | `COLOR_MASK_RGB` | keep, needs_docs | Stable combined color-write mask. |
 | `COLOR_MASK_RGBA` | keep, needs_docs | Stable combined color-write mask. |
 | `Compute_Pipeline_Invalid` | keep | Stable invalid sentinel. |
+| `DISPATCH_INDIRECT_ARGS_STRIDE` | keep | APE-7 indirect dispatch arg stride (`size_of(Dispatch_Indirect_Args)`). |
+| `DRAW_INDEXED_INDIRECT_ARGS_STRIDE` | keep | APE-7 indexed indirect arg stride (`size_of(Draw_Indexed_Indirect_Args)`). |
+| `DRAW_INDIRECT_ARGS_STRIDE` | keep | APE-7 non-indexed indirect arg stride (`size_of(Draw_Indirect_Args)`). |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
 | `MAX_BINDING_GROUPS` | keep | Public logical binding group limit. |
+| `MAX_BINDING_GROUP_ARRAYS` | keep | APE-24 public limit on binding-group runtime/fixed array entries. |
 | `MAX_BINDING_GROUP_ENTRIES` | keep | Generated binding group layout entry limit. |
+| `MAX_BINDING_HEAPS` | defer | APE-23 public bindless heap concurrency cap. Stays public when bindless ships. |
 | `MAX_COLOR_ATTACHMENTS` | keep | Public fixed array limit. |
 | `MAX_IMAGE_MIPS` | keep | Public fixed array limit. |
 | `MAX_RESOURCE_VIEWS` | keep | Public fixed array limit. |
@@ -82,6 +88,7 @@ Composite statuses are comma-separated.
 | `acquire_transfer_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `apply_binding_group` | keep, needs_test | Applies an object-backed binding group with optional geometry bindings. |
 | `apply_binding_groups` | keep, needs_test | Applies multiple object-backed binding groups with optional geometry bindings. |
+| `apply_binding_heap` | defer | APE-23/APE-25 bindless heap bind. D3D11 rejects; lands with D3D12/Vulkan bindless. |
 | `apply_bindings` | keep, needs_test | Core command. Expand validation tests around buffer/view/sampler slots. |
 | `apply_compute_pipeline` | keep, needs_test | Core compute command. Keep if compute is v0.1-stable. |
 | `apply_pipeline` | keep, needs_test | Core render command. |
@@ -96,7 +103,10 @@ Composite statuses are comma-separated.
 | `begin_compute_pass` | keep, needs_test | Core compute command. |
 | `begin_pass` | keep, needs_test | Core render command. |
 | `binding_group_layout_valid` | keep, needs_test | Simple sentinel check. |
+| `binding_heap_capacity` | defer | APE-23 bindless heap capacity diagnostic. |
+| `cmd_apply_binding_heap` | defer | APE-5 + APE-23/APE-25 recording sketch. Body panics; backend lands with bindless. |
 | `cmd_apply_bindings` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_compute_binding_heap` | defer | APE-5 + APE-23/APE-25 recording sketch. Body panics; backend lands with bindless. |
 | `cmd_apply_compute_bindings` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_apply_compute_pipeline` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_apply_compute_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
@@ -106,7 +116,10 @@ Composite statuses are comma-separated.
 | `cmd_begin_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_begin_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_dispatch` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_dispatch_indirect` | defer | APE-5 + APE-7 recording sketch. Body panics; backend lands with APE-9. |
 | `cmd_draw` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_draw_indexed_indirect` | defer | APE-5 + APE-7 recording sketch. Body panics; immediate-mode `draw_indexed_indirect` ships with APE-8. |
+| `cmd_draw_indirect` | defer | APE-5 + APE-7 recording sketch. Body panics; immediate-mode `draw_indirect` ships with APE-8. |
 | `cmd_end_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `cmd_end_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `command_list_last_error` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
@@ -119,6 +132,7 @@ Composite statuses are comma-separated.
 | `create_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `create_binding_group` | keep, needs_test | Primary binding group creation spelling. |
 | `create_binding_group_layout` | keep, needs_test | Primary binding group layout creation spelling. |
+| `create_binding_heap` | defer | APE-23/APE-25 bindless heap creation. D3D11 rejects; lands with D3D12/Vulkan bindless. |
 | `create_compute_pipeline` | keep, needs_test | Primary compute pipeline creation spelling. |
 | `create_image` | keep, needs_test | Primary image creation spelling. |
 | `create_pipeline` | keep, needs_test | Primary graphics pipeline creation spelling. |
@@ -134,6 +148,7 @@ Composite statuses are comma-separated.
 | `destroy_buffer` | keep | Explicit destroy remains available. |
 | `destroy_binding_group` | keep | Explicit destroy remains available. |
 | `destroy_binding_group_layout` | keep | Explicit destroy remains available. |
+| `destroy_binding_heap` | defer | APE-23/APE-25 bindless heap destroy. Lands with D3D12/Vulkan bindless. |
 | `destroy_compute_pipeline` | keep | Explicit destroy remains available. |
 | `destroy_image` | keep | Explicit destroy remains available. |
 | `destroy_pipeline` | keep | Explicit destroy remains available. |
@@ -143,7 +158,10 @@ Composite statuses are comma-separated.
 | `destroy_shader` | keep | Explicit destroy remains available. |
 | `destroy_view` | keep | Explicit destroy remains available. |
 | `dispatch` | keep, needs_test | Core compute command. |
+| `dispatch_indirect` | keep, needs_test | APE-7 indirect compute dispatch entry point. Body panics on D3D11 until APE-9 wires the backend. |
 | `draw` | keep, needs_test | Core render command. |
+| `draw_indexed_indirect` | keep, needs_test | APE-7/APE-8 indirect indexed draw entry point. D3D11 backend loops `DrawIndexedInstancedIndirect`. |
+| `draw_indirect` | keep, needs_test | APE-7/APE-8 indirect non-indexed draw entry point. D3D11 backend loops `DrawInstancedIndirect`. |
 | `end_compute_pass` | keep, needs_test | Core compute command. |
 | `end_pass` | keep, needs_test | Core render command. |
 | `finish_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
@@ -168,6 +186,7 @@ Composite statuses are comma-separated.
 | `queue_kind` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `range_raw` | keep | Useful raw-pointer escape hatch. Primary docs should prefer typed `range` when possible. |
 | `read_buffer` | keep, needs_test | Synchronous readback is v0.1-stable if documented as blocking. |
+| `release_binding_heap_slot` | defer | APE-23 bindless heap slot release. Lands with D3D12/Vulkan bindless. |
 | `render_target_pass_desc` | keep | Small helper for beginning a pass against a `Render_Target` aggregate. |
 | `resize` | keep, needs_test | Stable swapchain resize entry point. |
 | `resolve_image` | keep, needs_test | Stable MSAA color resolve command. |
@@ -185,6 +204,8 @@ Composite statuses are comma-separated.
 | `transient_alloc` | keep, needs_test | Per-frame slice allocation; alignment selected by `Transient_Usage`. |
 | `transient_allocator_capacity` | keep | Per-role capacity diagnostic. |
 | `transient_allocator_used` | keep | Per-frame bytes-handed-out diagnostic. |
+| `update_binding_heap_samplers` | defer | APE-23 bindless heap sampler-array update. Lands with D3D12/Vulkan bindless. |
+| `update_binding_heap_views` | defer | APE-23 bindless heap view-array update. Lands with D3D12/Vulkan bindless. |
 | `update_buffer` | keep, needs_test | Stable dynamic/stream buffer update. |
 | `update_image` | keep, needs_test | Stable dynamic image update. |
 | `validate_binding_group_layout_desc` | keep | Validates generated binding group layout descriptors before object creation. |
@@ -202,6 +223,7 @@ Composite statuses are comma-separated.
 | `Barrier_Target` | defer | APE-15 barrier addressee: `Image` or `Buffer` handle plus image `Subresource_Range`. |
 | `Barrier_Target_Kind` | defer | APE-15 tag for `Barrier_Target` (Image vs Buffer). |
 | `Binding_Group` | keep | Stable binding group handle. |
+| `Binding_Group_Array_Desc` | keep | APE-24 fixed/runtime array entry descriptor inside `Binding_Group_Desc`. |
 | `Binding_Group_Desc` | keep | Binding group creation descriptor for generated resource views and samplers. Uniforms are still applied separately. |
 | `Binding_Group_Layout` | keep | Stable binding group layout handle. |
 | `Binding_Group_Layout_Desc` | keep | Generated binding group layout data used by `create_binding_group_layout`. |
@@ -209,6 +231,9 @@ Composite statuses are comma-separated.
 | `Binding_Group_Native_Binding_Desc` | keep | Backend/stage native slot mapping for generated binding layouts. |
 | `Binding_Group_Resource_View_Layout_Desc` | keep | Resource-view payload for generated binding layout entries. |
 | `Binding_Group_Uniform_Block_Layout_Desc` | keep | Uniform-block payload for generated binding layout entries. |
+| `Binding_Heap` | defer | APE-23/APE-25 bindless heap handle. Stays public when bindless ships. |
+| `Binding_Heap_Desc` | defer | APE-23 bindless heap creation descriptor. |
+| `Binding_Heap_Slot_Range` | defer | APE-23 contiguous slot range descriptor for bindless heap updates. |
 | `Bindings` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Blend_Factor` | keep, needs_docs | Pipeline state enum. |
 | `Blend_Op` | keep, needs_docs | Pipeline state enum. |
@@ -239,6 +264,9 @@ Composite statuses are comma-separated.
 | `Depth_Attachment_Action` | keep, needs_docs | Pass action descriptor. |
 | `Depth_State` | keep, needs_docs | Pipeline depth state. |
 | `Depth_Stencil_Attachment_View_Desc` | keep | Covered as part of `View_Desc` contract. |
+| `Dispatch_Indirect_Args` | keep | APE-7 canonical indirect dispatch arg layout (`thread_group_count_x/y/z`). |
+| `Draw_Indexed_Indirect_Args` | keep | APE-7 canonical indexed indirect draw arg layout. |
+| `Draw_Indirect_Args` | keep | APE-7 canonical non-indexed indirect draw arg layout. |
 | `Desc` | keep | Context descriptor. Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_descriptor_contracts.ps1`. |
 | `Error_Code` | keep, needs_test | Keep after Phase 3 removes string inference. |
 | `Error_Info` | keep, needs_test | Keep after Phase 3 removes string inference. |

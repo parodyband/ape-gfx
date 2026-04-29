@@ -1052,11 +1052,69 @@ d3d11_dispatch :: proc(ctx: ^Context, group_count_x, group_count_y, group_count_
 }
 
 d3d11_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
-	panic("gfx.d3d11: draw_indirect is unimplemented (APE-7 declaration only; backend lands in APE-8)")
+	state := d3d11_state(ctx)
+	if state == nil || state.immediate == nil {
+		set_backend_error(ctx, "gfx.d3d11: backend state is not initialized")
+		return false
+	}
+
+	pipeline_info, pipeline_ok := state.pipelines[state.current_pipeline]
+	if !pipeline_ok {
+		set_validation_error(ctx, "gfx.d3d11: draw_indirect requires an applied pipeline")
+		return false
+	}
+
+	if !d3d11_validate_draw_bindings(ctx, state, &pipeline_info) {
+		return false
+	}
+
+	buffer_info, buffer_ok := state.buffers[indirect_buffer]
+	if !buffer_ok || buffer_info.buffer == nil {
+		set_invalid_handle_error(ctx, "gfx.d3d11: indirect buffer handle is unknown")
+		return false
+	}
+
+	// D3D11 has no native multi-draw indirect; loop one DrawInstancedIndirect
+	// per record. Implicit transitions handle the buffer state.
+	for i in 0..<draw_count {
+		arg_offset := u32(offset) + i * stride
+		state.immediate.DrawInstancedIndirect(state.immediate, buffer_info.buffer, arg_offset)
+	}
+	return true
 }
 
 d3d11_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
-	panic("gfx.d3d11: draw_indexed_indirect is unimplemented (APE-7 declaration only; backend lands in APE-8)")
+	state := d3d11_state(ctx)
+	if state == nil || state.immediate == nil {
+		set_backend_error(ctx, "gfx.d3d11: backend state is not initialized")
+		return false
+	}
+
+	pipeline_info, pipeline_ok := state.pipelines[state.current_pipeline]
+	if !pipeline_ok {
+		set_validation_error(ctx, "gfx.d3d11: draw_indexed_indirect requires an applied pipeline")
+		return false
+	}
+	if !pipeline_info.has_index_buffer {
+		set_validation_error(ctx, "gfx.d3d11: draw_indexed_indirect requires a pipeline with an index buffer")
+		return false
+	}
+
+	if !d3d11_validate_draw_bindings(ctx, state, &pipeline_info) {
+		return false
+	}
+
+	buffer_info, buffer_ok := state.buffers[indirect_buffer]
+	if !buffer_ok || buffer_info.buffer == nil {
+		set_invalid_handle_error(ctx, "gfx.d3d11: indirect buffer handle is unknown")
+		return false
+	}
+
+	for i in 0..<draw_count {
+		arg_offset := u32(offset) + i * stride
+		state.immediate.DrawIndexedInstancedIndirect(state.immediate, buffer_info.buffer, arg_offset)
+	}
+	return true
 }
 
 d3d11_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
