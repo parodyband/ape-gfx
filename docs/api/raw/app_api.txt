@@ -1,4 +1,4 @@
-﻿package app
+package app
 	procedures
 		begin_input_frame :: proc(window: ^Window) {...}
 			begin_input_frame prepares per-frame input state before poll_events.

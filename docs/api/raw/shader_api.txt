@@ -1,4 +1,4 @@
-﻿package shader
+package shader
 	procedures
 		load :: proc(path: string) -> (: Package, : bool) {...}
 			load reads and parses an .ashader package from disk.

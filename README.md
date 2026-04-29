@@ -28,11 +28,11 @@ The current contract lives in `docs/gfx-v0.1-contract.md`. The release notes liv
 ## Requirements
 
 - Odin on `PATH`
-- Windows PowerShell
+- Windows PowerShell for convenience scripts and D3D11 sample validation
 - Windows with Direct3D 11 for GPU samples
 - Slang shared libraries available to `tools/ape_shaderc`
 
-Shader compilation uses the Slang API through `tools/ape_shaderc`. The old `slangc` command-line path is not the main path anymore.
+Shader compilation uses the Slang API through `tools/ape_shaderc`. `tools/ape` is the Odin task runner for repo workflows. PowerShell scripts are convenience wrappers where they still exist.
 
 ## Quick start
 
@@ -51,12 +51,24 @@ Run the realistic D3D11 API sample for five frames:
 Run the full validation gate:
 
 ```powershell
+odin run .\tools\ape -- validate full
+```
+
+The Windows wrapper delegates to the same Odin validation path:
+
+```powershell
 .\tools\validate_all.ps1
 ```
 
 `validate_all.ps1` compiles shaders, regenerates/checks public API docs, runs contract tests, builds every D3D11 sample, runs every D3D11 sample with `-AutoExitFrames 5`, and finishes with `git diff --check`.
 
 Run the core/tooling gate without D3D11 runtime tests:
+
+```powershell
+odin run .\tools\ape -- validate core
+```
+
+The Windows wrapper delegates to the same Odin validation path:
 
 ```powershell
 .\tools\validate_core.ps1
@@ -114,6 +126,7 @@ defer gfx.destroy(&ctx, vertex_buffer)
 - `shader`: `.ashader` loading and conversion to `gfx.Shader_Desc`
 - `gfx_app`: app-facing helpers for resize handling, shader-program setup, binding layout ownership, fail-fast sample calls, texture sample assets, and shader reload
 - `app`: small window/event layer used by samples
+- `tools/ape`: Odin repo task runner for shader compilation and future platform-neutral validation
 - `tools/ape_shaderc`: Slang compiler/package tool
 - `samples/ape_math`: sample-only matrix helpers
 
@@ -126,13 +139,31 @@ Shader sources live in `assets/shaders/*.slang`.
 Compile one shader package:
 
 ```powershell
+odin run .\tools\ape -- shader compile -shader-name textured_quad
+```
+
+The Windows wrapper delegates to the same Odin tool:
+
+```powershell
 .\tools\compile_shaders.ps1 -ShaderName textured_quad
 ```
 
 Compile a compute shader package:
 
 ```powershell
+odin run .\tools\ape -- shader compile -shader-name my_compute_shader -kind compute
+```
+
+Or through the wrapper:
+
+```powershell
 .\tools\compile_shaders.ps1 -ShaderName my_compute_shader -Kind compute
+```
+
+Run the shader reflection validation suite:
+
+```powershell
+odin run .\tools\ape -- shader test -all
 ```
 
 Each compile writes:
@@ -176,3 +207,9 @@ Use these as the active docs:
 - `docs/gfx-error-model.md`: stable typed error codes
 - `docs/gfx-public-api-audit.md`: public symbol inventory and status
 - `docs/api/README.md`: generated API docs index
+
+Regenerate the checked-in API docs with:
+
+```powershell
+odin run .\tools\ape -- docs generate
+```

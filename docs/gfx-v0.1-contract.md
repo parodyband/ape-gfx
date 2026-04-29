@@ -117,8 +117,10 @@ import triangle_shader "ape:assets/shaders/generated/triangle"
 Compile shaders before running samples or applications:
 
 ```powershell
-.\tools\compile_shaders.ps1 -ShaderName triangle
+odin run .\tools\ape -- shader compile -shader-name triangle
 ```
+
+The Windows wrapper `tools/compile_shaders.ps1` delegates to the same Odin tool.
 
 The runtime load path is:
 
@@ -275,7 +277,7 @@ Slang is the shader source language. Runtime code does not compile Slang directl
 Stable shader flow:
 
 1. Author `.slang` files under `assets/shaders`.
-2. Compile with `tools/compile_shaders.ps1`.
+2. Compile with `tools/ape`, usually through `odin run .\tools\ape -- shader compile`.
 3. Load `.ashader` packages with `shader`.
 4. Create `gfx.Shader` from `gfx.Shader_Desc`.
 5. Use generated bindings for layouts, uniforms, slots, and compute dispatch sizing.
@@ -344,10 +346,22 @@ The detailed contract lives in `docs/gfx-error-model.md`.
 Run the full local gate before treating a change as compatible:
 
 ```powershell
+odin run .\tools\ape -- validate full
+```
+
+The Windows wrapper delegates to the same Odin validation path:
+
+```powershell
 .\tools\validate_all.ps1
 ```
 
 Run the core/tooling gate when D3D11 runtime validation is not available:
+
+```powershell
+odin run .\tools\ape -- validate core
+```
+
+The Windows wrapper delegates to the same Odin validation path:
 
 ```powershell
 .\tools\validate_core.ps1

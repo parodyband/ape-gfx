@@ -70,7 +70,7 @@ Slang is the shader authoring language for this release.
 The normal flow is:
 
 1. Write `.slang` files under `assets/shaders`.
-2. Compile with `tools/compile_shaders.ps1`.
+2. Compile with `tools/ape`, usually through `odin run .\tools\ape -- shader compile`.
 3. Load `.ashader` packages through `shader`.
 4. Create `gfx.Shader` handles from `gfx.Shader_Desc`.
 5. Use generated Odin bindings for slots, uniforms, vertex layouts, and compute dispatch sizing.
@@ -127,10 +127,22 @@ The `Null` backend remains useful for smoke tests. The Vulkan backend is scaffol
 The default validation command is:
 
 ```powershell
+odin run .\tools\ape -- validate full
+```
+
+The Windows wrapper delegates to the same Odin validation path:
+
+```powershell
 .\tools\validate_all.ps1
 ```
 
 The core/tooling validation command is:
+
+```powershell
+odin run .\tools\ape -- validate core
+```
+
+The Windows wrapper delegates to the same Odin validation path:
 
 ```powershell
 .\tools\validate_core.ps1

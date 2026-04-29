@@ -120,6 +120,9 @@ Reflection_Parameter :: struct {
 	type_value: json.Value,
 }
 
+// JSON reflection is kept only for Slang data that this binding layer does not
+// read cleanly yet: ParameterBlock fields, descriptor-table resource kind
+// details, resource-array rejection, and storage resource metadata.
 Reflection_Model :: struct {
 	value: json.Value,
 	root: json.Object,
@@ -654,6 +657,22 @@ compile_modern_component_stage :: proc(
 	}
 	defer delete_reflection_model(&reflection_model)
 
+	layout_info: Slang_Program_Layout_Info
+	if !collect_slang_program_layout_info(slang, layout, &layout_info) {
+		delete(bytecode)
+		delete(reflection)
+		return {}, false
+	}
+	defer delete_slang_program_layout_info(&layout_info)
+
+	entry_layout, entry_layout_ok := slang_entry_point_layout_by_name_stage(layout_info, stage.entry, slang_stage)
+	if !entry_layout_ok {
+		fmt.eprintln("ape_shaderc: Slang API reflection has no entry point named ", stage.entry, ": ", options.source_path)
+		delete(bytecode)
+		delete(reflection)
+		return {}, false
+	}
+
 	metadata: ^ISlangMetadata
 	if !get_modern_entry_point_metadata(linked, target_index, &metadata) {
 		delete(bytecode)
@@ -670,7 +689,7 @@ compile_modern_component_stage :: proc(
 
 	if stage.stage == .Vertex && stage.entry == "vs_main" {
 		stage_vertex_layout: Generated_Vertex_Layout
-		if !collect_vertex_layout_from_reflection(options, stage, reflection_model.root, &stage_vertex_layout) {
+		if !collect_vertex_layout_from_slang_api(options, stage, entry_layout^, &stage_vertex_layout) {
 			delete(bytecode)
 			delete(reflection)
 			delete_vertex_layout(&stage_vertex_layout)
@@ -687,7 +706,7 @@ compile_modern_component_stage :: proc(
 
 	if stage.stage == .Compute && stage.entry == "cs_main" {
 		stage_compute_thread_group: Compute_Thread_Group_Size
-		if !collect_compute_thread_group_from_reflection(options, stage, reflection_model.root, &stage_compute_thread_group) {
+		if !collect_compute_thread_group_from_slang_api(options, stage, entry_layout^, &stage_compute_thread_group) {
 			delete(bytecode)
 			delete(reflection)
 			return {}, false
@@ -912,7 +931,7 @@ collect_bindings_from_reflection :: proc(
 
 		kind, kind_ok := binding_kind_from_category(category)
 		if !kind_ok && category == .Descriptor_Table_Slot {
-			kind, kind_ok = binding_kind_from_descriptor_parameter(reflection_model, name, slot)
+			kind, kind_ok = binding_kind_from_json_descriptor_parameter(reflection_model, name, slot)
 		}
 		if !kind_ok {
 			continue
@@ -930,7 +949,7 @@ collect_bindings_from_reflection :: proc(
 			}
 			binding_size = block_size
 		} else if kind == .Resource_View {
-			metadata_kind, metadata_access, metadata_format, metadata_stride, metadata_ok := resource_view_metadata_from_reflection(
+			metadata_kind, metadata_access, metadata_format, metadata_stride, metadata_ok := resource_view_metadata_from_json_reflection(
 				reflection_model,
 				name,
 				category,
@@ -1483,180 +1502,154 @@ reflection_parameter_by_name_slot :: proc(model: Reflection_Model, name: string,
 	return {}, false
 }
 
-collect_vertex_layout_from_reflection :: proc(
-	options: Options,
-	stage: Stage_Desc,
-	root: json.Object,
-	out_layout: ^Generated_Vertex_Layout,
-) -> bool {
-	entry_points_value, entry_points_ok := json_field(root, "entryPoints")
-	if !entry_points_ok {
-		fmt.eprintln("ape_shaderc: Slang reflection has no entryPoints array: ", options.source_path, ":", stage.entry)
-		return false
+slang_entry_point_layout_by_name_stage :: proc(info: Slang_Program_Layout_Info, name: string, stage: SlangStage) -> (^Slang_Entry_Point_Layout_Info, bool) {
+	for &entry in info.entry_points {
+		if entry.name == name && entry.stage == stage {
+			return &entry, true
+		}
 	}
-
-	entry_points, entry_points_array_ok := json_array(entry_points_value)
-	if !entry_points_array_ok {
-		fmt.eprintln("ape_shaderc: Slang reflection entryPoints field is not an array: ", options.source_path, ":", stage.entry)
-		return false
-	}
-
-	for entry_point_value in entry_points {
-		entry_point, entry_point_ok := json_object(entry_point_value)
-		if !entry_point_ok {
-			continue
-		}
-
-		name, name_ok := json_string_field(entry_point, "name")
-		stage_name, stage_ok := json_string_field(entry_point, "stage")
-		if !name_ok || !stage_ok || name != stage.entry || stage_name != "vertex" {
-			continue
-		}
-
-		parameters_value, parameters_ok := json_field(entry_point, "parameters")
-		if !parameters_ok {
-			fmt.eprintln("ape_shaderc: vertex entry point has no parameters: ", options.source_path, ":", stage.entry)
-			return false
-		}
-
-		parameters, parameters_array_ok := json_array(parameters_value)
-		if !parameters_array_ok {
-			fmt.eprintln("ape_shaderc: vertex entry point parameters field is not an array: ", options.source_path, ":", stage.entry)
-			return false
-		}
-
-		for parameter_value in parameters {
-			parameter, parameter_ok := json_object(parameter_value)
-			if !parameter_ok {
-				continue
-			}
-
-			binding_value, binding_ok := json_field(parameter, "binding")
-			if !binding_ok {
-				continue
-			}
-
-			binding, binding_object_ok := json_object(binding_value)
-			if !binding_object_ok {
-				continue
-			}
-
-			binding_kind, binding_kind_ok := json_string_field(binding, "kind")
-			if !binding_kind_ok || binding_kind != "varyingInput" {
-				continue
-			}
-
-			type_value, type_ok := json_field(parameter, "type")
-			if !type_ok {
-				fmt.eprintln("ape_shaderc: vertex input parameter has no type: ", options.source_path, ":", stage.entry)
-				return false
-			}
-
-			if !collect_vertex_attributes_from_type(options, stage, type_value, out_layout) {
-				return false
-			}
-		}
-
-		return true
-	}
-
-	fmt.eprintln("ape_shaderc: Slang reflection has no vertex entry point named ", stage.entry, ": ", options.source_path)
-	return false
+	return nil, false
 }
 
-collect_vertex_attributes_from_type :: proc(
+collect_vertex_layout_from_slang_api :: proc(
 	options: Options,
 	stage: Stage_Desc,
-	type_value: json.Value,
+	entry: Slang_Entry_Point_Layout_Info,
 	out_layout: ^Generated_Vertex_Layout,
 ) -> bool {
-	type_object, type_object_ok := json_object(type_value)
-	if !type_object_ok {
-		fmt.eprintln("ape_shaderc: vertex input type is not an object: ", options.source_path, ":", stage.entry)
+	if entry.name != stage.entry || entry.stage != SLANG_STAGE_VERTEX {
+		fmt.eprintln("ape_shaderc: Slang API reflection has no vertex entry point named ", stage.entry, ": ", options.source_path)
 		return false
 	}
 
-	kind, kind_ok := json_string_field(type_object, "kind")
-	if !kind_ok {
-		fmt.eprintln("ape_shaderc: vertex input type has no kind: ", options.source_path, ":", stage.entry)
-		return false
-	}
-	if kind != "struct" {
-		fmt.eprintln("ape_shaderc: generated vertex layouts only support struct vertex inputs: ", options.source_path, ":", stage.entry)
-		return false
+	for parameter in entry.parameters {
+		if !collect_vertex_attributes_from_slang_parameter(options, stage, parameter, out_layout) {
+			return false
+		}
 	}
 
-	fields_value, fields_ok := json_field(type_object, "fields")
-	if !fields_ok {
-		fmt.eprintln("ape_shaderc: vertex input struct has no fields: ", options.source_path, ":", stage.entry)
+	if len(out_layout.attrs) == 0 {
+		fmt.eprintln("ape_shaderc: vertex entry point has no reflected vertex inputs: ", options.source_path, ":", stage.entry)
 		return false
-	}
-
-	fields, fields_array_ok := json_array(fields_value)
-	if !fields_array_ok {
-		fmt.eprintln("ape_shaderc: vertex input fields value is not an array: ", options.source_path, ":", stage.entry)
-		return false
-	}
-
-	for field_value in fields {
-		field, field_ok := json_object(field_value)
-		if !field_ok {
-			continue
-		}
-
-		semantic_name, semantic_ok := json_string_field(field, "semanticName")
-		if !semantic_ok || semantic_name == "" {
-			fmt.eprintln("ape_shaderc: vertex input field is missing a semanticName: ", options.source_path, ":", stage.entry)
-			return false
-		}
-
-		semantic, semantic_index, semantic_parse_ok := parse_vertex_semantic(semantic_name)
-		if !semantic_parse_ok {
-			fmt.eprintln("ape_shaderc: failed to parse vertex semantic: ", semantic_name)
-			return false
-		}
-		defer delete(semantic)
-
-		if semantic_index != 0 {
-			fmt.eprintln("ape_shaderc: generated vertex layouts do not support nonzero semantic indices yet: ", semantic_name)
-			return false
-		}
-		if vertex_layout_has_semantic(out_layout^, semantic, semantic_index) {
-			fmt.eprintln("ape_shaderc: generated vertex layouts do not support duplicate vertex semantics: ", semantic_name)
-			return false
-		}
-
-		field_type_value, field_type_ok := json_field(field, "type")
-		if !field_type_ok {
-			fmt.eprintln("ape_shaderc: vertex input field has no type: ", semantic_name)
-			return false
-		}
-
-		format, size, format_ok := generated_vertex_format_from_json(field_type_value)
-		if !format_ok {
-			fmt.eprintln("ape_shaderc: unsupported vertex input type for generated layout: ", semantic_name)
-			return false
-		}
-
-		semantic_clone, clone_err := strings.clone(semantic)
-		if clone_err != nil {
-			return false
-		}
-
-		append(&out_layout.attrs, Generated_Vertex_Attribute {
-			semantic = semantic_clone,
-			semantic_index = semantic_index,
-			format = format,
-			offset = out_layout.stride,
-			size = size,
-		})
-		out_layout.stride += size
 	}
 
 	return true
 }
 
-collect_compute_thread_group_from_reflection :: proc(
+collect_vertex_attributes_from_slang_parameter :: proc(
+	options: Options,
+	stage: Stage_Desc,
+	parameter: Slang_Layout_Parameter_Info,
+	out_layout: ^Generated_Vertex_Layout,
+) -> bool {
+	if len(parameter.fields) > 0 {
+		if parameter.type_kind != .Struct {
+			fmt.eprintln("ape_shaderc: generated vertex layouts only support scalar/vector fields inside struct vertex inputs: ", options.source_path, ":", stage.entry)
+			return false
+		}
+		for field in parameter.fields {
+			if !collect_vertex_attributes_from_slang_parameter(options, stage, field, out_layout) {
+				return false
+			}
+		}
+		return true
+	}
+
+	if parameter.category != .Varying_Input && parameter.semantic_name == "" {
+		return true
+	}
+
+	if parameter.semantic_name == "" {
+		fmt.eprintln("ape_shaderc: vertex input field is missing a semanticName: ", options.source_path, ":", stage.entry)
+		return false
+	}
+
+	semantic, semantic_index, semantic_parse_ok := parse_vertex_semantic(parameter.semantic_name)
+	if !semantic_parse_ok {
+		fmt.eprintln("ape_shaderc: failed to parse vertex semantic: ", parameter.semantic_name)
+		return false
+	}
+	defer delete(semantic)
+
+	if semantic_index != 0 {
+		fmt.eprintln("ape_shaderc: generated vertex layouts do not support nonzero semantic indices yet: ", parameter.semantic_name)
+		return false
+	}
+	if vertex_layout_has_semantic(out_layout^, semantic, semantic_index) {
+		fmt.eprintln("ape_shaderc: generated vertex layouts do not support duplicate vertex semantics: ", parameter.semantic_name)
+		return false
+	}
+
+	format, size, format_ok := generated_vertex_format_from_slang_parameter(parameter)
+	if !format_ok {
+		fmt.eprintln("ape_shaderc: unsupported vertex input type for generated layout: ", parameter.semantic_name)
+		return false
+	}
+
+	semantic_clone, clone_err := strings.clone(semantic)
+	if clone_err != nil {
+		return false
+	}
+
+	append(&out_layout.attrs, Generated_Vertex_Attribute {
+		semantic = semantic_clone,
+		semantic_index = semantic_index,
+		format = format,
+		offset = out_layout.stride,
+		size = size,
+	})
+	out_layout.stride += size
+	return true
+}
+
+generated_vertex_format_from_slang_parameter :: proc(parameter: Slang_Layout_Parameter_Info) -> (Generated_Vertex_Format, u32, bool) {
+	if parameter.scalar_type != .Float32 {
+		return .Float32, 0, false
+	}
+
+	#partial switch parameter.type_kind {
+	case .Scalar:
+		return .Float32, 4, true
+	case .Vector:
+		switch parameter.element_count {
+		case 1:
+			return .Float32, 4, true
+		case 2:
+			return .Float32x2, 8, true
+		case 3:
+			return .Float32x3, 12, true
+		case 4:
+			return .Float32x4, 16, true
+		}
+	}
+
+	return .Float32, 0, false
+}
+
+collect_compute_thread_group_from_slang_api :: proc(
+	options: Options,
+	stage: Stage_Desc,
+	entry: Slang_Entry_Point_Layout_Info,
+	out_group: ^Compute_Thread_Group_Size,
+) -> bool {
+	if entry.name != stage.entry || entry.stage != SLANG_STAGE_COMPUTE {
+		fmt.eprintln("ape_shaderc: Slang API reflection has no compute entry point named ", stage.entry, ": ", options.source_path)
+		return false
+	}
+
+	x := entry.compute_thread_group_size[0]
+	y := entry.compute_thread_group_size[1]
+	z := entry.compute_thread_group_size[2]
+	if x == 0 || y == 0 || z == 0 {
+		fmt.eprintln("ape_shaderc: compute threadGroupSize values must be positive integers: ", options.source_path, ":", stage.entry)
+		return false
+	}
+
+	out_group^ = {valid = true, x = x, y = y, z = z}
+	return true
+}
+
+collect_compute_thread_group_from_json_reflection :: proc(
 	options: Options,
 	stage: Stage_Desc,
 	root: json.Object,
@@ -1731,60 +1724,6 @@ merge_compute_thread_group :: proc(dst: ^Compute_Thread_Group_Size, src: Compute
 
 	return true
 }
-
-generated_vertex_format_from_json :: proc(type_value: json.Value) -> (Generated_Vertex_Format, u32, bool) {
-	type_object, type_object_ok := json_object(type_value)
-	if !type_object_ok {
-		return .Float32, 0, false
-	}
-
-	kind, kind_ok := json_string_field(type_object, "kind")
-	if !kind_ok {
-		return .Float32, 0, false
-	}
-
-	if kind == "scalar" {
-		scalar_type, scalar_ok := json_string_field(type_object, "scalarType")
-		if !scalar_ok || scalar_type != "float32" {
-			return .Float32, 0, false
-		}
-		return .Float32, 4, true
-	}
-
-	if kind == "vector" {
-		element_count, element_count_ok := json_u32_field(type_object, "elementCount")
-		if !element_count_ok {
-			return .Float32, 0, false
-		}
-
-		element_type_value, element_type_ok := json_field(type_object, "elementType")
-		if !element_type_ok {
-			return .Float32, 0, false
-		}
-		element_type, element_type_object_ok := json_object(element_type_value)
-		if !element_type_object_ok {
-			return .Float32, 0, false
-		}
-		scalar_type, scalar_ok := json_string_field(element_type, "scalarType")
-		if !scalar_ok || scalar_type != "float32" {
-			return .Float32, 0, false
-		}
-
-		switch element_count {
-		case 1:
-			return .Float32, 4, true
-		case 2:
-			return .Float32x2, 8, true
-		case 3:
-			return .Float32x3, 12, true
-		case 4:
-			return .Float32x4, 16, true
-		}
-	}
-
-	return .Float32, 0, false
-}
-
 parse_vertex_semantic :: proc(semantic_name: string) -> (string, u32, bool) {
 	if semantic_name == "" {
 		return "", 0, false
@@ -1947,7 +1886,7 @@ binding_kind_from_category :: proc(category: Slang_Parameter_Category) -> (Bindi
 	return .Uniform_Block, false
 }
 
-binding_kind_from_descriptor_parameter :: proc(reflection_model: Reflection_Model, name: string, slot: u32) -> (Binding_Kind, bool) {
+binding_kind_from_json_descriptor_parameter :: proc(reflection_model: Reflection_Model, name: string, slot: u32) -> (Binding_Kind, bool) {
 	parameter, parameter_ok := reflection_parameter_by_binding(reflection_model, name, "descriptorTableSlot", slot)
 	if !parameter_ok {
 		return .Uniform_Block, false
@@ -1979,7 +1918,7 @@ binding_kind_from_json_type :: proc(type_value: json.Value) -> (Binding_Kind, bo
 	return .Uniform_Block, false
 }
 
-resource_view_metadata_from_reflection :: proc(
+resource_view_metadata_from_json_reflection :: proc(
 	reflection_model: Reflection_Model,
 	name: string,
 	category: Slang_Parameter_Category,
@@ -2318,6 +2257,7 @@ collect_uniform_block :: proc(
 	}
 
 	fields: [dynamic]Uniform_Field
+	host_offset: u32
 	field_count := slang.spReflectionTypeLayout_GetFieldCount(element_layout)
 	for i in 0..<int(field_count) {
 		field_layout := slang.spReflectionTypeLayout_GetFieldByIndex(element_layout, u32(i))
@@ -2343,22 +2283,49 @@ collect_uniform_block :: proc(
 		}
 
 		field_type_layout := slang.spReflectionVariableLayout_GetTypeLayout(field_layout)
-		odin_type, host_size, type_ok := odin_type_for_uniform_field(slang, field_type_layout)
+		odin_type, host_size, type_error, type_ok := odin_type_for_uniform_field(slang, field_type_layout)
 		if !type_ok {
 			delete(field_name)
 			delete_uniform_fields(fields[:])
 			delete(fields)
-			fmt.eprintln("ape_shaderc: uniform field has unsupported host layout: ", name, ".", string(name_c))
+			fmt.eprintln("ape_shaderc: unsupported uniform field ", name, ".", string(name_c), ": ", type_error)
+			return 0, false
+		}
+
+		field_offset := u32(slang.spReflectionVariableLayout_GetOffset(field_layout, .Uniform))
+		field_size := u32(slang.spReflectionTypeLayout_GetSize(field_type_layout, .Uniform))
+		if field_offset != host_offset {
+			delete(field_name)
+			delete(odin_type)
+			delete_uniform_fields(fields[:])
+			delete(fields)
+			fmt.eprintln("ape_shaderc: uniform block layout has unsupported host padding before ", name, ".", string(name_c))
+			return 0, false
+		}
+		if field_size != host_size {
+			delete(field_name)
+			delete(odin_type)
+			delete_uniform_fields(fields[:])
+			delete(fields)
+			fmt.eprintln("ape_shaderc: uniform field reflected size differs from generated host size: ", name, ".", string(name_c))
 			return 0, false
 		}
 
 		append(&fields, Uniform_Field {
 			name = field_name,
 			odin_type = odin_type,
-			offset = u32(slang.spReflectionVariableLayout_GetOffset(field_layout, .Uniform)),
-			size = u32(slang.spReflectionTypeLayout_GetSize(field_type_layout, .Uniform)),
+			offset = field_offset,
+			size = field_size,
 			host_size = host_size,
 		})
+		host_offset += host_size
+	}
+
+	if host_offset != block_size {
+		delete_uniform_fields(fields[:])
+		delete(fields)
+		fmt.eprintln("ape_shaderc: uniform block has unsupported trailing host padding: ", name)
+		return 0, false
 	}
 
 	block_name, block_name_err := strings.clone(name)
@@ -2410,77 +2377,89 @@ uniform_block_layout_matches :: proc(a, b: Uniform_Block) -> bool {
 	return true
 }
 
-odin_type_for_uniform_field :: proc(slang: ^Slang_API, type_layout: rawptr) -> (string, u32, bool) {
+odin_type_for_uniform_field :: proc(slang: ^Slang_API, type_layout: rawptr) -> (string, u32, string, bool) {
 	if type_layout == nil {
-		return "", 0, false
+		return "", 0, "missing reflected type layout", false
 	}
 
 	typ := slang.spReflectionTypeLayout_GetType(type_layout)
 	if typ == nil {
-		return "", 0, false
+		return "", 0, "missing reflected type", false
 	}
 
 	kind := slang.spReflectionType_GetKind(typ)
 	#partial switch kind {
 	case .Scalar:
-		scalar_type, scalar_size, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(typ))
+		scalar_type, scalar_size, scalar_error, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(typ))
 		if !scalar_ok {
-			return "", 0, false
+			return "", 0, scalar_error, false
 		}
 		cloned_type, clone_err := strings.clone(scalar_type)
 		if clone_err != nil {
-			return "", 0, false
+			return "", 0, "failed to clone generated Odin type", false
 		}
-		return cloned_type, scalar_size, true
+		return cloned_type, scalar_size, "", true
 	case .Vector:
 		element_type := slang.spReflectionType_GetElementType(typ)
 		if element_type == nil {
-			return "", 0, false
+			return "", 0, "vector uniform field is missing an element type", false
 		}
 
-		scalar_type, scalar_size, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(element_type))
+		scalar_type, scalar_size, scalar_error, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(element_type))
 		if !scalar_ok {
-			return "", 0, false
+			return "", 0, scalar_error, false
 		}
 
 		count := u32(slang.spReflectionType_GetElementCount(typ))
-		if count == 0 {
-			return "", 0, false
+		if count == 0 || count > 4 {
+			return "", 0, "uniform vectors must have 1 to 4 elements", false
 		}
-		return fmt.aprintf("[%d]%s", count, scalar_type), count * scalar_size, true
+		return fmt.aprintf("[%d]%s", count, scalar_type), count * scalar_size, "", true
 	case .Matrix:
 		element_type := slang.spReflectionType_GetElementType(typ)
 		if element_type == nil {
-			return "", 0, false
+			return "", 0, "matrix uniform field is missing an element type", false
 		}
 
-		scalar_type, scalar_size, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(element_type))
+		scalar_type, scalar_size, scalar_error, scalar_ok := odin_scalar_type(slang.spReflectionType_GetScalarType(element_type))
 		if !scalar_ok {
-			return "", 0, false
+			return "", 0, scalar_error, false
 		}
 
 		row_count := slang.spReflectionType_GetRowCount(typ)
 		column_count := slang.spReflectionType_GetColumnCount(typ)
 		if row_count == 0 || column_count == 0 {
-			return "", 0, false
+			return "", 0, "matrix uniform field has invalid dimensions", false
 		}
-		return fmt.aprintf("[%d][%d]%s", row_count, column_count, scalar_type), row_count * column_count * scalar_size, true
+		return fmt.aprintf("[%d][%d]%s", row_count, column_count, scalar_type), row_count * column_count * scalar_size, "", true
+	case .Array:
+		return "", 0, "uniform arrays are not supported yet", false
+	case .Struct:
+		return "", 0, "nested uniform structs are not supported yet", false
 	}
 
-	return "", 0, false
+	return "", 0, "uniform field kind is not supported yet", false
 }
 
-odin_scalar_type :: proc(scalar: Slang_Scalar_Type) -> (string, u32, bool) {
+odin_scalar_type :: proc(scalar: Slang_Scalar_Type) -> (string, u32, string, bool) {
 	#partial switch scalar {
 	case .Float32:
-		return "f32", 4, true
+		return "f32", 4, "", true
 	case .Int32:
-		return "i32", 4, true
+		return "i32", 4, "", true
 	case .Uint32:
-		return "u32", 4, true
+		return "u32", 4, "", true
+	case .Bool:
+		return "", 0, "bool uniform fields are not supported yet", false
+	case .Float16:
+		return "", 0, "half precision uniform fields are not supported yet", false
+	case .Float64, .Int64, .Uint64:
+		return "", 0, "64-bit uniform fields are not supported yet", false
+	case .Int8, .Uint8, .Int16, .Uint16:
+		return "", 0, "8-bit and 16-bit integer uniform fields are not supported yet", false
 	}
 
-	return "", 0, false
+	return "", 0, "uniform scalar type is not supported yet", false
 }
 
 write_stage_artifact :: proc(path: string, bytes: []byte, label: string) -> bool {

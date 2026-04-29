@@ -46,19 +46,25 @@ assets/shaders/*.slang
 Compile one shader with:
 
 ```powershell
+odin run .\tools\ape -- shader compile -shader-name triangle
+```
+
+The Windows convenience wrapper delegates to the same Odin tool:
+
+```powershell
 .\tools\compile_shaders.ps1 -ShaderName triangle
 ```
 
-Compile all checked-in sample shaders with one `ape_shaderc` invocation:
+Compile all checked-in sample shaders:
 
 ```powershell
-.\tools\compile_shaders.ps1 -All
+odin run .\tools\ape -- shader compile -all
 ```
 
 Compile a compute shader with:
 
 ```powershell
-.\tools\compile_shaders.ps1 -ShaderName my_compute_shader -Kind compute
+odin run .\tools\ape -- shader compile -shader-name my_compute_shader -kind compute
 ```
 
 ## Entry Points And Targets
@@ -265,7 +271,7 @@ Unsupported parameter-block fields fail during shader generation:
 - arrays or bindless-style resource arrays
 - unsupported resource shapes such as cube textures
 
-Uniform data inside `ParameterBlock<>` is intentionally deferred. Keep per-draw data in ordinary constant buffers for now.
+Uniform data inside `ParameterBlock<>` is not part of generated binding groups in the current contract. Keep per-draw data in ordinary constant buffers and use the generated `apply_uniform_*` helpers. `ParameterBlock<>` ordinary data fields and `ConstantBuffer<T>` fields fail shader generation so there is one uniform path.
 
 ## Descriptor Arrays And Bindless Direction
 
@@ -332,7 +338,7 @@ Supported uniform field shapes:
 | `intRxC` | `[R][C]i32` |
 | `uintRxC` | `[R][C]u32` |
 
-Generated structs include explicit padding fields when reflected offsets require gaps. `#assert` checks keep generated Odin layout aligned with Slang reflection.
+Generated structs do not synthesize hidden padding fields yet. Shader generation fails when reflected offsets or trailing block size require padding the generated Odin struct cannot represent. `#assert` checks remain in generated bindings as a final guard.
 
 Unsupported uniform field shapes:
 
@@ -340,13 +346,16 @@ Unsupported uniform field shapes:
 - nested structs as uniform fields
 - booleans
 - 8-bit, 16-bit, 64-bit, and half-precision fields
+- implicit padding before a field or at the end of a block
 - overlapping reflected fields
 - uniform blocks whose layout differs across stages or targets
 
-Expected failure message for unsupported fields:
+Expected failure messages include:
 
 ```text
-ape_shaderc: uniform field has unsupported host layout: <block>.<field>
+ape_shaderc: unsupported uniform field <block>.<field>: <reason>
+ape_shaderc: uniform block layout has unsupported host padding before <block>.<field>
+ape_shaderc: uniform block has unsupported trailing host padding: <block>
 ```
 
 ## Vertex Layouts
@@ -584,31 +593,25 @@ Planned order:
 - [x] Generate `pipeline_layout_desc` helpers and migrate samples to compose generated binding group layouts into pipeline layouts.
 - [x] Harden transient `gfx.Bindings` against active `Pipeline_Layout` metadata for supplied views and samplers.
 - [x] Sketch descriptor-array and bindless reflection requirements, and reject top-level binding arrays with a clear shaderc error.
-- [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
-- [ ] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
+- [x] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
+- [x] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
+- [x] Harden uniform host-layout reflection for unsupported arrays, nested structs, scalar widths, and implicit padding.
 
 Open questions:
 
-- How to represent uniform data inside `ParameterBlock<>` without losing the current low-friction per-draw uniform path.
 - How to expose resource arrays or bindless-style layouts without weakening the simple generated helper path.
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Roadmap note: `gfx_app` owns the reusable shader-program and resize helpers. The transient `gfx.Bindings` path now validates supplied views and samplers against active `Pipeline_Layout` metadata before backend binding. The next shader-contract-specific tasks are deeper Slang API layout traversal and the decision on uniform data inside `ParameterBlock<>`.
+Roadmap note: `gfx_app` owns the reusable shader-program and resize helpers. The transient `gfx.Bindings` path now validates supplied views and samplers against active `Pipeline_Layout` metadata before backend binding. The next shader-contract-specific task is the descriptor-array and bindless public API design.
 
 ## Validation
 
 Current shader reflection validation is covered by:
 
 ```powershell
-.\tools\compile_shaders.ps1 -All
-.\tools\test_shaderc_modern_api_probe.ps1
-.\tools\test_shaderc_register_free_samples.ps1
-.\tools\test_shaderc_descriptor_table_slots.ps1
-.\tools\test_shaderc_parameter_block_groups.ps1
-.\tools\test_shaderc_resource_arrays.ps1
-.\tools\test_shaderc_invalid_vertex_layout.ps1
-.\tools\test_shaderc_storage_resource_metadata.ps1
+odin run .\tools\ape -- shader compile -all
+odin run .\tools\ape -- shader test -all
 .\tools\test_d3d11_invalid_pipeline_layout.ps1
 .\tools\test_d3d11_invalid_uniform_size.ps1
 .\tools\test_d3d11_invalid_view_kind.ps1
@@ -618,6 +621,12 @@ Current shader reflection validation is covered by:
 ```
 
 The full gate is:
+
+```powershell
+odin run .\tools\ape -- validate full
+```
+
+The Windows wrapper delegates to the same Odin validation path:
 
 ```powershell
 .\tools\validate_all.ps1

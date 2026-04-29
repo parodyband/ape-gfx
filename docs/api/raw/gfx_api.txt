@@ -1,4 +1,4 @@
-﻿package gfx
+package gfx
 	constants
 		Binding_Group_Invalid :: Binding_Group(0)
 		Binding_Group_Layout_Invalid :: Binding_Group_Layout(0)

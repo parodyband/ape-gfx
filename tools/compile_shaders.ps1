@@ -12,49 +12,38 @@ $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $BuildDir = Join-Path $Root.Path "build\shaders"
+$ToolDir = Join-Path $Root.Path "build\tools"
 
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ToolDir | Out-Null
 
-$ShadercPath = Join-Path $BuildDir "ape_shaderc-$PID-$ShaderName.exe"
+$ApePath = Join-Path $ToolDir "ape-shader-compile-$PID.exe"
+
 try {
-	Invoke-Native -Command "odin" -Arguments @("build", (Join-Path $Root.Path "tools\ape_shaderc"), "-out:$ShadercPath")
+	Invoke-Native -Command "odin" -Arguments @("build", (Join-Path $Root.Path "tools\ape"), "-out:$ApePath")
+
+	$ApeArguments = @(
+		"shader", "compile",
+		"-root", $Root.Path,
+		"-build-dir", $BuildDir
+	)
+
 	if ($All) {
-		Invoke-Native -Command $ShadercPath -Arguments @(
-			"-all",
-			"-build-dir", $BuildDir
-		)
+		$ApeArguments += "-all"
 	}
 	else {
-		if ([string]::IsNullOrWhiteSpace($SourcePath)) {
-			$ShaderPath = Join-Path $Root.Path "assets\shaders\$ShaderName.slang"
-		}
-		else {
-			$ShaderPath = $SourcePath
-		}
-
-		$PackagePath = Join-Path $BuildDir "$ShaderName.ashader"
-
-		$GeneratedDir = Join-Path $Root.Path "assets\shaders\generated\$ShaderName"
-		$GeneratedBindingsPath = Join-Path $GeneratedDir "bindings.odin"
-		New-Item -ItemType Directory -Force -Path $GeneratedDir | Out-Null
-
-		Invoke-Native -Command $ShadercPath -Arguments @(
+		$ApeArguments += @(
 			"-shader-name", $ShaderName,
-			"-kind", $Kind,
-			"-source", $ShaderPath,
-			"-build-dir", $BuildDir,
-			"-package", $PackagePath,
-			"-generated", $GeneratedBindingsPath
+			"-kind", $Kind
 		)
+
+		if (-not [string]::IsNullOrWhiteSpace($SourcePath)) {
+			$ApeArguments += @("-source", $SourcePath)
+		}
 	}
+
+	Invoke-Native -Command $ApePath -Arguments $ApeArguments
 }
 finally {
-	Remove-Item -LiteralPath $ShadercPath -ErrorAction SilentlyContinue
-}
-
-if ($All) {
-	Write-Host "Compiled all sample shader outputs and packages to $BuildDir"
-}
-else {
-	Write-Host "Compiled $ShaderName shader outputs and package to $BuildDir"
+	Remove-Item -LiteralPath $ApePath -ErrorAction SilentlyContinue
 }

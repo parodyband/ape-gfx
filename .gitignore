@@ -16,3 +16,11 @@ docs/archive/
 docs/**/*plan*.md
 docs/**/*roadmap*.md
 docs/**/*research*.md
+
+.ape/kanban.db
+.ape/kanban.db-wal
+.ape/kanban.db-shm
+.ape/workspaces/
+.ape/*
+
+WORKFLOW.md

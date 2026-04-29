@@ -1,4 +1,4 @@
-﻿package gfx_app
+package gfx_app
 	constants
 		SHADER_RELOAD_DEFAULT_DEBOUNCE :: 250 * time.Millisecond
 
