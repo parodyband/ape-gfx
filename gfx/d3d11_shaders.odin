@@ -113,17 +113,18 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				size = binding.size,
 			}
 		case .Resource_View:
+			slot_count := shader_binding_array_count(binding)
 			if binding.group >= MAX_BINDING_GROUPS {
 				set_validation_errorf(ctx, "gfx.d3d11: resource view binding group %d is out of range", binding.group)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			if binding.slot >= MAX_RESOURCE_VIEWS {
+			if binding.slot >= MAX_RESOURCE_VIEWS || u64(binding.slot) + u64(slot_count) > u64(MAX_RESOURCE_VIEWS) {
 				set_validation_errorf(ctx, "gfx.d3d11: resource view binding slot %d is out of range", binding.slot)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			if binding.native_slot >= MAX_RESOURCE_VIEWS {
+			if binding.native_slot >= MAX_RESOURCE_VIEWS || u64(binding.native_slot) + u64(slot_count) > u64(MAX_RESOURCE_VIEWS) {
 				set_validation_errorf(ctx, "gfx.d3d11: native resource view binding slot %d is out of range", binding.native_slot)
 				d3d11_release_shader(&shader_info)
 				return false
@@ -133,40 +134,50 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			if (binding.view_kind == .Storage_Image || binding.view_kind == .Storage_Buffer) && binding.native_slot >= D3D11_MAX_UAV_SLOTS {
+			if (binding.view_kind == .Storage_Image || binding.view_kind == .Storage_Buffer) &&
+			   u64(binding.native_slot) + u64(slot_count) > u64(D3D11_MAX_UAV_SLOTS) {
 				set_validation_errorf(ctx, "gfx.d3d11: native storage resource view binding slot %d is out of range", binding.native_slot)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			shader_info.required[stage].views[group] |= d3d11_slot_mask(binding.slot)
-			shader_info.view_slots[stage][group][int(binding.slot)] = {
-				active = true,
-				native_slot = binding.native_slot,
-				view_kind = binding.view_kind,
-				access = binding.access,
-				storage_image_format = binding.storage_image_format,
-				storage_buffer_stride = binding.storage_buffer_stride,
+			for element in 0..<slot_count {
+				logical_slot := binding.slot + element
+				native_slot := binding.native_slot + element
+				shader_info.required[stage].views[group] |= d3d11_slot_mask(logical_slot)
+				shader_info.view_slots[stage][group][int(logical_slot)] = {
+					active = true,
+					native_slot = native_slot,
+					view_kind = binding.view_kind,
+					access = binding.access,
+					storage_image_format = binding.storage_image_format,
+					storage_buffer_stride = binding.storage_buffer_stride,
+				}
 			}
 		case .Sampler:
+			slot_count := shader_binding_array_count(binding)
 			if binding.group >= MAX_BINDING_GROUPS {
 				set_validation_errorf(ctx, "gfx.d3d11: sampler binding group %d is out of range", binding.group)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			if binding.slot >= MAX_SAMPLERS {
+			if binding.slot >= MAX_SAMPLERS || u64(binding.slot) + u64(slot_count) > u64(MAX_SAMPLERS) {
 				set_validation_errorf(ctx, "gfx.d3d11: sampler binding slot %d is out of range", binding.slot)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			if binding.native_slot >= MAX_SAMPLERS {
+			if binding.native_slot >= MAX_SAMPLERS || u64(binding.native_slot) + u64(slot_count) > u64(MAX_SAMPLERS) {
 				set_validation_errorf(ctx, "gfx.d3d11: native sampler binding slot %d is out of range", binding.native_slot)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			shader_info.required[stage].samplers[group] |= d3d11_slot_mask(binding.slot)
-			shader_info.sampler_slots[stage][group][int(binding.slot)] = {
-				active = true,
-				native_slot = binding.native_slot,
+			for element in 0..<slot_count {
+				logical_slot := binding.slot + element
+				native_slot := binding.native_slot + element
+				shader_info.required[stage].samplers[group] |= d3d11_slot_mask(logical_slot)
+				shader_info.sampler_slots[stage][group][int(logical_slot)] = {
+					active = true,
+					native_slot = native_slot,
+				}
 			}
 		}
 	}

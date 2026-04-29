@@ -40,6 +40,19 @@ expect_validation_error :: proc(ctx: ^gfx.Context, fragment: string) {
 	}
 }
 
+expect_unsupported_error :: proc(ctx: ^gfx.Context, fragment: string) {
+	info := gfx.last_error_info(ctx)
+	if info.code != .Unsupported {
+		fmt.eprintln("expected Unsupported error, got: ", info.code, " message: ", info.message)
+		os.exit(1)
+	}
+	if !strings.contains(info.message, fragment) {
+		fmt.eprintln("expected unsupported error containing: ", fragment)
+		fmt.eprintln("actual message:                        ", info.message)
+		os.exit(1)
+	}
+}
+
 main :: proc() {
 	if !app.init() {
 		fail("app init failed")
@@ -90,6 +103,29 @@ main :: proc() {
 		fail(fmt.tprintf("indirect buffer creation failed: %v", gfx.last_error(&ctx)))
 	}
 	defer gfx.destroy(&ctx, indirect_buffer)
+
+	if _, cpu_indirect_ok := gfx.create_buffer(&ctx, {
+		label = "cpu mutable indirect args",
+		usage = {.Indirect, .Dynamic_Update},
+		size  = gfx.DRAW_INDIRECT_ARGS_STRIDE,
+	}); cpu_indirect_ok {
+		fail("CPU-updatable indirect buffer unexpectedly succeeded")
+	}
+	expect_unsupported_error(&ctx, "CPU-updatable indirect buffers")
+
+	indexed_packed_args := [2]gfx.Draw_Indexed_Indirect_Args {
+		{index_count = 3, instance_count = 1, first_index = 0, base_vertex = 0, first_instance = 0},
+		{index_count = 3, instance_count = 1, first_index = 0, base_vertex = 0, first_instance = 0},
+	}
+	indexed_packed_buffer, indexed_packed_ok := gfx.create_buffer(&ctx, {
+		label = "packed indexed indirect args",
+		usage = {.Indirect, .Immutable},
+		data  = gfx.range(indexed_packed_args[:]),
+	})
+	if !indexed_packed_ok {
+		fail(fmt.tprintf("packed indexed indirect buffer creation failed: %v", gfx.last_error(&ctx)))
+	}
+	defer gfx.destroy(&ctx, indexed_packed_buffer)
 
 	// A non-Indirect buffer — used to prove the usage-flag rule fires.
 	non_indirect, non_indirect_ok := gfx.create_buffer(&ctx, {
@@ -168,6 +204,14 @@ main :: proc() {
 		fail("draw_indirect overrunning buffer unexpectedly succeeded")
 	}
 	expect_validation_error(&ctx, "exceeds buffer size")
+
+	// 9. Indexed multi-draw cannot use a tightly packed 20-byte record array;
+	// the canonical stride includes padding so each record offset remains
+	// INDIRECT_ARGS_OFFSET_ALIGNMENT-aligned.
+	if gfx.draw_indexed_indirect(&ctx, indexed_packed_buffer, draw_count = 2) {
+		fail("draw_indexed_indirect with tightly packed records unexpectedly succeeded")
+	}
+	expect_validation_error(&ctx, "indirect argument range")
 
 	if !gfx.end_pass(&ctx) {
 		fail(fmt.tprintf("end_pass failed: %v", gfx.last_error(&ctx)))

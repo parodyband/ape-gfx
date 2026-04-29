@@ -1,10 +1,10 @@
 package gfx
 
-// Queue / Timeline submission API sketch — AAA roadmap item 21.
+// Queue / Timeline submission API draft — AAA roadmap item 21.
 //
-// This file is a header-only stub. Every entry point panics. The shapes here
-// reflect the decisions in docs/private/gfx-queue-submission-note.md, which
-// composes with:
+// These types define the future explicit-submission model used by transient
+// allocators and bindless slot lifetime rules. Entry points report Unsupported
+// until command recording and backend queues exist.
 //
 //   gfx-command-recording-note.md  — Command_List + per-pass encoders are
 //                                    the unit of recorded work; `Context` is
@@ -127,7 +127,8 @@ Present_Info :: struct {
 // Stable for the life of the Context. Returns `Queue_Invalid` if the backend
 // does not expose a graphics queue (shouldn't happen for a valid Context).
 acquire_graphics_queue :: proc(ctx: ^Context) -> Queue {
-	panic("gfx.acquire_graphics_queue: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.acquire_graphics_queue: explicit queues are not implemented yet")
+	return Queue_Invalid
 }
 
 // acquire_compute_queue returns the Queue handle for the async-compute family.
@@ -136,26 +137,29 @@ acquire_graphics_queue :: proc(ctx: ^Context) -> Queue {
 // runtime serializes; on D3D12/Vulkan this is a distinct queue when the
 // adapter exposes one.
 acquire_compute_queue :: proc(ctx: ^Context) -> Queue {
-	panic("gfx.acquire_compute_queue: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.acquire_compute_queue: explicit queues are not implemented yet")
+	return Queue_Invalid
 }
 
 // acquire_transfer_queue returns the Queue handle for the copy-only family.
 //
 // Same fold-to-graphics rule as `acquire_compute_queue` on D3D11.
 acquire_transfer_queue :: proc(ctx: ^Context) -> Queue {
-	panic("gfx.acquire_transfer_queue: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.acquire_transfer_queue: explicit queues are not implemented yet")
+	return Queue_Invalid
 }
 
 // queue_kind reports the family a Queue belongs to.
 queue_kind :: proc(queue: Queue) -> Queue_Kind {
-	panic("gfx.queue_kind: unimplemented (APE-17 sketch only)")
+	return .Graphics
 }
 
 // create_timeline_semaphore allocates a Timeline_Semaphore with `initial_value`.
 //
 // Returns `Timeline_Semaphore_Invalid` on failure; check `last_error(ctx)`.
 create_timeline_semaphore :: proc(ctx: ^Context, initial_value: u64 = 0) -> Timeline_Semaphore {
-	panic("gfx.create_timeline_semaphore: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.create_timeline_semaphore: timeline semaphores are not implemented yet")
+	return Timeline_Semaphore_Invalid
 }
 
 // destroy_timeline_semaphore releases a Timeline_Semaphore.
@@ -163,19 +167,21 @@ create_timeline_semaphore :: proc(ctx: ^Context, initial_value: u64 = 0) -> Time
 // All in-flight submits that wait on or signal the semaphore must have
 // completed (or be cancelled by Context shutdown) before destruction.
 destroy_timeline_semaphore :: proc(ctx: ^Context, semaphore: Timeline_Semaphore) {
-	panic("gfx.destroy_timeline_semaphore: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.destroy_timeline_semaphore: timeline semaphores are not implemented yet")
 }
 
 // timeline_semaphore_value reads the current GPU-visible value.
 timeline_semaphore_value :: proc(ctx: ^Context, semaphore: Timeline_Semaphore) -> u64 {
-	panic("gfx.timeline_semaphore_value: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.timeline_semaphore_value: timeline semaphores are not implemented yet")
+	return 0
 }
 
 // timeline_semaphore_signal advances the semaphore from the CPU side.
 //
 // `value` must be strictly greater than the current value.
 timeline_semaphore_signal :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, value: u64) -> bool {
-	panic("gfx.timeline_semaphore_signal: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.timeline_semaphore_signal: timeline semaphores are not implemented yet")
+	return false
 }
 
 // timeline_semaphore_wait blocks the calling thread until `value` is reached.
@@ -183,7 +189,8 @@ timeline_semaphore_signal :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, 
 // `timeout_ns` of 0 polls; ~max u64 is "wait forever". Returns false on
 // timeout or backend error; check `last_error(ctx)` to disambiguate.
 timeline_semaphore_wait :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, value: u64, timeout_ns: u64) -> bool {
-	panic("gfx.timeline_semaphore_wait: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.timeline_semaphore_wait: timeline semaphores are not implemented yet")
+	return false
 }
 
 // submit hands an ordered batch of finished command lists to a Queue.
@@ -202,7 +209,8 @@ timeline_semaphore_wait :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, va
 //
 // The single-queue / single-list shape is `submit(queue, { command_lists = {&list} })`.
 submit :: proc(ctx: ^Context, queue: Queue, info: Submit_Info) -> bool {
-	panic("gfx.submit: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.submit: explicit queues are not implemented yet")
+	return false
 }
 
 // present queues the current swapchain image for display.
@@ -217,5 +225,6 @@ submit :: proc(ctx: ^Context, queue: Queue, info: Submit_Info) -> bool {
 // been emitted by the render pass that wrote the swapchain image; `present`
 // only consumes the timeline waits in `info` and forwards to the swapchain.
 present :: proc(ctx: ^Context, info: Present_Info = {}) -> bool {
-	panic("gfx.present: unimplemented (APE-17 sketch only)")
+	set_unsupported_error(ctx, "gfx.present: explicit presentation is not implemented yet; use gfx.commit for the immediate-mode path")
+	return false
 }

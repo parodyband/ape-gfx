@@ -305,13 +305,11 @@ dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, 
 // `draw_count` records are read at `stride` bytes apart. `stride == 0`
 // uses `DRAW_INDIRECT_ARGS_STRIDE`.
 //
-// Bodies are wired through the backend dispatch table; backends panic
-// with `unimplemented` until APE-8 lands the D3D11 implementation.
 draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDIRECT_ARGS_STRIDE) -> bool {
 	if !require_render_pass(ctx, "gfx.draw_indirect") {
 		return false
 	}
-	if !validate_indirect_buffer(ctx, "gfx.draw_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDIRECT_ARGS_STRIDE) {
+	if !validate_indirect_buffer(ctx, "gfx.draw_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDIRECT_ARGS_STRIDE, size_of(Draw_Indirect_Args)) {
 		return false
 	}
 
@@ -324,17 +322,15 @@ draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, d
 // `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
 // `offset` is the byte offset of the first `Draw_Indexed_Indirect_Args`
 // record; `draw_count` records are read at `stride` bytes apart.
-// `stride == 0` uses `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`. The active
+// `stride == 0` uses `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`, which includes
+// padding so each record offset stays aligned. The active
 // pipeline must declare an `index_type` and a valid index buffer must be
 // bound through `apply_bindings`.
-//
-// Bodies are wired through the backend dispatch table; backends panic
-// with `unimplemented` until APE-8 lands the D3D11 implementation.
 draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE) -> bool {
 	if !require_render_pass(ctx, "gfx.draw_indexed_indirect") {
 		return false
 	}
-	if !validate_indirect_buffer(ctx, "gfx.draw_indexed_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDEXED_INDIRECT_ARGS_STRIDE) {
+	if !validate_indirect_buffer(ctx, "gfx.draw_indexed_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDEXED_INDIRECT_ARGS_STRIDE, DRAW_INDEXED_INDIRECT_ARGS_SIZE) {
 		return false
 	}
 
@@ -347,13 +343,11 @@ draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: in
 // `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
 // `offset` is the byte offset of the `Dispatch_Indirect_Args` record.
 //
-// Bodies are wired through the backend dispatch table; backends panic
-// with `unimplemented` until APE-9 lands the D3D11 implementation.
 dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0) -> bool {
 	if !require_compute_pass(ctx, "gfx.dispatch_indirect") {
 		return false
 	}
-	if !validate_indirect_buffer(ctx, "gfx.dispatch_indirect", indirect_buffer, offset, 1, DISPATCH_INDIRECT_ARGS_STRIDE, DISPATCH_INDIRECT_ARGS_STRIDE) {
+	if !validate_indirect_buffer(ctx, "gfx.dispatch_indirect", indirect_buffer, offset, 1, DISPATCH_INDIRECT_ARGS_STRIDE, DISPATCH_INDIRECT_ARGS_STRIDE, size_of(Dispatch_Indirect_Args)) {
 		return false
 	}
 
@@ -361,7 +355,7 @@ dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 
 }
 
 @(private)
-validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: int, default_stride: int) -> bool {
+validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: int, default_stride: int, args_size: int) -> bool {
 	if !buffer_valid(indirect_buffer) {
 		set_validation_errorf(ctx, "%s: indirect buffer handle is invalid", op)
 		return false
@@ -393,6 +387,10 @@ validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buf
 		set_validation_errorf(ctx, "%s: stride must be 0 or exactly %d bytes (the canonical args size)", op, default_stride)
 		return false
 	}
+	if draw_count > 1 && effective_stride % INDIRECT_ARGS_OFFSET_ALIGNMENT != 0 {
+		set_validation_errorf(ctx, "%s: stride must keep every indirect record aligned to INDIRECT_ARGS_OFFSET_ALIGNMENT (%d bytes)", op, INDIRECT_ARGS_OFFSET_ALIGNMENT)
+		return false
+	}
 
 	buffer_state := query_buffer_state(ctx, indirect_buffer)
 	if !buffer_state.valid {
@@ -403,9 +401,9 @@ validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buf
 		set_validation_errorf(ctx, "%s: indirect buffer requires Buffer_Usage_Flag.Indirect", op)
 		return false
 	}
-	required := offset + effective_stride * int(draw_count)
+	required := offset + args_size + effective_stride * (int(draw_count) - 1)
 	if required > buffer_state.size {
-		set_validation_errorf(ctx, "%s: offset + stride * draw_count (%d) exceeds buffer size (%d)", op, required, buffer_state.size)
+		set_validation_errorf(ctx, "%s: indirect argument range (%d bytes) exceeds buffer size (%d)", op, required, buffer_state.size)
 		return false
 	}
 

@@ -302,13 +302,13 @@ apply_binding_heap :: proc(ctx: ^Context, group: u32, heap: Binding_Heap) -> boo
 // Lands when `Command_List` recording lands; today this is the same kind
 // of forward-declared sketch as the rest of `command_list.odin`.
 cmd_apply_binding_heap :: proc(encoder: ^Render_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
-    return false
+    return render_encoder_set_unsupported(encoder, "gfx.cmd_apply_binding_heap: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_compute_binding_heap mirrors `cmd_apply_binding_heap` for
 // compute encoders.
 cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
-    return false
+    return compute_encoder_set_unsupported(encoder, "gfx.cmd_apply_compute_binding_heap: explicit command recording is not implemented yet")
 }
 
 // reject_binding_heap_for_backend implements the §9 / item 29 D3D11 fallback

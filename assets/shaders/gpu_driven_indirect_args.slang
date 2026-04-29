@@ -2,7 +2,7 @@
 // Writes a single gfx.Draw_Indirect_Args record into a raw indirect buffer so a
 // later draw_indirect call can consume it without a CPU-side update.
 
-RWByteAddressBuffer indirect_args : register(u0);
+RWByteAddressBuffer indirect_args;
 
 cbuffer ComputeUniforms
 {

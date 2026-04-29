@@ -83,14 +83,25 @@ DISPATCH_INDIRECT_ARGS_STRIDE :: size_of(Dispatch_Indirect_Args)
 DISPATCH_INDIRECT_ARGS_STRIDE is the canonical byte stride between
 consecutive `Dispatch_Indirect_Args` records in an indirect buffer.
 
+### `DRAW_INDEXED_INDIRECT_ARGS_SIZE`
+
+```odin
+DRAW_INDEXED_INDIRECT_ARGS_SIZE :: size_of(Draw_Indexed_Indirect_Args)
+```
+
+DRAW_INDEXED_INDIRECT_ARGS_SIZE is the byte size of one indexed indirect
+argument record before inter-record padding.
+
 ### `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`
 
 ```odin
-DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indexed_Indirect_Args)
+DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: ((DRAW_INDEXED_INDIRECT_ARGS_SIZE + INDIRECT_ARGS_OFFSET_ALIGNMENT - 1) / INDIRECT_ARGS_OFFSET_ALIGNMENT) * INDIRECT_ARGS_OFFSET_ALIGNMENT
 ```
 
 DRAW_INDEXED_INDIRECT_ARGS_STRIDE is the canonical byte stride between
 consecutive `Draw_Indexed_Indirect_Args` records in an indirect buffer.
+The record itself is 20 bytes, but multi-draw offsets must stay aligned to
+`INDIRECT_ARGS_OFFSET_ALIGNMENT`, so consecutive records use a padded stride.
 
 ### `DRAW_INDIRECT_ARGS_STRIDE`
 
@@ -704,7 +715,7 @@ cmd_dispatch_indirect :: proc(encoder: ^Compute_Pass_Encoder, indirect_buffer: B
 
 cmd_dispatch_indirect issues one indirect compute dispatch on a compute
 pass encoder (AAA roadmap item 11). See `gfx.dispatch_indirect` for the
-parameter contract; bodies land with APE-9.
+parameter contract.
 
 ### `cmd_draw`
 
@@ -724,7 +735,7 @@ cmd_draw_indexed_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer
 
 cmd_draw_indexed_indirect issues one or more indexed indirect draws on a
 render pass encoder (AAA roadmap item 11). See `gfx.draw_indexed_indirect`
-for the parameter contract; bodies land with APE-8.
+for the parameter contract.
 
 ### `cmd_draw_indirect`
 
@@ -734,7 +745,7 @@ cmd_draw_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer: Buffer
 
 cmd_draw_indirect issues one or more non-indexed indirect draws on a
 render pass encoder (AAA roadmap item 11). See `gfx.draw_indirect` for
-the parameter contract; bodies land with APE-8.
+the parameter contract.
 
 ### `cmd_end_compute_pass`
 
@@ -1149,8 +1160,6 @@ dispatch_indirect issues one compute dispatch with thread-group counts
 sourced from an indirect-capable buffer (AAA roadmap item 11).
 `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
 `offset` is the byte offset of the `Dispatch_Indirect_Args` record.
-Bodies are wired through the backend dispatch table; backends panic
-with `unimplemented` until APE-9 lands the D3D11 implementation.
 
 ### `draw`
 
@@ -1176,11 +1185,10 @@ indirect-capable buffer (AAA roadmap item 11).
 `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
 `offset` is the byte offset of the first `Draw_Indexed_Indirect_Args`
 record; `draw_count` records are read at `stride` bytes apart.
-`stride == 0` uses `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`. The active
+`stride == 0` uses `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`, which includes
+padding so each record offset stays aligned. The active
 pipeline must declare an `index_type` and a valid index buffer must be
 bound through `apply_bindings`.
-Bodies are wired through the backend dispatch table; backends panic
-with `unimplemented` until APE-8 lands the D3D11 implementation.
 
 ### `draw_indirect`
 
@@ -1194,8 +1202,6 @@ indirect-capable buffer (AAA roadmap item 11).
 `offset` is the byte offset of the first `Draw_Indirect_Args` record;
 `draw_count` records are read at `stride` bytes apart. `stride == 0`
 uses `DRAW_INDIRECT_ARGS_STRIDE`.
-Bodies are wired through the backend dispatch table; backends panic
-with `unimplemented` until APE-8 lands the D3D11 implementation.
 
 ### `end_compute_pass`
 
@@ -1989,8 +1995,8 @@ Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
 `Indirect` tags a buffer as legal source storage for `draw_indirect`,
 `draw_indexed_indirect`, and `dispatch_indirect` (AAA roadmap item 11).
 It composes with another role flag — typically `.Storage` for compute
-passes that produce indirect args, or `.Immutable` / `.Dynamic_Update` /
-`.Stream_Update` for CPU-prepared indirect buffers. D3D11 maps this to
+passes that produce indirect args, or `.Immutable` for CPU-prepared initial
+indirect buffers. D3D11 maps this to
 `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS`, which precludes structured
 storage views; combine `.Indirect` with `.Storage` only for raw buffers
 (`storage_stride == 0`).
@@ -2161,6 +2167,10 @@ Desc :: struct {backend: Backend, width: i32, height: i32, native_window: rawptr
 ```
 
 Desc configures a graphics Context.
+`backend` selects the native implementation. `Backend.Auto` resolves at
+`init` time to a platform-appropriate backend: `D3D11` on Windows, and
+`Null` on every other platform until Vulkan/Metal land. Naming a concrete
+backend (e.g. `.D3D11`) bypasses resolution and is used as-is.
 
 ### `Dispatch_Indirect_Args`
 
@@ -2200,7 +2210,7 @@ command consumes from an indirect-capable buffer (AAA roadmap item 11).
 Field order and types match `D3D12_DRAW_ARGUMENTS`,
 `VkDrawIndirectCommand`, and `MTLDrawPrimitivesIndirectArguments` so the
 same byte image dispatches across all three backends. D3D11
-`DrawInstancedIndirect` consumes the same five `u32` words via
+`DrawInstancedIndirect` consumes the same four `u32` words via
 `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS` buffers.
 
 ### `Error_Code`

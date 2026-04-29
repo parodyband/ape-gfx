@@ -1,10 +1,10 @@
 package gfx
 
-// Command_List / Pass_Encoder API sketch — AAA roadmap item 9.
+// Command_List / Pass_Encoder API draft — AAA roadmap item 9.
 //
-// This file is a header-only stub. No bodies are implemented; every entry
-// point panics or returns zero. The shapes here reflect the decisions in
-// docs/private/gfx-command-recording-note.md:
+// The types are kept public because barriers, bindless heaps, and transient
+// allocators need to name the future explicit-recording model. Entry points
+// report Unsupported until the backend recording path exists.
 //
 //   §5 — recording uses explicit command encoders (Command_List + per-pass
 //        encoders). Context becomes a factory and submission point.
@@ -103,7 +103,8 @@ Compute_Pass_Encoder :: struct {
 // Must be called on the Context thread; the returned list's initial owner is
 // the caller and may be moved to a worker before recording begins.
 create_command_list :: proc(ctx: ^Context) -> (Command_List, bool) {
-	panic("gfx.create_command_list: unimplemented (APE-5 sketch only)")
+	set_unsupported_error(ctx, "gfx.create_command_list: explicit command recording is not implemented yet")
+	return {}, false
 }
 
 // finish_command_list seals a Command_List for submission.
@@ -112,7 +113,7 @@ create_command_list :: proc(ctx: ^Context) -> (Command_List, bool) {
 // returns true the list is in state `Finished` and may transfer to another
 // thread for submission.
 finish_command_list :: proc(list: ^Command_List) -> bool {
-	panic("gfx.finish_command_list: unimplemented (APE-5 sketch only)")
+	return command_list_set_unsupported(list, "gfx.finish_command_list: explicit command recording is not implemented yet")
 }
 
 // submit_command_list hands a single finished list to the named queue family.
@@ -126,7 +127,12 @@ finish_command_list :: proc(list: ^Command_List) -> bool {
 // Use `gfx.submit` directly when the submit needs timeline waits, signals,
 // or more than one list.
 submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Queue = .Graphics) -> bool {
-	panic("gfx.submit_command_list: unimplemented (APE-5 sketch only)")
+	set_unsupported_error(ctx, "gfx.submit_command_list: explicit command submission is not implemented yet")
+	if list != nil {
+		list.last_error = "gfx.submit_command_list: explicit command submission is not implemented yet"
+		list.last_error_code = .Unsupported
+	}
+	return false
 }
 
 // destroy_command_list releases backend resources held by a list.
@@ -134,7 +140,10 @@ submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Q
 // Safe to call on a `Recording`, `Finished`, or `Submitted` list. Lists must
 // be destroyed before their owning Context shuts down.
 destroy_command_list :: proc(list: ^Command_List) {
-	panic("gfx.destroy_command_list: unimplemented (APE-5 sketch only)")
+	if list != nil {
+		list.state = .Submitted
+		list.backend_data = nil
+	}
 }
 
 // command_list_last_error returns the most recent record-time error.
@@ -142,13 +151,19 @@ destroy_command_list :: proc(list: ^Command_List) {
 // Use this from the worker thread before `finish_command_list` to surface
 // validation failures detected during recording.
 command_list_last_error :: proc(list: ^Command_List) -> string {
-	panic("gfx.command_list_last_error: unimplemented (APE-5 sketch only)")
+	if list == nil {
+		return ""
+	}
+	return list.last_error
 }
 
 // command_list_last_error_code returns the machine-readable code that pairs
 // with `command_list_last_error`.
 command_list_last_error_code :: proc(list: ^Command_List) -> Error_Code {
-	panic("gfx.command_list_last_error_code: unimplemented (APE-5 sketch only)")
+	if list == nil {
+		return .Validation
+	}
+	return list.last_error_code
 }
 
 // cmd_begin_render_pass opens a render pass on a Command_List.
@@ -156,7 +171,8 @@ command_list_last_error_code :: proc(list: ^Command_List) -> Error_Code {
 // Returns the encoder that subsequent `cmd_apply_*` and `cmd_draw` calls
 // take. The list must be in state `Recording` and have no other encoder open.
 cmd_begin_render_pass :: proc(list: ^Command_List, desc: Pass_Desc) -> (Render_Pass_Encoder, bool) {
-	panic("gfx.cmd_begin_render_pass: unimplemented (APE-5 sketch only)")
+	command_list_set_unsupported(list, "gfx.cmd_begin_render_pass: explicit command recording is not implemented yet")
+	return {}, false
 }
 
 // cmd_end_render_pass closes the render pass owned by `encoder`.
@@ -164,24 +180,24 @@ cmd_begin_render_pass :: proc(list: ^Command_List, desc: Pass_Desc) -> (Render_P
 // After this returns true the encoder is no longer usable; the parent list
 // may open a new encoder or be finished.
 cmd_end_render_pass :: proc(encoder: ^Render_Pass_Encoder) -> bool {
-	panic("gfx.cmd_end_render_pass: unimplemented (APE-5 sketch only)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_end_render_pass: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_pipeline binds a graphics pipeline on a render pass encoder.
 cmd_apply_pipeline :: proc(encoder: ^Render_Pass_Encoder, pipeline: Pipeline) -> bool {
-	panic("gfx.cmd_apply_pipeline: unimplemented (APE-5 sketch only)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_apply_pipeline: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_bindings binds vertex/index buffers, resource views, and samplers
 // on a render pass encoder.
 cmd_apply_bindings :: proc(encoder: ^Render_Pass_Encoder, bindings: Bindings) -> bool {
-	panic("gfx.cmd_apply_bindings: unimplemented (APE-5 sketch only)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_apply_bindings: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_uniforms uploads one reflected uniform block on a render pass
 // encoder.
 cmd_apply_uniforms :: proc(encoder: ^Render_Pass_Encoder, group: u32, slot: int, data: Range) -> bool {
-	panic("gfx.cmd_apply_uniforms: unimplemented (APE-5 sketch only)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_apply_uniforms: explicit command recording is not implemented yet")
 }
 
 // cmd_draw issues one indexed or non-indexed draw on a render pass encoder.
@@ -189,21 +205,21 @@ cmd_apply_uniforms :: proc(encoder: ^Render_Pass_Encoder, group: u32, slot: int,
 // Index vs vertex interpretation follows the active pipeline's `index_type`,
 // matching the existing immediate-mode `gfx.draw`.
 cmd_draw :: proc(encoder: ^Render_Pass_Encoder, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {
-	panic("gfx.cmd_draw: unimplemented (APE-5 sketch only)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_draw: explicit command recording is not implemented yet")
 }
 
 // cmd_draw_indirect issues one or more non-indexed indirect draws on a
 // render pass encoder (AAA roadmap item 11). See `gfx.draw_indirect` for
-// the parameter contract; bodies land with APE-8.
+// the parameter contract.
 cmd_draw_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDIRECT_ARGS_STRIDE) -> bool {
-	panic("gfx.cmd_draw_indirect: unimplemented (APE-7 declaration only; backend lands in APE-8)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_draw_indirect: explicit command recording is not implemented yet")
 }
 
 // cmd_draw_indexed_indirect issues one or more indexed indirect draws on a
 // render pass encoder (AAA roadmap item 11). See `gfx.draw_indexed_indirect`
-// for the parameter contract; bodies land with APE-8.
+// for the parameter contract.
 cmd_draw_indexed_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE) -> bool {
-	panic("gfx.cmd_draw_indexed_indirect: unimplemented (APE-7 declaration only; backend lands in APE-8)")
+	return render_encoder_set_unsupported(encoder, "gfx.cmd_draw_indexed_indirect: explicit command recording is not implemented yet")
 }
 
 // cmd_begin_compute_pass opens a compute pass on a Command_List.
@@ -211,40 +227,69 @@ cmd_draw_indexed_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer
 // Returns the encoder for subsequent `cmd_apply_compute_*` and `cmd_dispatch`
 // calls. The list must be in state `Recording` with no other encoder open.
 cmd_begin_compute_pass :: proc(list: ^Command_List, desc: Compute_Pass_Desc = {}) -> (Compute_Pass_Encoder, bool) {
-	panic("gfx.cmd_begin_compute_pass: unimplemented (APE-5 sketch only)")
+	command_list_set_unsupported(list, "gfx.cmd_begin_compute_pass: explicit command recording is not implemented yet")
+	return {}, false
 }
 
 // cmd_end_compute_pass closes the compute pass owned by `encoder`.
 cmd_end_compute_pass :: proc(encoder: ^Compute_Pass_Encoder) -> bool {
-	panic("gfx.cmd_end_compute_pass: unimplemented (APE-5 sketch only)")
+	return compute_encoder_set_unsupported(encoder, "gfx.cmd_end_compute_pass: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_compute_pipeline binds a compute pipeline on a compute pass
 // encoder.
 cmd_apply_compute_pipeline :: proc(encoder: ^Compute_Pass_Encoder, pipeline: Compute_Pipeline) -> bool {
-	panic("gfx.cmd_apply_compute_pipeline: unimplemented (APE-5 sketch only)")
+	return compute_encoder_set_unsupported(encoder, "gfx.cmd_apply_compute_pipeline: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_compute_bindings binds resource views and samplers on a compute
 // pass encoder. Vertex/index buffer slots in `bindings` must be empty.
 cmd_apply_compute_bindings :: proc(encoder: ^Compute_Pass_Encoder, bindings: Bindings) -> bool {
-	panic("gfx.cmd_apply_compute_bindings: unimplemented (APE-5 sketch only)")
+	return compute_encoder_set_unsupported(encoder, "gfx.cmd_apply_compute_bindings: explicit command recording is not implemented yet")
 }
 
 // cmd_apply_compute_uniforms uploads one reflected uniform block on a compute
 // pass encoder.
 cmd_apply_compute_uniforms :: proc(encoder: ^Compute_Pass_Encoder, group: u32, slot: int, data: Range) -> bool {
-	panic("gfx.cmd_apply_compute_uniforms: unimplemented (APE-5 sketch only)")
+	return compute_encoder_set_unsupported(encoder, "gfx.cmd_apply_compute_uniforms: explicit command recording is not implemented yet")
 }
 
 // cmd_dispatch issues one compute dispatch with explicit thread-group counts.
 cmd_dispatch :: proc(encoder: ^Compute_Pass_Encoder, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {
-	panic("gfx.cmd_dispatch: unimplemented (APE-5 sketch only)")
+	return compute_encoder_set_unsupported(encoder, "gfx.cmd_dispatch: explicit command recording is not implemented yet")
 }
 
 // cmd_dispatch_indirect issues one indirect compute dispatch on a compute
 // pass encoder (AAA roadmap item 11). See `gfx.dispatch_indirect` for the
-// parameter contract; bodies land with APE-9.
+// parameter contract.
 cmd_dispatch_indirect :: proc(encoder: ^Compute_Pass_Encoder, indirect_buffer: Buffer, offset: int = 0) -> bool {
-	panic("gfx.cmd_dispatch_indirect: unimplemented (APE-7 declaration only; backend lands in APE-9)")
+	return compute_encoder_set_unsupported(encoder, "gfx.cmd_dispatch_indirect: explicit command recording is not implemented yet")
+}
+
+@(private)
+command_list_set_unsupported :: proc(list: ^Command_List, message: string) -> bool {
+	if list != nil {
+		list.last_error = message
+		list.last_error_code = .Unsupported
+		if list.ctx != nil {
+			set_unsupported_error(list.ctx, message)
+		}
+	}
+	return false
+}
+
+@(private)
+render_encoder_set_unsupported :: proc(encoder: ^Render_Pass_Encoder, message: string) -> bool {
+	if encoder != nil {
+		return command_list_set_unsupported(encoder.list, message)
+	}
+	return false
+}
+
+@(private)
+compute_encoder_set_unsupported :: proc(encoder: ^Compute_Pass_Encoder, message: string) -> bool {
+	if encoder != nil {
+		return command_list_set_unsupported(encoder.list, message)
+	}
+	return false
 }

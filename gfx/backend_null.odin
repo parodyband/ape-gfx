@@ -289,15 +289,18 @@ null_dispatch :: proc(ctx: ^Context, group_count_x, group_count_y, group_count_z
 }
 
 null_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
-	panic("gfx.null: draw_indirect is unimplemented (APE-7 declaration only; backend lands in APE-8)")
+	set_unsupported_error(ctx, "gfx.null: draw_indirect is not supported")
+	return false
 }
 
 null_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
-	panic("gfx.null: draw_indexed_indirect is unimplemented (APE-7 declaration only; backend lands in APE-8)")
+	set_unsupported_error(ctx, "gfx.null: draw_indexed_indirect is not supported")
+	return false
 }
 
 null_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
-	panic("gfx.null: dispatch_indirect is unimplemented (APE-7 declaration only; backend lands in APE-9)")
+	set_unsupported_error(ctx, "gfx.null: dispatch_indirect is not supported")
+	return false
 }
 
 null_end_pass :: proc(ctx: ^Context) -> bool {

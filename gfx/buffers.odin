@@ -123,6 +123,10 @@ validate_buffer_desc :: proc(ctx: ^Context, desc: ^Buffer_Desc) -> bool {
 		set_validation_error(ctx, "gfx.create_buffer: storage buffers are GPU-only for now and must not use update/lifetime flags")
 		return false
 	}
+	if .Indirect in desc.usage && (.Dynamic_Update in desc.usage || .Stream_Update in desc.usage) {
+		set_unsupported_error(ctx, "gfx.create_buffer: CPU-updatable indirect buffers are not supported yet; use {.Indirect, .Immutable} with initial data or {.Indirect, .Storage} for GPU-produced args")
+		return false
+	}
 	if .Immutable in desc.usage && !range_has_data(desc.data) {
 		set_validation_error(ctx, "gfx.create_buffer: immutable buffers require initial data")
 		return false

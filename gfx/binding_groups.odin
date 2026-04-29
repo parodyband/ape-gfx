@@ -533,7 +533,11 @@ binding_group_layout_find_entry :: proc(
 	slot: u32,
 ) -> (Binding_Group_Layout_Entry_Desc, bool) {
 	for entry in layout.entries {
-		if entry.active && entry.kind == kind && entry.slot == slot {
+		if !entry.active || entry.kind != kind {
+			continue
+		}
+		first, count := binding_group_layout_entry_slot_range(entry)
+		if slot >= first && slot < first + count {
 			return entry, true
 		}
 	}
@@ -909,9 +913,31 @@ merge_binding_group :: proc(bindings: ^Bindings, layout: Binding_Group_Layout_De
 		switch entry.kind {
 		case .Uniform_Block:
 		case .Resource_View:
-			bindings.views[layout.group][entry.slot] = group.views[entry.slot]
+			if binding_group_layout_entry_is_array(entry) {
+				for array in group.arrays {
+					if !array.active || array.kind != .Resource_View || array.slot != entry.slot {
+						continue
+					}
+					for view, element_index in array.views {
+						bindings.views[layout.group][int(entry.slot) + element_index] = view
+					}
+				}
+			} else {
+				bindings.views[layout.group][entry.slot] = group.views[entry.slot]
+			}
 		case .Sampler:
-			bindings.samplers[layout.group][entry.slot] = group.samplers[entry.slot]
+			if binding_group_layout_entry_is_array(entry) {
+				for array in group.arrays {
+					if !array.active || array.kind != .Sampler || array.slot != entry.slot {
+						continue
+					}
+					for sampler, element_index in array.samplers {
+						bindings.samplers[layout.group][int(entry.slot) + element_index] = sampler
+					}
+				}
+			} else {
+				bindings.samplers[layout.group][entry.slot] = group.samplers[entry.slot]
+			}
 		}
 	}
 }

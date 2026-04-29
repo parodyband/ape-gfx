@@ -239,7 +239,7 @@ barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
 // Returns false on validation/backend failure; per-list error follows
 // recording-note §7.3.
 cmd_barrier :: proc(list: ^Command_List, desc: Barrier_Desc) -> bool {
-	panic("gfx.cmd_barrier: unimplemented (APE-5 sketch only)")
+	return command_list_set_unsupported(list, "gfx.cmd_barrier: explicit command recording is not implemented yet")
 }
 
 @(private)

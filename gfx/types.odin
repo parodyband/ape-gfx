@@ -55,8 +55,8 @@ Binding_Group_Invalid :: Binding_Group(0)
 // `Indirect` tags a buffer as legal source storage for `draw_indirect`,
 // `draw_indexed_indirect`, and `dispatch_indirect` (AAA roadmap item 11).
 // It composes with another role flag — typically `.Storage` for compute
-// passes that produce indirect args, or `.Immutable` / `.Dynamic_Update` /
-// `.Stream_Update` for CPU-prepared indirect buffers. D3D11 maps this to
+// passes that produce indirect args, or `.Immutable` for CPU-prepared initial
+// indirect buffers. D3D11 maps this to
 // `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS`, which precludes structured
 // storage views; combine `.Indirect` with `.Storage` only for raw buffers
 // (`storage_stride == 0`).
@@ -571,7 +571,7 @@ Buffer_Read_Desc :: struct {
 // Field order and types match `D3D12_DRAW_ARGUMENTS`,
 // `VkDrawIndirectCommand`, and `MTLDrawPrimitivesIndirectArguments` so the
 // same byte image dispatches across all three backends. D3D11
-// `DrawInstancedIndirect` consumes the same five `u32` words via
+// `DrawInstancedIndirect` consumes the same four `u32` words via
 // `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS` buffers.
 Draw_Indirect_Args :: struct {
 	vertex_count:   u32,
@@ -609,24 +609,30 @@ Dispatch_Indirect_Args :: struct {
 	thread_group_count_z: u32,
 }
 
-// DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
-// consecutive `Draw_Indirect_Args` records in an indirect buffer.
-DRAW_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indirect_Args)
-
-// DRAW_INDEXED_INDIRECT_ARGS_STRIDE is the canonical byte stride between
-// consecutive `Draw_Indexed_Indirect_Args` records in an indirect buffer.
-DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indexed_Indirect_Args)
-
-// DISPATCH_INDIRECT_ARGS_STRIDE is the canonical byte stride between
-// consecutive `Dispatch_Indirect_Args` records in an indirect buffer.
-DISPATCH_INDIRECT_ARGS_STRIDE :: size_of(Dispatch_Indirect_Args)
-
 // INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
 // `offset` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect` /
 // `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
 // backends (D3D11 indirect-args buffers; D3D12 / Vulkan are looser) so a
 // value that satisfies this constant is valid everywhere.
 INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
+
+// DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Draw_Indirect_Args` records in an indirect buffer.
+DRAW_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indirect_Args)
+
+// DRAW_INDEXED_INDIRECT_ARGS_SIZE is the byte size of one indexed indirect
+// argument record before inter-record padding.
+DRAW_INDEXED_INDIRECT_ARGS_SIZE :: size_of(Draw_Indexed_Indirect_Args)
+
+// DRAW_INDEXED_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Draw_Indexed_Indirect_Args` records in an indirect buffer.
+// The record itself is 20 bytes, but multi-draw offsets must stay aligned to
+// `INDIRECT_ARGS_OFFSET_ALIGNMENT`, so consecutive records use a padded stride.
+DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: ((DRAW_INDEXED_INDIRECT_ARGS_SIZE + INDIRECT_ARGS_OFFSET_ALIGNMENT - 1) / INDIRECT_ARGS_OFFSET_ALIGNMENT) * INDIRECT_ARGS_OFFSET_ALIGNMENT
+
+// DISPATCH_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Dispatch_Indirect_Args` records in an indirect buffer.
+DISPATCH_INDIRECT_ARGS_STRIDE :: size_of(Dispatch_Indirect_Args)
 
 // MAX_INDIRECT_DRAW_COUNT is the upper bound the validator enforces on the
 // `draw_count` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect`.

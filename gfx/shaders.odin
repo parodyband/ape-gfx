@@ -117,14 +117,21 @@ validate_shader_binding_metadata :: proc(ctx: ^Context, desc: Shader_Desc, stage
 			if other_index >= index || !other.active {
 				continue
 			}
-			if other.stage == binding.stage && other.kind == binding.kind && other.group == binding.group && other.slot == binding.slot {
+			binding_first, binding_count := shader_binding_slot_range(binding)
+			other_first, other_count := shader_binding_slot_range(other)
+			if other.stage == binding.stage &&
+			   other.kind == binding.kind &&
+			   other.group == binding.group &&
+			   binding_first < other_first + other_count &&
+			   other_first < binding_first + binding_count {
 				set_validation_errorf(
 					ctx,
-					"gfx.create_shader: duplicate %s binding metadata for %s group %d slot %d",
+					"gfx.create_shader: overlapping %s binding metadata for %s group %d slot range [%d, %d)",
 					shader_binding_kind_name(binding.kind),
 					shader_stage_name(binding.stage),
 					binding.group,
-					binding.slot,
+					binding_first,
+					binding_first + binding_count,
 				)
 				return false
 			}
@@ -189,11 +196,12 @@ validate_shader_binding_desc :: proc(ctx: ^Context, binding: Shader_Binding_Desc
 			return false
 		}
 	case .Resource_View:
-		if binding.slot >= MAX_RESOURCE_VIEWS {
+		slot_count := shader_binding_array_count(binding)
+		if binding.slot >= MAX_RESOURCE_VIEWS || u64(binding.slot) + u64(slot_count) > u64(MAX_RESOURCE_VIEWS) {
 			set_validation_errorf(ctx, "gfx.create_shader: resource view binding slot %d is out of range", binding.slot)
 			return false
 		}
-		if binding.native_slot >= MAX_RESOURCE_VIEWS {
+		if binding.native_slot >= MAX_RESOURCE_VIEWS || u64(binding.native_slot) + u64(slot_count) > u64(MAX_RESOURCE_VIEWS) {
 			set_validation_errorf(ctx, "gfx.create_shader: native resource view binding slot %d is out of range", binding.native_slot)
 			return false
 		}
@@ -232,17 +240,31 @@ validate_shader_binding_desc :: proc(ctx: ^Context, binding: Shader_Binding_Desc
 			return false
 		}
 	case .Sampler:
-		if binding.slot >= MAX_SAMPLERS {
+		slot_count := shader_binding_array_count(binding)
+		if binding.slot >= MAX_SAMPLERS || u64(binding.slot) + u64(slot_count) > u64(MAX_SAMPLERS) {
 			set_validation_errorf(ctx, "gfx.create_shader: sampler binding slot %d is out of range", binding.slot)
 			return false
 		}
-		if binding.native_slot >= MAX_SAMPLERS {
+		if binding.native_slot >= MAX_SAMPLERS || u64(binding.native_slot) + u64(slot_count) > u64(MAX_SAMPLERS) {
 			set_validation_errorf(ctx, "gfx.create_shader: native sampler binding slot %d is out of range", binding.native_slot)
 			return false
 		}
 	}
 
 	return true
+}
+
+@(private)
+shader_binding_array_count :: proc(binding: Shader_Binding_Desc) -> u32 {
+	if binding.array_count > 1 {
+		return binding.array_count
+	}
+	return 1
+}
+
+@(private)
+shader_binding_slot_range :: proc(binding: Shader_Binding_Desc) -> (u32, u32) {
+	return binding.slot, shader_binding_array_count(binding)
 }
 
 @(private)

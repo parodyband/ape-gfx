@@ -819,17 +819,17 @@ d3d11_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Tran
 		return false
 	}
 
-	// D3D11.0 forbids draws while a bound resource is mapped, and the
-	// transient chunk is persistently mapped. Unmap it now so the draw can
-	// read; a later transient_alloc on the same chunk will lazily re-Map.
-	d3d11_transient_chunk_unmap_for_bind(ctx, slice.buffer)
-
 	first_constant := u32(slice.offset) / 16
 	num_constants := (u32(byte_size) + 15) / 16
 	num_constants = ((num_constants + 15) / 16) * 16 // D3D11 requires NumConstants to be a multiple of 16 (256 bytes).
 
 	slot_mask := d3d11_slot_mask(u32(slot))
 	if state.context1 != nil {
+		// D3D11.1 binds the transient chunk directly with a constant offset, so
+		// it must be unmapped before the draw reads it. The fallback below copies
+		// from the mapped pointer into a per-slot buffer instead.
+		d3d11_transient_chunk_unmap_for_bind(ctx, slice.buffer)
+
 		buffers := [1]^d3d11.IBuffer{buffer_info.buffer}
 		first_constants := [1]u32{first_constant}
 		num_constants_arr := [1]u32{num_constants}
@@ -914,8 +914,6 @@ d3d11_apply_compute_uniform_at :: proc(ctx: ^Context, state: ^D3D11_State, group
 		return false
 	}
 
-	d3d11_transient_chunk_unmap_for_bind(ctx, slice.buffer)
-
 	first_constant := u32(slice.offset) / 16
 	num_constants := (u32(byte_size) + 15) / 16
 	num_constants = ((num_constants + 15) / 16) * 16
@@ -923,6 +921,11 @@ d3d11_apply_compute_uniform_at :: proc(ctx: ^Context, state: ^D3D11_State, group
 	compute_stage := int(Shader_Stage.Compute)
 	slot_mask := d3d11_slot_mask(u32(slot))
 	if state.context1 != nil {
+		// D3D11.1 binds the transient chunk directly with a constant offset, so
+		// it must be unmapped before the dispatch reads it. The fallback below
+		// copies from the mapped pointer into a per-slot buffer instead.
+		d3d11_transient_chunk_unmap_for_bind(ctx, slice.buffer)
+
 		buffers := [1]^d3d11.IBuffer{native_buffer}
 		first_constants := [1]u32{first_constant}
 		num_constants_arr := [1]u32{num_constants}

@@ -3,11 +3,13 @@ build/
 *.pdb
 *.ilk
 *.obj
+*.o
 *.lib
 *.dll
 *.so
 *.dylib
 *.tmp
+_scratch/
 /*.odin-doc
 
 # Local planning and research notes

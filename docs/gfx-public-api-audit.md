@@ -49,7 +49,8 @@ Composite statuses are comma-separated.
 | `COLOR_MASK_RGBA` | keep, needs_docs | Stable combined color-write mask. |
 | `Compute_Pipeline_Invalid` | keep | Stable invalid sentinel. |
 | `DISPATCH_INDIRECT_ARGS_STRIDE` | keep | APE-7 indirect dispatch arg stride (`size_of(Dispatch_Indirect_Args)`). |
-| `DRAW_INDEXED_INDIRECT_ARGS_STRIDE` | keep | APE-7 indexed indirect arg stride (`size_of(Draw_Indexed_Indirect_Args)`). |
+| `DRAW_INDEXED_INDIRECT_ARGS_SIZE` | keep | APE-7 indexed indirect arg record size before inter-record padding. |
+| `DRAW_INDEXED_INDIRECT_ARGS_STRIDE` | keep | APE-7 indexed indirect arg stride, padded so multi-draw record offsets stay aligned. |
 | `DRAW_INDIRECT_ARGS_STRIDE` | keep | APE-7 non-indexed indirect arg stride (`size_of(Draw_Indirect_Args)`). |
 | `INDIRECT_ARGS_OFFSET_ALIGNMENT` | keep | APE-10 required byte alignment for indirect args buffer offsets (16 bytes — strictest of supported backends). |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
@@ -85,9 +86,9 @@ Composite statuses are comma-separated.
 
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
-| `acquire_compute_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
-| `acquire_graphics_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
-| `acquire_transfer_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `acquire_compute_queue` | defer | APE-17 queue/timeline draft. Returns Unsupported until backend queues land. |
+| `acquire_graphics_queue` | defer | APE-17 queue/timeline draft. Returns Unsupported until backend queues land. |
+| `acquire_transfer_queue` | defer | APE-17 queue/timeline draft. Returns Unsupported until backend queues land. |
 | `apply_binding_group` | keep, needs_test | Applies an object-backed binding group with optional geometry bindings. |
 | `apply_binding_groups` | keep, needs_test | Applies multiple object-backed binding groups with optional geometry bindings. |
 | `apply_binding_heap` | defer | APE-23/APE-25 bindless heap bind. D3D11 rejects; lands with D3D12/Vulkan bindless. |
@@ -106,32 +107,32 @@ Composite statuses are comma-separated.
 | `begin_pass` | keep, needs_test | Core render command. |
 | `binding_group_layout_valid` | keep, needs_test | Simple sentinel check. |
 | `binding_heap_capacity` | defer | APE-23 bindless heap capacity diagnostic. |
-| `cmd_apply_binding_heap` | defer | APE-5 + APE-23/APE-25 recording sketch. Body panics; backend lands with bindless. |
-| `cmd_apply_bindings` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_apply_compute_binding_heap` | defer | APE-5 + APE-23/APE-25 recording sketch. Body panics; backend lands with bindless. |
-| `cmd_apply_compute_bindings` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_apply_compute_pipeline` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_apply_compute_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_apply_pipeline` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_apply_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_barrier` | defer | APE-15 explicit barrier sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_begin_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_begin_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_dispatch` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_dispatch_indirect` | defer | APE-5 + APE-7 recording sketch. Body panics; backend lands with APE-9. |
-| `cmd_draw` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_draw_indexed_indirect` | defer | APE-5 + APE-7 recording sketch. Body panics; immediate-mode `draw_indexed_indirect` ships with APE-8. |
-| `cmd_draw_indirect` | defer | APE-5 + APE-7 recording sketch. Body panics; immediate-mode `draw_indirect` ships with APE-8. |
-| `cmd_end_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `cmd_end_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `command_list_last_error` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `command_list_last_error_code` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_binding_heap` | defer | APE-5 + APE-23/APE-25 recording draft. Returns Unsupported until explicit recording and bindless land. |
+| `cmd_apply_bindings` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_apply_compute_binding_heap` | defer | APE-5 + APE-23/APE-25 recording draft. Returns Unsupported until explicit recording and bindless land. |
+| `cmd_apply_compute_bindings` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_apply_compute_pipeline` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_apply_compute_uniforms` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_apply_pipeline` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_apply_uniforms` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_barrier` | defer | APE-15 explicit barrier draft. Returns Unsupported until explicit recording lands. |
+| `cmd_begin_compute_pass` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_begin_render_pass` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_dispatch` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_dispatch_indirect` | defer | APE-5 + APE-7 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_draw` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_draw_indexed_indirect` | defer | APE-5 + APE-7 recording draft. Returns Unsupported; immediate-mode `draw_indexed_indirect` is the shipping path. |
+| `cmd_draw_indirect` | defer | APE-5 + APE-7 recording draft. Returns Unsupported; immediate-mode `draw_indirect` is the shipping path. |
+| `cmd_end_compute_pass` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `cmd_end_render_pass` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
+| `command_list_last_error` | defer | APE-5 recording draft. Returns the per-list error string if one exists. |
+| `command_list_last_error_code` | defer | APE-5 recording draft. Returns the per-list error code if one exists. |
 | `binding_group_valid` | keep, needs_test | Simple sentinel check. |
 | `buffer_valid` | keep, needs_test | Simple sentinel check. Revisit overload group only if callsites need it. |
 | `commit` | keep, needs_test | Core frame command. |
 | `compute_pipeline_valid` | keep, needs_test | Simple sentinel check. |
 | `create_buffer` | keep, needs_test | Primary buffer creation spelling. |
-| `create_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `create_command_list` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
 | `create_binding_group` | keep, needs_test | Primary binding group creation spelling. |
 | `create_binding_group_layout` | keep, needs_test | Primary binding group layout creation spelling. |
 | `create_binding_heap` | defer | APE-23/APE-25 bindless heap creation. D3D11 rejects; lands with D3D12/Vulkan bindless. |
@@ -142,11 +143,11 @@ Composite statuses are comma-separated.
 | `create_render_target` | keep | Low-level helper for common offscreen color/depth target setup. Covered by descriptor contract tests. |
 | `create_sampler` | keep, needs_test | Primary sampler creation spelling. |
 | `create_shader` | keep, needs_docs | Primary low-level shader creation spelling. Most users should arrive through `.ashader`. |
-| `create_timeline_semaphore` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `create_timeline_semaphore` | defer | APE-17 queue/timeline draft. Returns Unsupported until timeline semaphores land. |
 | `create_view` | keep, needs_test | Primary view creation spelling. |
 | `default_pass_action` | keep, needs_docs | Stable default helper. Document clear/store defaults. |
-| `destroy_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
-| `destroy_timeline_semaphore` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `destroy_command_list` | defer | APE-5 recording draft. Safe no-op until explicit recording lands. |
+| `destroy_timeline_semaphore` | defer | APE-17 queue/timeline draft. Reports Unsupported until timeline semaphores land. |
 | `destroy_buffer` | keep | Explicit destroy remains available. |
 | `destroy_binding_group` | keep | Explicit destroy remains available. |
 | `destroy_binding_group_layout` | keep | Explicit destroy remains available. |
@@ -160,13 +161,13 @@ Composite statuses are comma-separated.
 | `destroy_shader` | keep | Explicit destroy remains available. |
 | `destroy_view` | keep | Explicit destroy remains available. |
 | `dispatch` | keep, needs_test | Core compute command. |
-| `dispatch_indirect` | keep, needs_test | APE-7 indirect compute dispatch entry point. Body panics on D3D11 until APE-9 wires the backend. |
+| `dispatch_indirect` | keep, needs_test | APE-7 indirect compute dispatch entry point. D3D11 backend calls `DispatchIndirect`. |
 | `draw` | keep, needs_test | Core render command. |
 | `draw_indexed_indirect` | keep, needs_test | APE-7/APE-8 indirect indexed draw entry point. D3D11 backend loops `DrawIndexedInstancedIndirect`. |
 | `draw_indirect` | keep, needs_test | APE-7/APE-8 indirect non-indexed draw entry point. D3D11 backend loops `DrawInstancedIndirect`. |
 | `end_compute_pass` | keep, needs_test | Core compute command. |
 | `end_pass` | keep, needs_test | Core render command. |
-| `finish_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `finish_command_list` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
 | `image_valid` | keep, needs_test | Simple sentinel check. |
 | `init` | keep | Context creation is covered by `tools/test_gfx_descriptor_contracts.ps1`. |
 | `last_error` | keep | Human-readable diagnostics. |
@@ -175,7 +176,7 @@ Composite statuses are comma-separated.
 | `pass_action_with_defaults` | keep, needs_docs | APE-31 zero-`Pass_Action` defaulting helper applied at the `begin_pass` boundary. |
 | `pipeline_valid` | keep, needs_test | Simple sentinel check. |
 | `pipeline_layout_valid` | keep, needs_test | Simple sentinel check. |
-| `present` | defer | APE-17 swapchain present sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `present` | defer | APE-17 swapchain present draft. Returns Unsupported; immediate-mode `commit` remains the shipping path. |
 | `query_backend_limits` | keep, needs_docs | Stable name. Document difference from `query_limits`. |
 | `query_buffer_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
 | `query_features` | keep, needs_docs | Stable name. |
@@ -185,7 +186,7 @@ Composite statuses are comma-separated.
 | `query_view_compatible` | keep, needs_test | Useful validation helper. |
 | `query_view_image` | keep, needs_docs | Convenience helper over `query_view_state`. |
 | `query_view_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
-| `queue_kind` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `queue_kind` | defer | APE-17 queue/timeline draft. Placeholder helper until backend queues land. |
 | `range_raw` | keep | Useful raw-pointer escape hatch. Primary docs should prefer typed `range` when possible. |
 | `read_buffer` | keep, needs_test | Synchronous readback is v0.1-stable if documented as blocking. |
 | `release_binding_heap_slot` | defer | APE-23 bindless heap slot release. Lands with D3D12/Vulkan bindless. |
@@ -195,11 +196,11 @@ Composite statuses are comma-separated.
 | `sampler_valid` | keep, needs_test | Simple sentinel check. |
 | `shader_valid` | keep, needs_test | Simple sentinel check. |
 | `shutdown` | keep, needs_test | Context teardown and leak reporting. |
-| `submit` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
-| `submit_command_list` | defer | APE-5 recording sketch. Convenience wrapper over `submit`; body panics. |
-| `timeline_semaphore_signal` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
-| `timeline_semaphore_value` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
-| `timeline_semaphore_wait` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `submit` | defer | APE-17 queue/timeline draft. Returns Unsupported until backend queues land. |
+| `submit_command_list` | defer | APE-5 recording draft. Convenience wrapper over `submit`; returns Unsupported until explicit submission lands. |
+| `timeline_semaphore_signal` | defer | APE-17 queue/timeline draft. Returns Unsupported until timeline semaphores land. |
+| `timeline_semaphore_value` | defer | APE-17 queue/timeline draft. Returns 0 and reports Unsupported until timeline semaphores land. |
+| `timeline_semaphore_wait` | defer | APE-17 queue/timeline draft. Returns Unsupported until timeline semaphores land. |
 | `create_transient_allocator` | keep, needs_test | Primary creation spelling for per-frame linear allocators (APE-19/APE-20). |
 | `destroy_transient_allocator` | keep | Releases backing chunks owned by a transient allocator. |
 | `reset_transient_allocator` | keep, needs_test | Returns the bump pointer to zero after the previous frame retires; rotates D3D11 chunks via `Map(WRITE_DISCARD)`. |

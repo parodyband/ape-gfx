@@ -1,4 +1,4 @@
-RWStructuredBuffer<uint> output_buffer : register(u0);
+RWStructuredBuffer<uint> output_buffer;
 
 [shader("compute")]
 [numthreads(4, 1, 1)]

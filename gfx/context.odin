@@ -40,7 +40,7 @@ global_next_context_id: u32 = 1
 init :: proc(desc: Desc) -> (Context, bool) {
 	ctx := Context {
 		desc = desc,
-		backend = resolve_backend(desc.backend),
+		backend = resolve_backend(desc),
 		context_id = allocate_context_id(),
 	}
 
@@ -219,16 +219,20 @@ last_error_info :: proc(ctx: ^Context) -> Error_Info {
 }
 
 @(private)
-resolve_backend :: proc(requested: Backend) -> Backend {
-	if requested == .Auto {
+resolve_backend :: proc(desc: Desc) -> Backend {
+	if desc.backend == .Auto {
 		when ODIN_OS == .Windows {
-			return .D3D11
+			if desc.native_window != nil {
+				return .D3D11
+			}
+
+			return .Null
 		} else {
 			return .Null
 		}
 	}
 
-	return requested
+	return desc.backend
 }
 
 @(private)
