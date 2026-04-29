@@ -91,6 +91,8 @@ Generated bindings currently cover:
 
 Generated shader resource support is intentionally limited to shapes the public API can represent: `Texture2D`, `RWTexture2D`, samplers, raw storage buffers, and structured storage buffers.
 
+Resource arrays and bindless-style declarations are rejected by `ape_shaderc` until `gfx` has an explicit binding-array contract.
+
 Manual `Pipeline_Desc.layout` overrides remain supported for real engine use cases such as compact vertex formats, multiple vertex streams, instancing, or custom semantic conventions.
 
 ## D3D11 Backend
@@ -139,6 +141,7 @@ It validates the release by:
 - testing range helpers, handle lifecycle, image transfers, and state descriptors
 - testing D3D11 backend limits, error codes, buffer transfers, compute, invalid layouts, invalid uniforms, invalid view kinds, resource hazards, compute read-after-write rejection, and storage views
 - testing shader compiler rejection and metadata paths
+- testing resource-array rejection in shader generation
 - testing sample shader hot reload
 - building every D3D11 sample
 - running every D3D11 sample with `-AutoExitFrames 5`

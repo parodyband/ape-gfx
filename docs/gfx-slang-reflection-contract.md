@@ -267,6 +267,35 @@ Unsupported parameter-block fields fail during shader generation:
 
 Uniform data inside `ParameterBlock<>` is intentionally deferred. Keep per-draw data in ordinary constant buffers for now.
 
+## Descriptor Arrays And Bindless Direction
+
+Descriptor arrays and bindless-style resource sets are intentionally rejected until the public binding model can represent them without pretending they are single resources.
+
+Rejected shapes include:
+
+- top-level resource arrays such as `Texture2D<float4> textures[2]`
+- top-level sampler arrays such as `SamplerState samplers[2]`
+- resource or sampler arrays inside `ParameterBlock<>`
+- unsized or bindless-style arrays
+
+Expected failure:
+
+```text
+ape_shaderc: resource arrays are not supported yet; descriptor arrays and bindless resources need a separate binding contract: <name>
+```
+
+The future reflection model should preserve these facts before any generated Odin helper is emitted:
+
+- `count`: finite descriptor count for fixed arrays.
+- `unsized`: whether the array is bindless or runtime-sized.
+- `element_kind`: sampled view, storage image, storage buffer, or sampler.
+- `element_access`: read, write, or read-write for resource views.
+- `element_payload`: storage image format or storage buffer stride when relevant.
+- `logical_group` and `logical_slot`: the first logical slot for the array binding.
+- backend native slot and space for each target.
+
+The likely public API shape is an explicit binding-array descriptor or object, not `N` generated single-resource setters. Fixed arrays and bindless sets should therefore wait until there is a sample that needs them and a deliberate `gfx` contract for limits, partial updates, validation, and D3D11 fallback behavior.
+
 ## Uniform Blocks
 
 Uniform block reflection emits an Odin struct, size/alignment constants, field offsets, field sizes, and an `apply_uniform_*` helper.
@@ -554,6 +583,7 @@ Planned order:
 - [x] Add public `Pipeline_Layout` handles and require them for shaders with reflected binding metadata.
 - [x] Generate `pipeline_layout_desc` helpers and migrate samples to compose generated binding group layouts into pipeline layouts.
 - [x] Harden transient `gfx.Bindings` against active `Pipeline_Layout` metadata for supplied views and samplers.
+- [x] Sketch descriptor-array and bindless reflection requirements, and reject top-level binding arrays with a clear shaderc error.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - [ ] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
 
@@ -576,6 +606,7 @@ Current shader reflection validation is covered by:
 .\tools\test_shaderc_register_free_samples.ps1
 .\tools\test_shaderc_descriptor_table_slots.ps1
 .\tools\test_shaderc_parameter_block_groups.ps1
+.\tools\test_shaderc_resource_arrays.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1
 .\tools\test_d3d11_invalid_pipeline_layout.ps1

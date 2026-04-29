@@ -904,6 +904,12 @@ collect_bindings_from_reflection :: proc(
 			name = cloned_name
 		}
 
+		if parameter, parameter_ok := reflection_parameter_by_name_slot(reflection_model, name, slot); parameter_ok &&
+		   json_type_kind_is(parameter.type_value, "array") {
+			fmt.eprintln("ape_shaderc: resource arrays are not supported yet; descriptor arrays and bindless resources need a separate binding contract: ", name)
+			return false
+		}
+
 		kind, kind_ok := binding_kind_from_category(category)
 		if !kind_ok && category == .Descriptor_Table_Slot {
 			kind, kind_ok = binding_kind_from_descriptor_parameter(reflection_model, name, slot)
@@ -1460,6 +1466,16 @@ delete_reflection_model :: proc(model: ^Reflection_Model) {
 reflection_parameter_by_binding :: proc(model: Reflection_Model, name: string, binding_kind: string, slot: u32) -> (Reflection_Parameter, bool) {
 	for parameter in model.parameters {
 		if parameter.name == name && parameter.binding_kind == binding_kind && parameter.slot == slot {
+			return parameter, true
+		}
+	}
+
+	return {}, false
+}
+
+reflection_parameter_by_name_slot :: proc(model: Reflection_Model, name: string, slot: u32) -> (Reflection_Parameter, bool) {
+	for parameter in model.parameters {
+		if parameter.name == name && parameter.slot == slot {
 			return parameter, true
 		}
 	}
