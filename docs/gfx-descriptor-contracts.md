@@ -22,7 +22,7 @@ Ape GFX uses fixed-size arrays instead of count fields in several descriptors. T
 - `Bindings.vertex_buffers` is sparse. The active graphics pipeline determines which vertex buffer slots are required before draw.
 - `Bindings.views` and `Bindings.samplers` are sparse logical shader slots. Generated shader helpers write the exact reflected logical slot. Backends with shader metadata validate missing required slots and incompatible view kinds at draw or dispatch time.
 
-Near-term hardening should add explicit tests for these slot rules and decide whether debug validation should reject extra unused `Bindings` entries after reflected shader metadata is known.
+The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, and sparse resource/sampler bindings. A later binding-group pass still needs to decide whether debug validation should reject extra unused `Bindings` entries after reflected shader metadata is known.
 
 ## Desc
 

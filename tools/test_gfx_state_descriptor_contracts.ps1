@@ -173,6 +173,58 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, pipeline)
 
+	sparse_layout := layout
+	sparse_layout.attrs[0] = {}
+	sparse_layout.attrs[7] = {
+		semantic = cstring("POSITION"),
+		semantic_index = 0,
+		format = .Float32x3,
+		buffer_slot = 0,
+		offset = 0,
+	}
+	sparse_layout_pipeline, sparse_layout_pipeline_ok := gfx.create_pipeline(&ctx, {
+		label = "valid sparse reflected layout",
+		shader = shader,
+		primitive_type = .Triangles,
+		index_type = .None,
+		layout = sparse_layout,
+	})
+	if !sparse_layout_pipeline_ok || !gfx.pipeline_valid(sparse_layout_pipeline) {
+		fmt.eprintln("sparse layout pipeline failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, sparse_layout_pipeline)
+
+	missing_stride_layout := sparse_layout
+	missing_stride_layout.buffers[0] = {}
+	missing_stride_pipeline, missing_stride_pipeline_ok := gfx.create_pipeline(&ctx, {
+		label = "sparse layout missing stride",
+		shader = shader,
+		primitive_type = .Triangles,
+		index_type = .None,
+		layout = missing_stride_layout,
+	})
+	if missing_stride_pipeline_ok || gfx.pipeline_valid(missing_stride_pipeline) {
+		fail("pipeline with sparse layout missing stride unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_pipeline: vertex attribute 7 references buffer slot 0 with zero stride")
+
+	gapped_color_layout := layout
+	gapped_color_pipeline, gapped_color_pipeline_ok := gfx.create_pipeline(&ctx, {
+		label = "gapped color formats",
+		shader = shader,
+		primitive_type = .Triangles,
+		index_type = .None,
+		layout = gapped_color_layout,
+		color_formats = {
+			1 = .RGBA8,
+		},
+	})
+	if gapped_color_pipeline_ok || gfx.pipeline_valid(gapped_color_pipeline) {
+		fail("pipeline with gapped color formats unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_pipeline: color formats must be contiguous from slot 0; slot 0 is missing")
+
 	bad_layout := layout
 	bad_layout.attrs[0].format = .Float32x2
 	bad_pipeline, bad_pipeline_ok := gfx.create_pipeline(&ctx, {
@@ -215,6 +267,37 @@ main :: proc() {
 	}
 	expect_error_info(&ctx, .Validation, "gfx.begin_pass: color action slot 0 has an invalid load_action")
 
+	attachment_image, attachment_image_ok := gfx.create_image(&ctx, {
+		label = "attachment for pass slot tests",
+		usage = {.Color_Attachment},
+		width = 4,
+		height = 4,
+		format = .RGBA8,
+	})
+	if !attachment_image_ok || !gfx.image_valid(attachment_image) {
+		fmt.eprintln("attachment image creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, attachment_image)
+
+	attachment_view, attachment_view_ok := gfx.create_view(&ctx, {
+		label = "attachment view for pass slot tests",
+		color_attachment = {image = attachment_image},
+	})
+	if !attachment_view_ok || !gfx.view_valid(attachment_view) {
+		fmt.eprintln("attachment view creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, attachment_view)
+
+	gapped_pass: gfx.Pass_Desc
+	gapped_pass.label = "gapped color attachment pass"
+	gapped_pass.color_attachments[1] = attachment_view
+	if gfx.begin_pass(&ctx, gapped_pass) {
+		fail("pass with gapped color attachments unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.begin_pass: color attachments must be contiguous from slot 0; slot 0 is missing")
+
 	vertex_data := [?]f32{0, 1, 2}
 	vertex_buffer, vertex_buffer_ok := gfx.create_buffer(&ctx, {
 		label = "binding validation vertex buffer",
@@ -227,8 +310,39 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, vertex_buffer)
 
+	texture_image, texture_image_ok := gfx.create_image(&ctx, {
+		label = "sparse binding texture",
+		usage = {.Texture},
+		width = 4,
+		height = 4,
+		format = .RGBA8,
+	})
+	if !texture_image_ok || !gfx.image_valid(texture_image) {
+		fmt.eprintln("texture image creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, texture_image)
+
+	sampled_view, sampled_view_ok := gfx.create_view(&ctx, {
+		label = "sparse binding sampled view",
+		texture = {image = texture_image},
+	})
+	if !sampled_view_ok || !gfx.view_valid(sampled_view) {
+		fmt.eprintln("sampled view creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, sampled_view)
+
 	if !gfx.begin_pass(&ctx, {label = "binding validation pass"}) {
 		fmt.eprintln("valid pass failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
+	sparse_bindings: gfx.Bindings
+	sparse_bindings.views[2] = sampled_view
+	sparse_bindings.samplers[3] = sampler
+	if !gfx.apply_bindings(&ctx, sparse_bindings) {
+		fmt.eprintln("sparse resource bindings failed: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
