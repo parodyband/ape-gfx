@@ -6,6 +6,7 @@ MAX_COLOR_ATTACHMENTS :: 8
 MAX_RESOURCE_VIEWS :: 32
 MAX_SAMPLERS :: 16
 MAX_UNIFORM_BLOCKS :: 16
+MAX_BINDING_GROUPS :: 8
 MAX_SHADER_BINDINGS :: 64
 MAX_BINDING_GROUP_ENTRIES :: MAX_SHADER_BINDINGS
 MAX_IMAGE_MIPS :: 16
@@ -181,6 +182,7 @@ Limits :: struct {
 	max_resource_views: int,
 	max_samplers: int,
 	max_uniform_blocks: int,
+	max_binding_groups: int,
 	max_shader_bindings: int,
 	max_image_mips: int,
 	max_image_dimension_2d: int,
@@ -535,6 +537,7 @@ Shader_Binding_Desc :: struct {
 	active: bool,
 	stage: Shader_Stage,
 	kind: Shader_Binding_Kind,
+	group: u32,
 	slot: u32,
 	native_slot: u32,
 	native_space: u32,
@@ -584,6 +587,7 @@ Binding_Group_Native_Binding_Desc :: struct {
 // Binding_Group_Layout_Desc is generated from Slang reflection and creates Binding_Group_Layout handles.
 Binding_Group_Layout_Desc :: struct {
 	label: string,
+	group: u32,
 	entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc,
 	native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc,
 }
@@ -698,8 +702,8 @@ Buffer_Binding :: struct {
 Bindings :: struct {
 	vertex_buffers: [MAX_VERTEX_BUFFERS]Buffer_Binding,
 	index_buffer: Buffer_Binding,
-	views: [MAX_RESOURCE_VIEWS]View,
-	samplers: [MAX_SAMPLERS]Sampler,
+	views: [MAX_BINDING_GROUPS][MAX_RESOURCE_VIEWS]View,
+	samplers: [MAX_BINDING_GROUPS][MAX_SAMPLERS]Sampler,
 }
 
 // Pass_Desc begins a render pass. With no explicit attachments, the pass targets the context's implicit window swapchain.

@@ -74,6 +74,12 @@ Compute_Pipeline_Invalid :: Compute_Pipeline(0)
 Image_Invalid :: Image(0)
 ```
 
+### `MAX_BINDING_GROUPS`
+
+```odin
+MAX_BINDING_GROUPS :: 8
+```
+
 ### `MAX_BINDING_GROUP_ENTRIES`
 
 ```odin
@@ -160,7 +166,15 @@ View_Invalid :: View(0)
 apply_binding_group :: proc(ctx: ^Context, group: Binding_Group, base_bindings: Bindings = {}) -> bool {...}
 ```
 
-apply_binding_group validates an object-backed binding group against the active pipeline and applies it with optional geometry bindings.
+apply_binding_group validates one object-backed binding group against the active pipeline and applies it with optional geometry bindings.
+
+### `apply_binding_groups`
+
+```odin
+apply_binding_groups :: proc(ctx: ^Context, groups: []Binding_Group, base_bindings: Bindings = {}) -> bool {...}
+```
+
+apply_binding_groups validates all object-backed binding groups against the active pipeline and applies them with optional geometry bindings.
 
 ### `apply_bindings`
 
@@ -189,7 +203,7 @@ apply_pipeline binds a graphics pipeline inside a render pass.
 ### `apply_uniform`
 
 ```odin
-apply_uniform :: proc(ctx: ^Context, slot: int, value: ^$T) -> bool {...}
+apply_uniform :: proc(ctx: ^Context, group: u32, slot: int, value: ^$T) -> bool {...}
 ```
 
 apply_uniform uploads a typed uniform value using size_of(T).
@@ -197,7 +211,7 @@ apply_uniform uploads a typed uniform value using size_of(T).
 ### `apply_uniforms`
 
 ```odin
-apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {...}
+apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {...}
 ```
 
 apply_uniforms uploads one reflected uniform block to the current pipeline.
@@ -770,7 +784,7 @@ Binding_Group_Layout :: distinct u64
 ### `Binding_Group_Layout_Desc`
 
 ```odin
-Binding_Group_Layout_Desc :: struct {label: string, entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc, native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc}
+Binding_Group_Layout_Desc :: struct {label: string, group: u32, entries: [MAX_BINDING_GROUP_ENTRIES]Binding_Group_Layout_Entry_Desc, native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc}
 ```
 
 Binding_Group_Layout_Desc is generated from Slang reflection and creates Binding_Group_Layout handles.
@@ -810,7 +824,7 @@ Binding_Group_Uniform_Block_Layout_Desc describes one reflected uniform block en
 ### `Bindings`
 
 ```odin
-Bindings :: struct {vertex_buffers: [MAX_VERTEX_BUFFERS]Buffer_Binding, index_buffer: Buffer_Binding, views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
+Bindings :: struct {vertex_buffers: [MAX_VERTEX_BUFFERS]Buffer_Binding, index_buffer: Buffer_Binding, views: [MAX_BINDING_GROUPS][MAX_RESOURCE_VIEWS]View, samplers: [MAX_BINDING_GROUPS][MAX_SAMPLERS]Sampler}
 ```
 
 Bindings contains transient resources applied before draw or dispatch.
@@ -1146,7 +1160,7 @@ Layout_Desc groups vertex buffer layouts and attributes for a graphics pipeline.
 ### `Limits`
 
 ```odin
-Limits :: struct {max_vertex_buffers: int, max_vertex_attributes: int, max_color_attachments: int, max_resource_views: int, max_samplers: int, max_uniform_blocks: int, max_shader_bindings: int, max_image_mips: int, max_image_dimension_2d: int, max_image_array_layers: int, max_image_sample_count: int, max_compute_thread_groups_per_dimension: int}
+Limits :: struct {max_vertex_buffers: int, max_vertex_attributes: int, max_color_attachments: int, max_resource_views: int, max_samplers: int, max_uniform_blocks: int, max_binding_groups: int, max_shader_bindings: int, max_image_mips: int, max_image_dimension_2d: int, max_image_array_layers: int, max_image_sample_count: int, max_compute_thread_groups_per_dimension: int}
 ```
 
 Limits reports public API limits plus backend-specific limits when queried from a Context.
@@ -1244,7 +1258,7 @@ Shader :: distinct u64
 ### `Shader_Binding_Desc`
 
 ```odin
-Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, native_space: u32, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
+Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, group: u32, slot: u32, native_slot: u32, native_space: u32, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
 ```
 
 Shader_Binding_Desc carries Slang-reflected binding metadata for runtime validation.

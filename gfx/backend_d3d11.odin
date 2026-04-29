@@ -59,9 +59,9 @@ D3D11_Sampler :: struct {
 }
 
 D3D11_Binding_Masks :: struct {
-	uniforms: u32,
-	views: u32,
-	samplers: u32,
+	uniforms: [MAX_BINDING_GROUPS]u32,
+	views: [MAX_BINDING_GROUPS]u32,
+	samplers: [MAX_BINDING_GROUPS]u32,
 }
 
 D3D11_Binding_Slot :: struct {
@@ -74,9 +74,9 @@ D3D11_Binding_Slot :: struct {
 	storage_buffer_stride: u32,
 }
 
-D3D11_Uniform_Slots :: [MAX_UNIFORM_BLOCKS]D3D11_Binding_Slot
-D3D11_View_Slots :: [MAX_RESOURCE_VIEWS]D3D11_Binding_Slot
-D3D11_Sampler_Slots :: [MAX_SAMPLERS]D3D11_Binding_Slot
+D3D11_Uniform_Slots :: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D11_Binding_Slot
+D3D11_View_Slots :: [MAX_BINDING_GROUPS][MAX_RESOURCE_VIEWS]D3D11_Binding_Slot
+D3D11_Sampler_Slots :: [MAX_BINDING_GROUPS][MAX_SAMPLERS]D3D11_Binding_Slot
 
 D3D11_Shader :: struct {
 	vertex: ^d3d11.IVertexShader,
@@ -132,8 +132,8 @@ D3D11_State :: struct {
 	backbuffer_rtv: ^d3d11.IRenderTargetView,
 	default_depth_texture: ^d3d11.ITexture2D,
 	default_depth_dsv: ^d3d11.IDepthStencilView,
-	uniform_buffers: [MAX_UNIFORM_BLOCKS]^d3d11.IBuffer,
-	uniform_buffer_sizes: [MAX_UNIFORM_BLOCKS]u32,
+	uniform_buffers: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]^d3d11.IBuffer,
+	uniform_buffer_sizes: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]u32,
 	feature_level: d3d11.FEATURE_LEVEL,
 	width: u32,
 	height: u32,
@@ -717,11 +717,13 @@ d3d11_release_state :: proc(state: ^D3D11_State) {
 		}
 		delete(state.samplers)
 	}
-	for slot in 0..<MAX_UNIFORM_BLOCKS {
-		if state.uniform_buffers[slot] != nil {
-			state.uniform_buffers[slot].Release(state.uniform_buffers[slot])
-			state.uniform_buffers[slot] = nil
-			state.uniform_buffer_sizes[slot] = 0
+	for group in 0..<MAX_BINDING_GROUPS {
+		for slot in 0..<MAX_UNIFORM_BLOCKS {
+			if state.uniform_buffers[group][slot] != nil {
+				state.uniform_buffers[group][slot].Release(state.uniform_buffers[group][slot])
+				state.uniform_buffers[group][slot] = nil
+				state.uniform_buffer_sizes[group][slot] = 0
+			}
 		}
 	}
 

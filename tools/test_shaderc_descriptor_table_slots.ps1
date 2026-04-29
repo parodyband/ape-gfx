@@ -83,6 +83,7 @@ Invoke-Native -Command $ShadercPath -Arguments @(
 $Generated = Get-Content -LiteralPath $GeneratedPath -Raw
 $ExpectedSnippets = @(
 	"BINDING_RECORD_COUNT :: 10",
+	"GROUP_0 :: 0",
 	"D3D11_CS_UB_FrameUniforms :: 0",
 	"D3D11_CS_VIEW_input_texture :: 0",
 	"D3D11_CS_SMP_input_sampler :: 0",
@@ -110,10 +111,11 @@ $ExpectedSnippets = @(
 	"Binding_Resource_View_Desc :: struct",
 	"uniform_block: Binding_Uniform_Block_Desc",
 	"resource_view: Binding_Resource_View_Desc",
+	"group: u32,",
 	"uniform_block = {",
 	"resource_view = {",
 	"storage_buffer_stride = 20",
-	'binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc',
+	'binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc',
 	"desc.entries[0] = {",
 	"stages = {.Compute}",
 	"desc.native_bindings[0] = {",
@@ -122,6 +124,8 @@ $ExpectedSnippets = @(
 	"native_space = 0",
 	"set_group_view_input_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
 	"set_group_sampler_input_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler)",
+	"bindings.views[GROUP_0][VIEW_input_texture] = view",
+	"bindings.samplers[GROUP_0][SMP_input_sampler] = sampler",
 	"target = gfx.Backend.D3D11",
 	"target = gfx.Backend.Vulkan",
 	"native_slot = 4"

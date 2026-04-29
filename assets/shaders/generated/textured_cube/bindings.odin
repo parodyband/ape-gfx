@@ -49,23 +49,25 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 	return layout
 }
 
+GROUP_0 :: 0
 D3D11_VS_UB_FrameUniforms :: 0
 D3D11_VS_UB_FrameUniforms_SPACE :: 0
 UB_FrameUniforms :: 0
-D3D11_FS_VIEW_ape_texture :: 0
-D3D11_FS_VIEW_ape_texture_SPACE :: 0
-VIEW_ape_texture :: 0
-VIEW_KIND_ape_texture :: gfx.View_Kind.Sampled
-VIEW_ACCESS_ape_texture :: gfx.Shader_Resource_Access.Read
-D3D11_FS_SMP_ape_sampler :: 0
-D3D11_FS_SMP_ape_sampler_SPACE :: 0
-SMP_ape_sampler :: 0
+GROUP_1 :: 1
+D3D11_FS_VIEW_material_ape_texture :: 0
+D3D11_FS_VIEW_material_ape_texture_SPACE :: 0
+VIEW_material_ape_texture :: 0
+VIEW_KIND_material_ape_texture :: gfx.View_Kind.Sampled
+VIEW_ACCESS_material_ape_texture :: gfx.Shader_Resource_Access.Read
+D3D11_FS_SMP_material_ape_sampler :: 0
+D3D11_FS_SMP_material_ape_sampler_SPACE :: 0
+SMP_material_ape_sampler :: 0
 VK_VS_UB_FrameUniforms :: 0
 VK_VS_UB_FrameUniforms_SPACE :: 0
-VK_FS_VIEW_ape_texture :: 1
-VK_FS_VIEW_ape_texture_SPACE :: 0
-VK_FS_SMP_ape_sampler :: 2
-VK_FS_SMP_ape_sampler_SPACE :: 0
+VK_FS_VIEW_material_ape_texture :: 0
+VK_FS_VIEW_material_ape_texture_SPACE :: 1
+VK_FS_SMP_material_ape_sampler :: 1
+VK_FS_SMP_material_ape_sampler_SPACE :: 1
 
 BINDING_RECORD_COUNT :: 6
 
@@ -85,6 +87,7 @@ Binding_Record_Desc :: struct {
 	stage: gfx.Shader_Stage,
 	kind: gfx.Shader_Binding_Kind,
 	name: cstring,
+	group: u32,
 	logical_slot: u32,
 	native_slot: u32,
 	native_space: u32,
@@ -99,6 +102,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("FrameUniforms"),
+		group = 0,
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
@@ -110,7 +114,8 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		target = gfx.Backend.D3D11,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
-		name = cstring("ape_texture"),
+		name = cstring("material.ape_texture"),
+		group = 1,
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
@@ -125,7 +130,8 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		target = gfx.Backend.D3D11,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
-		name = cstring("ape_sampler"),
+		name = cstring("material.ape_sampler"),
+		group = 1,
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
@@ -135,6 +141,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("FrameUniforms"),
+		group = 0,
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
@@ -146,10 +153,11 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
-		name = cstring("ape_texture"),
+		name = cstring("material.ape_texture"),
+		group = 1,
 		logical_slot = 0,
-		native_slot = 1,
-		native_space = 0,
+		native_slot = 0,
+		native_space = 1,
 		resource_view = {
 			view_kind = gfx.View_Kind.Sampled,
 			access = gfx.Shader_Resource_Access.Read,
@@ -161,100 +169,120 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
-		name = cstring("ape_sampler"),
+		name = cstring("material.ape_sampler"),
+		group = 1,
 		logical_slot = 0,
-		native_slot = 2,
-		native_space = 0,
+		native_slot = 1,
+		native_space = 1,
 	}
 	return records
 }
 
-binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc {
+binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc {
 	desc: gfx.Binding_Group_Layout_Desc
 	desc.label = label
-	desc.entries[0] = {
-		active = true,
-		stages = {.Vertex},
-		kind = gfx.Shader_Binding_Kind.Uniform_Block,
-		slot = 0,
-		name = "FrameUniforms",
-		uniform_block = {
-			size = 64,
-		},
+	desc.group = group
+	if group == 0 {
+		desc.entries[0] = {
+			active = true,
+			stages = {.Vertex},
+			kind = gfx.Shader_Binding_Kind.Uniform_Block,
+			slot = 0,
+			name = "FrameUniforms",
+			uniform_block = {
+				size = 64,
+			},
+		}
 	}
-	desc.entries[1] = {
-		active = true,
-		stages = {.Fragment},
-		kind = gfx.Shader_Binding_Kind.Resource_View,
-		slot = 0,
-		name = "ape_texture",
-		resource_view = {
-			view_kind = gfx.View_Kind.Sampled,
-			access = gfx.Shader_Resource_Access.Read,
-			storage_image_format = gfx.Pixel_Format.Invalid,
-			storage_buffer_stride = 0,
-		},
+	if group == 1 {
+		desc.entries[0] = {
+			active = true,
+			stages = {.Fragment},
+			kind = gfx.Shader_Binding_Kind.Resource_View,
+			slot = 0,
+			name = "material.ape_texture",
+			resource_view = {
+				view_kind = gfx.View_Kind.Sampled,
+				access = gfx.Shader_Resource_Access.Read,
+				storage_image_format = gfx.Pixel_Format.Invalid,
+				storage_buffer_stride = 0,
+			},
+		}
 	}
-	desc.entries[2] = {
-		active = true,
-		stages = {.Fragment},
-		kind = gfx.Shader_Binding_Kind.Sampler,
-		slot = 0,
-		name = "ape_sampler",
+	if group == 1 {
+		desc.entries[1] = {
+			active = true,
+			stages = {.Fragment},
+			kind = gfx.Shader_Binding_Kind.Sampler,
+			slot = 0,
+			name = "material.ape_sampler",
+		}
 	}
-	desc.native_bindings[0] = {
-		active = true,
-		target = gfx.Backend.D3D11,
-		stage = gfx.Shader_Stage.Vertex,
-		kind = gfx.Shader_Binding_Kind.Uniform_Block,
-		slot = 0,
-		native_slot = 0,
-		native_space = 0,
+	if group == 0 {
+		desc.native_bindings[0] = {
+			active = true,
+			target = gfx.Backend.D3D11,
+			stage = gfx.Shader_Stage.Vertex,
+			kind = gfx.Shader_Binding_Kind.Uniform_Block,
+			slot = 0,
+			native_slot = 0,
+			native_space = 0,
+		}
 	}
-	desc.native_bindings[1] = {
-		active = true,
-		target = gfx.Backend.D3D11,
-		stage = gfx.Shader_Stage.Fragment,
-		kind = gfx.Shader_Binding_Kind.Resource_View,
-		slot = 0,
-		native_slot = 0,
-		native_space = 0,
+	if group == 1 {
+		desc.native_bindings[0] = {
+			active = true,
+			target = gfx.Backend.D3D11,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Resource_View,
+			slot = 0,
+			native_slot = 0,
+			native_space = 0,
+		}
 	}
-	desc.native_bindings[2] = {
-		active = true,
-		target = gfx.Backend.D3D11,
-		stage = gfx.Shader_Stage.Fragment,
-		kind = gfx.Shader_Binding_Kind.Sampler,
-		slot = 0,
-		native_slot = 0,
-		native_space = 0,
+	if group == 1 {
+		desc.native_bindings[1] = {
+			active = true,
+			target = gfx.Backend.D3D11,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Sampler,
+			slot = 0,
+			native_slot = 0,
+			native_space = 0,
+		}
 	}
-	desc.native_bindings[3] = {
-		active = true,
-		target = gfx.Backend.Vulkan,
-		stage = gfx.Shader_Stage.Vertex,
-		kind = gfx.Shader_Binding_Kind.Uniform_Block,
-		slot = 0,
-		native_slot = 0,
-		native_space = 0,
+	if group == 0 {
+		desc.native_bindings[1] = {
+			active = true,
+			target = gfx.Backend.Vulkan,
+			stage = gfx.Shader_Stage.Vertex,
+			kind = gfx.Shader_Binding_Kind.Uniform_Block,
+			slot = 0,
+			native_slot = 0,
+			native_space = 0,
+		}
 	}
-	desc.native_bindings[4] = {
-		active = true,
-		target = gfx.Backend.Vulkan,
-		stage = gfx.Shader_Stage.Fragment,
-		kind = gfx.Shader_Binding_Kind.Resource_View,
-		slot = 0,
-		native_slot = 1,
-		native_space = 0,
+	if group == 1 {
+		desc.native_bindings[2] = {
+			active = true,
+			target = gfx.Backend.Vulkan,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Resource_View,
+			slot = 0,
+			native_slot = 0,
+			native_space = 1,
+		}
 	}
-	desc.native_bindings[5] = {
-		active = true,
-		target = gfx.Backend.Vulkan,
-		stage = gfx.Shader_Stage.Fragment,
-		kind = gfx.Shader_Binding_Kind.Sampler,
-		slot = 0,
-		native_slot = 2,
-		native_space = 0,
+	if group == 1 {
+		desc.native_bindings[3] = {
+			active = true,
+			target = gfx.Backend.Vulkan,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Sampler,
+			slot = 0,
+			native_slot = 1,
+			native_space = 1,
+		}
 	}
 	return desc
 }
@@ -262,33 +290,33 @@ binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layou
 
 apply_uniform_FrameUniforms :: proc(ctx: ^gfx.Context, value: ^$T) -> bool {
 	#assert(size_of(T) == SIZE_FrameUniforms)
-	return gfx.apply_uniform(ctx, UB_FrameUniforms, value)
+	return gfx.apply_uniform(ctx, GROUP_0, UB_FrameUniforms, value)
 }
 
-set_view_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
+set_view_material_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	if bindings == nil {
 		return
 	}
-	bindings.views[VIEW_ape_texture] = view
+	bindings.views[GROUP_1][VIEW_material_ape_texture] = view
 }
 
-set_group_view_ape_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) {
+set_group_view_material_ape_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) {
 	if group == nil {
 		return
 	}
-	group.views[VIEW_ape_texture] = view
+	group.views[VIEW_material_ape_texture] = view
 }
 
-set_sampler_ape_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
+set_sampler_material_ape_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
 	if bindings == nil {
 		return
 	}
-	bindings.samplers[SMP_ape_sampler] = sampler
+	bindings.samplers[GROUP_1][SMP_material_ape_sampler] = sampler
 }
 
-set_group_sampler_ape_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) {
+set_group_sampler_material_ape_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) {
 	if group == nil {
 		return
 	}
-	group.samplers[SMP_ape_sampler] = sampler
+	group.samplers[SMP_material_ape_sampler] = sampler
 }

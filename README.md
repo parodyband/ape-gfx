@@ -18,7 +18,7 @@ This repo is not trying to be a full game engine yet. No renderer layer, no mate
 - descriptor literals and `bit_set` usage flags
 - one public `View` handle for sampled textures, storage images, storage buffers, color attachments, and depth-stencil attachments
 - render passes, compute passes, offscreen targets, depth, MRT, MSAA resolve, dynamic texture updates, storage views, and buffer readback on D3D11
-- Slang-generated bindings for resource slots, binding groups, uniform helpers, simple vertex layouts, storage metadata, and compute dispatch sizing
+- Slang-generated bindings for resource slots, `ParameterBlock<>` binding groups, uniform helpers, simple vertex layouts, storage metadata, and compute dispatch sizing
 - typed error reporting through `gfx.last_error_code` and `gfx.last_error_info`
 - generated API docs and a full validation script
 
@@ -133,7 +133,7 @@ Each compile writes:
 - `build/shaders/<name>.ashader`
 - generated Odin bindings in `assets/shaders/generated/<name>/bindings.odin`
 
-Generated bindings are the preferred way to use shader slots, uniforms, simple vertex layouts, and compute dispatch helpers. Manual `Pipeline_Desc.layout` overrides still exist for compact vertex formats, instancing, multiple streams, and other engine-level layouts.
+Generated bindings are the preferred way to use shader slots, `ParameterBlock<>` resource groups, uniforms, simple vertex layouts, and compute dispatch helpers. Manual `Pipeline_Desc.layout` overrides still exist for compact vertex formats, instancing, multiple streams, and other engine-level layouts.
 
 ## Samples
 
@@ -153,7 +153,7 @@ Each D3D11 sample has a build script and a run script. Run scripts accept `-Auto
 | MRT | `tools/run_d3d11_mrt.ps1` | Two color attachments in one pass |
 | MSAA Resolve | `tools/run_d3d11_msaa.ps1` | 4x MSAA target resolved into a sampled texture |
 | GFX Lab | `tools/run_d3d11_gfx_lab.ps1` | Non-trivial v0.1 usage path |
-| Improved Shadows | `tools/run_d3d11_improved_shadows.ps1` | Multi-pass depth shadow map with shared material bindings |
+| Improved Shadows | `tools/run_d3d11_improved_shadows.ps1` | Multi-pass depth shadow map with separate generated material and shadow-resource groups |
 
 `d3d11_gfx_lab` is the main API ergonomics sample. It renders a depth-tested cube into offscreen color/depth targets, then samples the color target in a swapchain pass.
 

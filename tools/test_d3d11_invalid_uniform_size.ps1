@@ -107,24 +107,24 @@ main :: proc() {
 	}
 
 	valid_uniform := triangle_shader.FrameUniforms{}
-	if gfx.apply_uniform(&ctx, triangle_shader.UB_FrameUniforms + 1, &valid_uniform) {
+	if gfx.apply_uniform(&ctx, triangle_shader.GROUP_0, triangle_shader.UB_FrameUniforms + 1, &valid_uniform) {
 		fmt.eprintln("unused uniform slot unexpectedly succeeded")
 		os.exit(1)
 	}
 
-	expected_unused := "gfx.d3d11: uniform slot 1 is not used by the current pipeline"
+	expected_unused := "gfx.d3d11: uniform group 0 slot 1 is not used by the current pipeline"
 	if gfx.last_error(&ctx) != expected_unused {
 		fmt.eprintln("unused uniform slot failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
 	wrong_uniform_size := [3]f32{}
-	if gfx.apply_uniform(&ctx, triangle_shader.UB_FrameUniforms, &wrong_uniform_size) {
+	if gfx.apply_uniform(&ctx, triangle_shader.GROUP_0, triangle_shader.UB_FrameUniforms, &wrong_uniform_size) {
 		fmt.eprintln("invalid uniform size unexpectedly succeeded")
 		os.exit(1)
 	}
 
-	expected := "gfx.d3d11: uniform slot 0 data size 12 does not match reflected size 16"
+	expected := "gfx.d3d11: uniform group 0 slot 0 data size 12 does not match reflected size 16"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid uniform size failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)

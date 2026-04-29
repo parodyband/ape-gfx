@@ -33,8 +33,8 @@ range :: proc {
 }
 
 // apply_uniform uploads a typed uniform value using size_of(T).
-apply_uniform :: proc(ctx: ^Context, slot: int, value: ^$T) -> bool {
-	return apply_uniforms(ctx, slot, range_raw(rawptr(value), size_of(T)))
+apply_uniform :: proc(ctx: ^Context, group: u32, slot: int, value: ^$T) -> bool {
+	return apply_uniforms(ctx, group, slot, range_raw(rawptr(value), size_of(T)))
 }
 
 // make_buffer is the Sokol-style handle-only compatibility alias for create_buffer.

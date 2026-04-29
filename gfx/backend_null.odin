@@ -261,7 +261,7 @@ null_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	return true
 }
 
-null_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
+null_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	return true
 }
 

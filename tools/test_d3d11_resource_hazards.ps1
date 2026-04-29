@@ -149,12 +149,12 @@ main :: proc() {
 	}
 
 	bindings: gfx.Bindings
-	bindings.views[0] = sampled_color_view
+	bindings.views[0][0] = sampled_color_view
 	if gfx.apply_bindings(&ctx, bindings) {
 		fmt.eprintln("sampling active color attachment unexpectedly succeeded")
 		os.exit(1)
 	}
-	expect_error(&ctx, "gfx.apply_bindings: resource view slot 0 aliases an active pass attachment")
+	expect_error(&ctx, "gfx.apply_bindings: resource view group 0 slot 0 aliases an active pass attachment")
 
 	read_buffer, read_buffer_ok := gfx.create_buffer(&ctx, {
 		label = "read during pass buffer",
@@ -225,13 +225,13 @@ main :: proc() {
 	}
 
 	compute_bindings: gfx.Bindings
-	compute_bindings.views[0] = storage_sampled_view
-	compute_bindings.views[1] = storage_write_view
+	compute_bindings.views[0][0] = storage_sampled_view
+	compute_bindings.views[0][1] = storage_write_view
 	if gfx.apply_bindings(&ctx, compute_bindings) {
 		fmt.eprintln("compute read/write image hazard unexpectedly succeeded")
 		os.exit(1)
 	}
-	expect_error(&ctx, "gfx.apply_bindings: resource view slot 1 writes a resource read by slot 0")
+	expect_error(&ctx, "gfx.apply_bindings: resource view group 0 slot 1 writes a resource read by group 0 slot 0")
 
 	if !gfx.end_compute_pass(&ctx) {
 		fmt.eprintln("end_compute_pass failed: ", gfx.last_error(&ctx))
@@ -283,13 +283,13 @@ main :: proc() {
 	}
 
 	buffer_bindings: gfx.Bindings
-	buffer_bindings.views[0] = storage_buffer_view_a
-	buffer_bindings.views[1] = storage_buffer_view_b
+	buffer_bindings.views[0][0] = storage_buffer_view_a
+	buffer_bindings.views[0][1] = storage_buffer_view_b
 	if gfx.apply_bindings(&ctx, buffer_bindings) {
 		fmt.eprintln("compute write/write buffer hazard unexpectedly succeeded")
 		os.exit(1)
 	}
-	expect_error(&ctx, "gfx.apply_bindings: resource view slots 0 and 1 write the same resource")
+	expect_error(&ctx, "gfx.apply_bindings: resource view group 0 slot 0 and group 0 slot 1 write the same resource")
 
 	if !gfx.end_compute_pass(&ctx) {
 		fmt.eprintln("end_compute_pass failed: ", gfx.last_error(&ctx))

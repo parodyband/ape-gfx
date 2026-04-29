@@ -96,48 +96,87 @@ destroy_binding_group :: proc(ctx: ^Context, group: Binding_Group) {
 	release_resource_id(&ctx.binding_group_pool, u64(group))
 }
 
-// apply_binding_group validates an object-backed binding group against the active pipeline and applies it with optional geometry bindings.
+// apply_binding_group validates one object-backed binding group against the active pipeline and applies it with optional geometry bindings.
 apply_binding_group :: proc(ctx: ^Context, group: Binding_Group, base_bindings: Bindings = {}) -> bool {
-	if !require_any_pass(ctx, "gfx.apply_binding_group") {
-		return false
-	}
+	groups := [?]Binding_Group{group}
+	return apply_binding_groups_internal(ctx, groups[:], base_bindings, "gfx.apply_binding_group")
+}
 
-	if !require_resource(ctx, &ctx.binding_group_pool, u64(group), "gfx.apply_binding_group", "binding group") {
-		return false
-	}
-	group_state, group_ok := query_binding_group_state(ctx, group)
-	if !group_ok {
-		set_validation_error(ctx, "gfx.apply_binding_group: binding group state is unavailable")
-		return false
-	}
-	if !require_resource(ctx, &ctx.binding_group_layout_pool, u64(group_state.layout), "gfx.apply_binding_group", "binding group layout") {
-		return false
-	}
-	layout_state, layout_ok := query_binding_group_layout_state(ctx, group_state.layout)
-	if !layout_ok {
-		set_validation_error(ctx, "gfx.apply_binding_group: binding group layout state is unavailable")
-		return false
-	}
+// apply_binding_groups validates all object-backed binding groups against the active pipeline and applies them with optional geometry bindings.
+apply_binding_groups :: proc(ctx: ^Context, groups: []Binding_Group, base_bindings: Bindings = {}) -> bool {
+	return apply_binding_groups_internal(ctx, groups, base_bindings, "gfx.apply_binding_groups")
+}
 
-	if !validate_binding_group_pipeline_compatibility(ctx, layout_state.desc) {
+@(private)
+apply_binding_groups_internal :: proc(ctx: ^Context, groups: []Binding_Group, base_bindings: Bindings, op: string) -> bool {
+	if !require_any_pass(ctx, op) {
 		return false
 	}
-	if !validate_binding_group_desc(ctx, layout_state.desc, group_state.desc, "gfx.apply_binding_group") {
+	if len(groups) == 0 {
+		set_validation_errorf(ctx, "%s: at least one binding group is required", op)
 		return false
 	}
 	if binding_group_base_has_shader_resources(base_bindings) {
-		set_validation_error(ctx, "gfx.apply_binding_group: base bindings must not contain resource views or samplers")
+		set_validation_errorf(ctx, "%s: base bindings must not contain resource views or samplers", op)
 		return false
 	}
 
+	shader_state, shader_state_ok := current_binding_group_shader_state(ctx, op)
+	if !shader_state_ok {
+		return false
+	}
+	if !shader_state.has_binding_metadata {
+		set_validation_errorf(ctx, "%s: current pipeline shader has no binding metadata", op)
+		return false
+	}
+
+	seen_groups: [MAX_BINDING_GROUPS]bool
 	bindings := base_bindings
-	merge_binding_group(&bindings, layout_state.desc, group_state.desc)
+	for group in groups {
+		if !require_resource(ctx, &ctx.binding_group_pool, u64(group), op, "binding group") {
+			return false
+		}
+		group_state, group_ok := query_binding_group_state(ctx, group)
+		if !group_ok {
+			set_validation_errorf(ctx, "%s: binding group state is unavailable", op)
+			return false
+		}
+		if !require_resource(ctx, &ctx.binding_group_layout_pool, u64(group_state.layout), op, "binding group layout") {
+			return false
+		}
+		layout_state, layout_ok := query_binding_group_layout_state(ctx, group_state.layout)
+		if !layout_ok {
+			set_validation_errorf(ctx, "%s: binding group layout state is unavailable", op)
+			return false
+		}
+
+		logical_group := layout_state.desc.group
+		if seen_groups[logical_group] {
+			set_validation_errorf(ctx, "%s: duplicate binding group %d", op, logical_group)
+			return false
+		}
+		seen_groups[logical_group] = true
+
+		if !validate_binding_group_pipeline_compatibility(ctx, shader_state, layout_state.desc, op) {
+			return false
+		}
+		if !validate_binding_group_desc(ctx, layout_state.desc, group_state.desc, op) {
+			return false
+		}
+
+		merge_binding_group(&bindings, layout_state.desc, group_state.desc)
+	}
+
 	return apply_bindings(ctx, bindings)
 }
 
 // validate_binding_group_layout_desc validates generated binding-group layout data.
 validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_Layout_Desc) -> bool {
 	if !require_initialized(ctx, "gfx.validate_binding_group_layout_desc") {
+		return false
+	}
+	if desc.group >= MAX_BINDING_GROUPS {
+		set_validation_errorf(ctx, "gfx.validate_binding_group_layout_desc: group %d is out of range", desc.group)
 		return false
 	}
 
@@ -235,21 +274,12 @@ binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout)
 }
 
 @(private)
-validate_binding_group_pipeline_compatibility :: proc(ctx: ^Context, layout: Binding_Group_Layout_Desc) -> bool {
-	shader_state, shader_state_ok := current_binding_group_shader_state(ctx)
-	if !shader_state_ok {
-		return false
-	}
-	if !shader_state.has_binding_metadata {
-		set_validation_error(ctx, "gfx.apply_binding_group: current pipeline shader has no binding metadata")
-		return false
-	}
-
+validate_binding_group_pipeline_compatibility :: proc(ctx: ^Context, shader_state: Shader_State, layout: Binding_Group_Layout_Desc, op: string) -> bool {
 	for entry in layout.entries {
 		if !entry.active {
 			continue
 		}
-		if !validate_binding_group_entry_against_shader(ctx, shader_state, entry) {
+		if !validate_binding_group_entry_against_shader(ctx, shader_state, layout.group, entry, op) {
 			return false
 		}
 	}
@@ -258,44 +288,8 @@ validate_binding_group_pipeline_compatibility :: proc(ctx: ^Context, layout: Bin
 		if !native.active || native.target != ctx.backend {
 			continue
 		}
-		if !validate_binding_group_native_against_shader(ctx, shader_state, native) {
+		if !validate_binding_group_native_against_shader(ctx, shader_state, layout.group, native, op) {
 			return false
-		}
-	}
-
-	for binding in shader_state.bindings {
-		if !binding.active {
-			continue
-		}
-
-		switch binding.kind {
-		case .Uniform_Block:
-			continue
-		case .Resource_View, .Sampler:
-		}
-
-		if !binding_group_layout_has_stage_entry(layout, binding.kind, binding.slot, binding.stage) {
-			set_validation_errorf(
-				ctx,
-				"gfx.apply_binding_group: layout is missing current pipeline %s %s slot %d",
-				shader_stage_name(binding.stage),
-				shader_binding_kind_name(binding.kind),
-				binding.slot,
-			)
-			return false
-		}
-		if ctx.backend == .D3D11 || ctx.backend == .Vulkan {
-			if !binding_group_layout_has_native_binding(layout, ctx.backend, binding) {
-				set_validation_errorf(
-					ctx,
-					"gfx.apply_binding_group: layout is missing current pipeline %s native %s slot %d space %d",
-					backend_name(ctx.backend),
-					shader_binding_kind_name(binding.kind),
-					binding.native_slot,
-					binding.native_space,
-				)
-				return false
-			}
 		}
 	}
 
@@ -303,7 +297,7 @@ validate_binding_group_pipeline_compatibility :: proc(ctx: ^Context, layout: Bin
 }
 
 @(private)
-current_binding_group_shader_state :: proc(ctx: ^Context) -> (Shader_State, bool) {
+current_binding_group_shader_state :: proc(ctx: ^Context, op: string) -> (Shader_State, bool) {
 	if ctx == nil {
 		return {}, false
 	}
@@ -311,57 +305,59 @@ current_binding_group_shader_state :: proc(ctx: ^Context) -> (Shader_State, bool
 	switch ctx.pass_kind {
 	case .Render:
 		if !pipeline_valid(ctx.current_pipeline) {
-			set_validation_error(ctx, "gfx.apply_binding_group: requires an applied graphics pipeline")
+			set_validation_errorf(ctx, "%s: requires an applied graphics pipeline", op)
 			return {}, false
 		}
 		pipeline_state, pipeline_state_ok := query_pipeline_state(ctx, ctx.current_pipeline)
 		if !pipeline_state_ok {
-			set_validation_error(ctx, "gfx.apply_binding_group: current graphics pipeline state is unavailable")
+			set_validation_errorf(ctx, "%s: current graphics pipeline state is unavailable", op)
 			return {}, false
 		}
 		shader_state, shader_state_ok := query_shader_state(ctx, pipeline_state.shader)
 		if !shader_state_ok {
-			set_validation_error(ctx, "gfx.apply_binding_group: current graphics pipeline shader state is unavailable")
+			set_validation_errorf(ctx, "%s: current graphics pipeline shader state is unavailable", op)
 			return {}, false
 		}
 		return shader_state, true
 	case .Compute:
 		if !compute_pipeline_valid(ctx.current_compute_pipeline) {
-			set_validation_error(ctx, "gfx.apply_binding_group: requires an applied compute pipeline")
+			set_validation_errorf(ctx, "%s: requires an applied compute pipeline", op)
 			return {}, false
 		}
 		pipeline_state, pipeline_state_ok := query_compute_pipeline_state(ctx, ctx.current_compute_pipeline)
 		if !pipeline_state_ok {
-			set_validation_error(ctx, "gfx.apply_binding_group: current compute pipeline state is unavailable")
+			set_validation_errorf(ctx, "%s: current compute pipeline state is unavailable", op)
 			return {}, false
 		}
 		shader_state, shader_state_ok := query_shader_state(ctx, pipeline_state.shader)
 		if !shader_state_ok {
-			set_validation_error(ctx, "gfx.apply_binding_group: current compute pipeline shader state is unavailable")
+			set_validation_errorf(ctx, "%s: current compute pipeline shader state is unavailable", op)
 			return {}, false
 		}
 		return shader_state, true
 	case .None:
 	}
 
-	set_validation_error(ctx, "gfx.apply_binding_group: no pass is active")
+	set_validation_errorf(ctx, "%s: no pass is active", op)
 	return {}, false
 }
 
 @(private)
-validate_binding_group_entry_against_shader :: proc(ctx: ^Context, shader_state: Shader_State, entry: Binding_Group_Layout_Entry_Desc) -> bool {
+validate_binding_group_entry_against_shader :: proc(ctx: ^Context, shader_state: Shader_State, group: u32, entry: Binding_Group_Layout_Entry_Desc, op: string) -> bool {
 	for stage_index in 0..<3 {
 		stage := Shader_Stage(stage_index)
 		if !(stage in entry.stages) {
 			continue
 		}
 
-		binding, binding_ok := shader_state_find_binding(shader_state, stage, entry.kind, entry.slot)
+		binding, binding_ok := shader_state_find_binding(shader_state, stage, entry.kind, group, entry.slot)
 		if !binding_ok {
 			set_validation_errorf(
 				ctx,
-				"gfx.apply_binding_group: layout %s slot %d for %s is not used by current pipeline",
+				"%s: layout %s group %d slot %d for %s is not used by current pipeline",
+				op,
 				shader_binding_kind_name(entry.kind),
+				group,
 				entry.slot,
 				shader_stage_name(stage),
 			)
@@ -370,13 +366,15 @@ validate_binding_group_entry_against_shader :: proc(ctx: ^Context, shader_state:
 		if binding.name != entry.name {
 			set_validation_errorf(
 				ctx,
-				"gfx.apply_binding_group: layout %s slot %d name does not match current pipeline",
+				"%s: layout %s group %d slot %d name does not match current pipeline",
+				op,
 				shader_binding_kind_name(entry.kind),
+				group,
 				entry.slot,
 			)
 			return false
 		}
-		if !binding_group_entry_payload_matches_shader(ctx, entry, binding) {
+		if !binding_group_entry_payload_matches_shader(ctx, entry, binding, op) {
 			return false
 		}
 	}
@@ -385,28 +383,28 @@ validate_binding_group_entry_against_shader :: proc(ctx: ^Context, shader_state:
 }
 
 @(private)
-binding_group_entry_payload_matches_shader :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, binding: Shader_Binding_Desc) -> bool {
+binding_group_entry_payload_matches_shader :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, binding: Shader_Binding_Desc, op: string) -> bool {
 	switch entry.kind {
 	case .Uniform_Block:
 		if entry.uniform_block.size != binding.size {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: uniform slot %d size does not match current pipeline", entry.slot)
+			set_validation_errorf(ctx, "%s: uniform slot %d size does not match current pipeline", op, entry.slot)
 			return false
 		}
 	case .Resource_View:
 		if entry.resource_view.view_kind != binding.view_kind {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d view kind does not match current pipeline", entry.slot)
+			set_validation_errorf(ctx, "%s: resource view slot %d view kind does not match current pipeline", op, entry.slot)
 			return false
 		}
 		if entry.resource_view.access != binding.access {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d access does not match current pipeline", entry.slot)
+			set_validation_errorf(ctx, "%s: resource view slot %d access does not match current pipeline", op, entry.slot)
 			return false
 		}
 		if entry.resource_view.storage_image_format != binding.storage_image_format {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d storage image format does not match current pipeline", entry.slot)
+			set_validation_errorf(ctx, "%s: resource view slot %d storage image format does not match current pipeline", op, entry.slot)
 			return false
 		}
 		if entry.resource_view.storage_buffer_stride != binding.storage_buffer_stride {
-			set_validation_errorf(ctx, "gfx.apply_binding_group: resource view slot %d storage buffer stride does not match current pipeline", entry.slot)
+			set_validation_errorf(ctx, "%s: resource view slot %d storage buffer stride does not match current pipeline", op, entry.slot)
 			return false
 		}
 	case .Sampler:
@@ -416,14 +414,16 @@ binding_group_entry_payload_matches_shader :: proc(ctx: ^Context, entry: Binding
 }
 
 @(private)
-validate_binding_group_native_against_shader :: proc(ctx: ^Context, shader_state: Shader_State, native: Binding_Group_Native_Binding_Desc) -> bool {
-	binding, binding_ok := shader_state_find_binding(shader_state, native.stage, native.kind, native.slot)
+validate_binding_group_native_against_shader :: proc(ctx: ^Context, shader_state: Shader_State, group: u32, native: Binding_Group_Native_Binding_Desc, op: string) -> bool {
+	binding, binding_ok := shader_state_find_binding(shader_state, native.stage, native.kind, group, native.slot)
 	if !binding_ok {
 		set_validation_errorf(
 			ctx,
-			"gfx.apply_binding_group: native layout %s %s slot %d is not used by current pipeline",
+			"%s: native layout %s %s group %d slot %d is not used by current pipeline",
+			op,
 			shader_stage_name(native.stage),
 			shader_binding_kind_name(native.kind),
+			group,
 			native.slot,
 		)
 		return false
@@ -431,9 +431,11 @@ validate_binding_group_native_against_shader :: proc(ctx: ^Context, shader_state
 	if binding.native_slot != native.native_slot || binding.native_space != native.native_space {
 		set_validation_errorf(
 			ctx,
-			"gfx.apply_binding_group: native %s %s slot %d does not match current pipeline",
+			"%s: native %s %s group %d slot %d does not match current pipeline",
+			op,
 			shader_stage_name(native.stage),
 			shader_binding_kind_name(native.kind),
+			group,
 			native.slot,
 		)
 		return false
@@ -447,10 +449,11 @@ shader_state_find_binding :: proc(
 	shader_state: Shader_State,
 	stage: Shader_Stage,
 	kind: Shader_Binding_Kind,
+	group: u32,
 	slot: u32,
 ) -> (Shader_Binding_Desc, bool) {
 	for binding in shader_state.bindings {
-		if binding.active && binding.stage == stage && binding.kind == kind && binding.slot == slot {
+		if binding.active && binding.stage == stage && binding.kind == kind && binding.group == group && binding.slot == slot {
 			return binding, true
 		}
 	}
@@ -500,9 +503,9 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 			continue
 		}
 
-		switch entry.kind {
-		case .Uniform_Block:
-			// Uniform block data still flows through apply_uniforms for this prototype.
+	switch entry.kind {
+	case .Uniform_Block:
+		// Uniform block data flows through apply_uniforms because it is per-draw mutable.
 		case .Resource_View:
 			view := group.views[entry.slot]
 			if !view_valid(view) {
@@ -589,23 +592,27 @@ merge_binding_group :: proc(bindings: ^Bindings, layout: Binding_Group_Layout_De
 		switch entry.kind {
 		case .Uniform_Block:
 		case .Resource_View:
-			bindings.views[entry.slot] = group.views[entry.slot]
+			bindings.views[layout.group][entry.slot] = group.views[entry.slot]
 		case .Sampler:
-			bindings.samplers[entry.slot] = group.samplers[entry.slot]
+			bindings.samplers[layout.group][entry.slot] = group.samplers[entry.slot]
 		}
 	}
 }
 
 @(private)
 binding_group_base_has_shader_resources :: proc(bindings: Bindings) -> bool {
-	for view in bindings.views {
-		if view_valid(view) {
-			return true
+	for group_views in bindings.views {
+		for view in group_views {
+			if view_valid(view) {
+				return true
+			}
 		}
 	}
-	for sampler in bindings.samplers {
-		if sampler_valid(sampler) {
-			return true
+	for group_samplers in bindings.samplers {
+		for sampler in group_samplers {
+			if sampler_valid(sampler) {
+				return true
+			}
 		}
 	}
 

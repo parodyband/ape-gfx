@@ -203,7 +203,7 @@ Stable view flavors:
 Rules:
 
 - Exactly one `View_Desc` flavor may be populated.
-- Sampled and storage views are bound through `Bindings.views`.
+- Sampled and storage views are bound through generated binding groups or `Bindings.views`.
 - Attachment views are used only in `Pass_Desc`.
 - Runtime validation rejects a sampled view in a storage slot, a storage view in a sampled slot, and attachment views in resource binding slots.
 - Views must not create read/write hazards inside one pass or dispatch.
@@ -254,7 +254,7 @@ Rules:
 - The active backend must report `query_features(&ctx).compute`.
 - Compute shaders must be separate from graphics shaders.
 - Render-only bindings such as vertex and index buffers are rejected in compute passes.
-- Storage buffers and storage images bind through reflected `Bindings.views` slots.
+- Storage buffers and storage images bind through reflected binding groups or `Bindings.views` slots.
 - Readback is explicit through `read_buffer`.
 
 ## Shader Contract
@@ -272,12 +272,14 @@ Stable shader flow:
 Stable generated helpers:
 
 - Binding slot constants such as `VIEW_ape_texture`.
+- Logical group constants such as `GROUP_0`.
 - Reflected D3D11 native slot constants such as `D3D11_FS_VIEW_ape_texture`.
 - View metadata constants such as `VIEW_KIND_*`, `VIEW_ACCESS_*`, `VIEW_FORMAT_*`, and `VIEW_STRIDE_*`.
 - Uniform structs and `apply_uniform_*` helpers when reflection is representable.
 - Simple packed vertex layout helpers such as `VERTEX_STRIDE`, `ATTR_*_OFFSET`, and `layout_desc`.
 - Binding group layout descriptors such as `binding_group_layout_desc`, used with `gfx.create_binding_group_layout`.
 - Binding group resource setters such as `set_group_view_*` and `set_group_sampler_*`.
+- `ParameterBlock<>` resource groups mapped to generated logical groups.
 - Compute thread-group constants and dispatch helpers.
 
 Generated vertex layout support is intentionally narrow:

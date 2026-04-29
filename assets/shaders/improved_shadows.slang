@@ -28,10 +28,20 @@ cbuffer FrameUniforms
 	float4 ape_shadow_map_size;
 };
 
-Texture2D<float4> diffuse_texture;
-Texture2D<float> shadow_map;
-SamplerState diffuse_sampler;
-SamplerState shadow_sampler;
+struct Material_Params
+{
+	Texture2D<float4> diffuse_texture;
+	SamplerState diffuse_sampler;
+};
+
+struct Shadow_Params
+{
+	Texture2D<float> shadow_map;
+	SamplerState shadow_sampler;
+};
+
+ParameterBlock<Material_Params> material;
+ParameterBlock<Shadow_Params> shadow_resources;
 
 static const float SHADOW_BIAS_MIN = 0.005;
 static const float SHADOW_BIAS_SLOPE = 0.05;
@@ -76,7 +86,7 @@ float shadow_factor(VS_Output input)
 	{
 		for (int y = -1; y <= 1; y += 1)
 		{
-			float closest_depth = shadow_map.Sample(shadow_sampler, uv + float2(x, y) * texel_size);
+			float closest_depth = shadow_resources.shadow_map.Sample(shadow_resources.shadow_sampler, uv + float2(x, y) * texel_size);
 			shadow += current_depth - bias > closest_depth ? 1.0 : 0.0;
 		}
 	}
@@ -87,7 +97,7 @@ float shadow_factor(VS_Output input)
 [shader("fragment")]
 float4 fs_main(VS_Output input) : SV_Target
 {
-	float3 albedo = diffuse_texture.Sample(diffuse_sampler, input.uv).rgb;
+	float3 albedo = material.diffuse_texture.Sample(material.diffuse_sampler, input.uv).rgb;
 	float3 normal = normalize(input.normal);
 	float3 light_dir = normalize(ape_light_pos.xyz - input.world_position);
 	float3 view_dir = normalize(ape_view_pos.xyz - input.world_position);

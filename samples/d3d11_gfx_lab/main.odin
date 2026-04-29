@@ -300,7 +300,7 @@ main :: proc() {
 	}
 	defer ape_sample.reloadable_shader_program_destroy(&ctx, &texture_program)
 
-	texture_group_layout, texture_group_layout_ok := gfx.create_binding_group_layout(&ctx, textured_quad_shader.binding_group_layout_desc("lab display bindings"))
+	texture_group_layout, texture_group_layout_ok := gfx.create_binding_group_layout(&ctx, textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "lab display bindings"))
 	if !texture_group_layout_ok {
 		fmt.eprintln("texture binding group layout creation failed: ", gfx.last_error(&ctx))
 		return
@@ -317,8 +317,8 @@ main :: proc() {
 
 	texture_group_desc: gfx.Binding_Group_Desc
 	texture_group_desc.layout = texture_group_layout
-	textured_quad_shader.set_group_view_ape_texture(&texture_group_desc, offscreen_sample_view)
-	textured_quad_shader.set_group_sampler_ape_sampler(&texture_group_desc, sampler)
+	textured_quad_shader.set_group_view_material_ape_texture(&texture_group_desc, offscreen_sample_view)
+	textured_quad_shader.set_group_sampler_material_ape_sampler(&texture_group_desc, sampler)
 	texture_group, texture_group_ok := gfx.create_binding_group(&ctx, texture_group_desc)
 	if !texture_group_ok {
 		fmt.eprintln("texture binding group creation failed: ", gfx.last_error(&ctx))

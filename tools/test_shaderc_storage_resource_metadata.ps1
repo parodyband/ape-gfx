@@ -77,11 +77,14 @@ $ExpectedSnippets = @(
 	"resource_view = {",
 	"storage_image_format = gfx.Pixel_Format.RGBA32F",
 	"storage_buffer_stride = 0",
-	'binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc',
+	"GROUP_0 :: 0",
+	"group: u32,",
+	'binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc',
 	"desc.entries[0] = {",
 	"stages = {.Fragment}",
 	"desc.native_bindings[0] = {",
-	"set_group_view_output_image :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)"
+	"set_group_view_output_image :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
+	"bindings.views[GROUP_0][VIEW_output_image] = view"
 )
 
 foreach ($Snippet in $ExpectedSnippets) {

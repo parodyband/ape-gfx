@@ -20,9 +20,9 @@ Ape GFX uses fixed-size arrays instead of count fields in several descriptors. T
 - `Pass_Desc.color_attachments` and `Pipeline_Desc.color_formats` are packed active spans. Non-empty entries must be contiguous from slot `0`.
 - `Layout_Desc.attrs` is sparse by semantic. Active attributes have a non-empty `semantic`; inactive entries may appear between active entries. Each active attribute must reference a vertex buffer slot with nonzero stride.
 - `Bindings.vertex_buffers` is sparse. The active graphics pipeline determines which vertex buffer slots are required before draw.
-- `Bindings.views` and `Bindings.samplers` are sparse logical shader slots. Generated shader helpers write the exact reflected logical slot. Backends with shader metadata validate missing required slots and incompatible view kinds at draw or dispatch time.
+- `Bindings.views` and `Bindings.samplers` are sparse logical shader slots inside sparse logical groups. Generated shader helpers write the exact reflected group and slot. Backends with shader metadata validate missing required slots and incompatible view kinds at draw or dispatch time.
 
-The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, and sparse resource/sampler bindings. A later binding-group pass still needs to decide whether debug validation should reject extra unused `Bindings` entries after reflected shader metadata is known.
+The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, sparse resource/sampler bindings, and reflected D3D11 rejection of unused resource slots when shader metadata is known.
 
 ## Desc
 
@@ -376,7 +376,8 @@ Fields:
 | Field | Contract |
 | --- | --- |
 | `Binding_Group_Layout_Desc.label` | Optional diagnostic label. |
-| `Binding_Group_Layout_Desc.entries` | Sparse logical binding entries. Each active entry has a non-empty reflected name, at least one shader stage, valid binding kind, and a kind-specific logical slot. |
+| `Binding_Group_Layout_Desc.group` | Logical group index. Generated `GROUP_<n>` constants should be used at callsites. |
+| `Binding_Group_Layout_Desc.entries` | Sparse logical binding entries for `group`. Each active entry has a non-empty reflected name, at least one shader stage, valid binding kind, and a kind-specific logical slot. |
 | `Binding_Group_Layout_Desc.native_bindings` | Sparse backend mappings for generated entries. Each active mapping names a backend target, stage, binding kind, logical slot, native slot, and native space. |
 | `Binding_Group_Desc.label` | Optional diagnostic label. |
 | `Binding_Group_Desc.layout` | Required live `Binding_Group_Layout` handle from the same context. |
@@ -392,17 +393,22 @@ Rules:
 - Native mappings must reference an existing logical entry whose stage set includes the native stage.
 - Native mappings are allowed only for concrete generated backend targets such as `.D3D11` and `.Vulkan`.
 - `apply_binding_group` requires an applied graphics or compute pipeline.
-- The layout must match the current pipeline's reflected binding metadata: logical slot, stage, reflected name, kind payload, and native slot/space for the active backend.
-- Layouts missing a resource-view or sampler required by the current pipeline are rejected before handles are applied.
+- `apply_binding_groups` applies several object-backed groups in one call. This is the intended path when one shader uses separate Slang `ParameterBlock<>` groups.
+- The layout must match the current pipeline's reflected binding metadata: logical group, logical slot, stage, reflected name, kind payload, and native slot/space for the active backend.
+- A single layout is not required to cover every shader resource. Missing required resources are caught by the backend before `draw` or `dispatch`.
 - `create_binding_group` requires every resource-view and sampler entry in the layout to have a matching handle in `Binding_Group_Desc`.
 - Extra active views or samplers that are not declared by the layout are rejected during `create_binding_group`.
 - `base_bindings` passed to `apply_binding_group` may contain vertex and index buffers. It must not already contain views or samplers.
+- `base_bindings` passed to `apply_binding_groups` follows the same rule.
 - `destroy_binding_group_layout` rejects layouts that are still used by live binding groups.
 
 Representative callsite:
 
 ```odin
-layout, ok := gfx.create_binding_group_layout(&ctx, textured_quad_shader.binding_group_layout_desc("material bindings"))
+layout, ok := gfx.create_binding_group_layout(
+	&ctx,
+	textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "material bindings"),
+)
 if !ok {
 	fmt.eprintln("binding group layout failed: ", gfx.last_error(&ctx))
 	return
@@ -414,8 +420,8 @@ geometry.vertex_buffers[0] = {buffer = vertex_buffer}
 geometry.index_buffer = {buffer = index_buffer}
 
 group_desc := gfx.Binding_Group_Desc{layout = layout}
-textured_quad_shader.set_group_view_ape_texture(&group_desc, texture_view)
-textured_quad_shader.set_group_sampler_ape_sampler(&group_desc, sampler)
+textured_quad_shader.set_group_view_material_ape_texture(&group_desc, texture_view)
+textured_quad_shader.set_group_sampler_material_ape_sampler(&group_desc, sampler)
 
 group, ok := gfx.create_binding_group(&ctx, group_desc)
 if !ok {
@@ -427,7 +433,12 @@ defer gfx.destroy(&ctx, group)
 ok = gfx.apply_binding_group(&ctx, group, geometry)
 ```
 
-Existing draw code can still use generated helpers with `gfx.Bindings` directly, but generated binding groups are the preferred path for reusable material or pass resources.
+Existing draw code can still use generated helpers with `gfx.Bindings` directly, but generated binding groups are the preferred path for reusable material or pass resources. Use `apply_binding_groups` when a shader has more than one generated logical group:
+
+```odin
+groups := [?]gfx.Binding_Group{material_group, shadow_group}
+ok = gfx.apply_binding_groups(&ctx, groups[:], geometry)
+```
 
 ## Bindings
 
@@ -439,8 +450,8 @@ Fields:
 | --- | --- |
 | `vertex_buffers` | Render passes only. Each active binding requires a live vertex-capable buffer and non-negative byte offset within the buffer. |
 | `index_buffer` | Render passes only. Requires a live index-capable buffer and non-negative byte offset within the buffer. |
-| `views` | Each active binding requires a live sampled or storage view. Attachment views cannot be bound as resources. |
-| `samplers` | Each active binding requires a live sampler. |
+| `views` | Sparse logical groups and slots. Each active binding requires a live sampled or storage view. Attachment views cannot be bound as resources. |
+| `samplers` | Sparse logical groups and slots. Each active binding requires a live sampler. |
 
 Rules:
 
@@ -455,8 +466,8 @@ Representative callsite:
 bindings: gfx.Bindings
 bindings.vertex_buffers[0] = {buffer = vertex_buffer}
 bindings.index_buffer = {buffer = index_buffer}
-textured_quad_shader.set_view_tex(&bindings, texture_view)
-textured_quad_shader.set_sampler_smp(&bindings, sampler)
+textured_quad_shader.set_view_material_ape_texture(&bindings, texture_view)
+textured_quad_shader.set_sampler_material_ape_sampler(&bindings, sampler)
 ok := gfx.apply_bindings(&ctx, bindings)
 ```
 

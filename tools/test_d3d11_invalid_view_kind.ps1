@@ -152,7 +152,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	group_layout := textured_quad_shader.binding_group_layout_desc("wrong native binding group layout")
+	group_layout := textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "wrong native binding group layout")
 	group_layout.native_bindings[0].native_slot = 2
 	group_layout_handle, group_layout_ok := gfx.create_binding_group_layout(&ctx, group_layout)
 	if !group_layout_ok {
@@ -163,8 +163,8 @@ main :: proc() {
 
 	group_desc: gfx.Binding_Group_Desc
 	group_desc.layout = group_layout_handle
-	textured_quad_shader.set_group_view_ape_texture(&group_desc, sampled_view)
-	textured_quad_shader.set_group_sampler_ape_sampler(&group_desc, sampler)
+	textured_quad_shader.set_group_view_material_ape_texture(&group_desc, sampled_view)
+	textured_quad_shader.set_group_sampler_material_ape_sampler(&group_desc, sampler)
 	group, group_ok := gfx.create_binding_group(&ctx, group_desc)
 	if !group_ok {
 		fmt.eprintln("binding group creation failed: ", gfx.last_error(&ctx))
@@ -177,20 +177,20 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	expected_group_error := "gfx.apply_binding_group: native fragment resource view slot 0 does not match current pipeline"
+	expected_group_error := "gfx.apply_binding_group: native fragment resource view group 0 slot 0 does not match current pipeline"
 	if gfx.last_error(&ctx) != expected_group_error {
 		fmt.eprintln("invalid binding group failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
 	bindings: gfx.Bindings
-	textured_quad_shader.set_view_ape_texture(&bindings, storage_view)
+	textured_quad_shader.set_view_material_ape_texture(&bindings, storage_view)
 	if gfx.apply_bindings(&ctx, bindings) {
 		fmt.eprintln("storage view bound to sampled slot unexpectedly succeeded")
 		os.exit(1)
 	}
 
-	expected := "gfx.d3d11: resource view slot 0 expects sampled view, got storage image view"
+	expected := "gfx.d3d11: resource view group 0 slot 0 expects sampled view, got storage image view"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid view kind failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)

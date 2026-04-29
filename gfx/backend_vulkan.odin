@@ -127,7 +127,7 @@ vulkan_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	return false
 }
 
-vulkan_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
+vulkan_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: apply_uniforms is not implemented yet")
 	return false
 }

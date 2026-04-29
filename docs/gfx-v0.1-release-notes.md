@@ -76,8 +76,10 @@ The normal flow is:
 Generated bindings currently cover:
 
 - backend-neutral logical binding slots
+- logical binding groups for `ParameterBlock<>` resources
 - D3D11 native resource slots
 - sampled texture and sampler bindings
+- generated binding group layout helpers and resource setters
 - uniform block structs and `apply_uniform_*` helpers
 - simple packed vertex layout helpers
 - storage image and storage buffer metadata
@@ -153,6 +155,7 @@ Current D3D11 samples:
 | MRT | `tools/run_d3d11_mrt.ps1` | Two color attachments written in one pass |
 | MSAA Resolve | `tools/run_d3d11_msaa.ps1` | 4x MSAA target resolved into a sampled texture |
 | GFX Lab | `tools/run_d3d11_gfx_lab.ps1` | Realistic v0.1 API composition sample |
+| Improved Shadows | `tools/run_d3d11_improved_shadows.ps1` | Multi-pass shadow map with separate generated material and shadow-resource groups |
 
 ## Compatibility Notes
 
@@ -202,9 +205,9 @@ These pieces exist, but should not be treated as long-term frozen yet:
 
 After v0.1, the next larger areas are:
 
-- prioritize register-free Slang shader authoring, with reflected names and generated helpers owning the GFX slot contract
-- investigate `ParameterBlock<>`, multiple binding groups, and pipeline layouts
-- design Slang-generated binding layout contracts for grouped resources and cross-stage reuse
+- add negative shaderc tests for unsupported `ParameterBlock<>` shapes
+- decide whether `Pipeline_Layout` is needed now that generated logical groups are real
+- sketch resource-array and bindless reflection before freezing the group record shape further
 - improve storage and compute ergonomics beyond the current samples
 - add init-time required features and limits if the binding/layout design needs them
 - add structured shader diagnostics and scoped diagnostics

@@ -98,10 +98,10 @@ The `.ashader` binary package starts with:
 Current writer version:
 
 ```text
-PACKAGE_VERSION = 8
+PACKAGE_VERSION = 9
 ```
 
-`shader` currently reads package versions `1` through `8` and rejects versions newer than the runtime knows about.
+`shader` currently reads package versions `1` through `9` and rejects versions newer than the runtime knows about.
 
 Version policy for v0.1:
 
@@ -152,6 +152,7 @@ VK_FS_SMP_ape_sampler_SPACE :: 0
 Logical constants are target-independent:
 
 ```odin
+GROUP_0 :: 0
 VIEW_ape_texture :: 0
 SMP_ape_sampler :: 0
 UB_FrameUniforms :: 0
@@ -182,6 +183,7 @@ Binding_Record_Desc :: struct {
 	stage: gfx.Shader_Stage,
 	kind: gfx.Shader_Binding_Kind,
 	name: cstring,
+	group: u32,
 	logical_slot: u32,
 	native_slot: u32,
 	native_space: u32,
@@ -191,10 +193,10 @@ Binding_Record_Desc :: struct {
 
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
 
-binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc
+binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc
 ```
 
-This is the first explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical slots, native slots, and native spaces available for later binding group and pipeline layout design.
+This is the explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical groups, logical slots, native slots, and native spaces available for binding groups and later pipeline-layout work.
 
 `Binding_Record_Desc` uses explicit payload structs for kind-specific metadata:
 
@@ -202,15 +204,16 @@ This is the first explicit Slang-generated binding layout contract. It keeps the
 - `resource_view` is valid when `kind == .Resource_View`.
 - `Sampler` records have no payload today.
 
-The outer record stays common so tools can sort or match by backend, stage, reflected name, logical slot, native slot, and native space without switching on the payload first.
+The outer record stays common so tools can sort or match by backend, stage, reflected name, logical group, logical slot, native slot, and native space without switching on the payload first.
 
 `binding_group_layout_desc` folds those records into descriptor-only `gfx.Binding_Group_Layout_Desc` data:
 
+- `group` selects which logical group to emit.
 - `entries` describe logical binding entries by kind, logical slot, reflected name, stage set, and kind-specific payload.
 - `native_bindings` preserve backend/stage native slot and space mappings.
 - `gfx.validate_binding_group_layout_desc` can validate the generated descriptor today; future binding-group objects can consume the same shape or a narrowed version of it.
 
-Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for `gfx.Binding_Group_Desc`. The intended path is to create a `gfx.Binding_Group_Layout` from `binding_group_layout_desc`, fill a `Binding_Group_Desc` with generated setters, create a `gfx.Binding_Group`, and apply that group with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
+Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for `gfx.Binding_Group_Desc`. The intended path is to create a `gfx.Binding_Group_Layout` from `binding_group_layout_desc(GROUP_N)`, fill a `Binding_Group_Desc` with generated setters, create a `gfx.Binding_Group`, and apply one or more groups with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
 
 Logical slots are assigned per binding kind:
 
@@ -220,7 +223,34 @@ Logical slots are assigned per binding kind:
 | Resource view | `VIEW_` | 32 |
 | Sampler | `SMP_` | 16 |
 
-Bindings with the same kind and reflected name share one logical slot across stages and targets.
+Bindings with the same kind, reflected group, and reflected name share one logical slot across stages and targets.
+
+## Parameter Blocks And Logical Groups
+
+`ParameterBlock<T>` is the preferred Slang shape for reusable shader resources.
+
+Supported first-pass mapping:
+
+- Global ordinary constant buffers stay in logical group `0`.
+- If a shader has only `ParameterBlock<>` resources, the first block maps to group `0`.
+- If a shader has global bindings plus `ParameterBlock<>` resources, global bindings stay in group `0` and parameter blocks start at group `1`.
+- Each supported resource field inside a parameter block becomes a generated binding name of `<block>.<field>`.
+- D3D11 metadata flattens groups to native stage slots. Vulkan metadata preserves the reflected native space for future descriptor-set mapping.
+
+Supported parameter-block fields today:
+
+- sampled textures
+- samplers
+- storage image and storage buffer shapes already supported by normal resource reflection
+
+Unsupported parameter-block fields fail during shader generation:
+
+- ordinary data fields
+- nested parameter blocks
+- arrays or bindless-style resource arrays
+- unsupported resource shapes
+
+Uniform data inside `ParameterBlock<>` is intentionally deferred. Keep per-draw data in ordinary constant buffers for now.
 
 ## Uniform Blocks
 
@@ -240,7 +270,7 @@ SIZE_FrameUniforms_ape_frame :: 16
 
 apply_uniform_FrameUniforms :: proc(ctx: ^gfx.Context, value: ^$T) -> bool {
 	#assert(size_of(T) == SIZE_FrameUniforms)
-	return gfx.apply_uniform(ctx, UB_FrameUniforms, value)
+	return gfx.apply_uniform(ctx, GROUP_0, UB_FrameUniforms, value)
 }
 ```
 
@@ -342,6 +372,7 @@ Slang-reflected resource bindings become `gfx.Shader_Binding_Desc` entries and g
 Sampled texture example:
 
 ```odin
+GROUP_0 :: 0
 VIEW_ape_texture :: 0
 VIEW_KIND_ape_texture :: gfx.View_Kind.Sampled
 VIEW_ACCESS_ape_texture :: gfx.Shader_Resource_Access.Read
@@ -350,20 +381,21 @@ set_view_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	if bindings == nil {
 		return
 	}
-	bindings.views[VIEW_ape_texture] = view
+	bindings.views[GROUP_0][VIEW_ape_texture] = view
 }
 ```
 
 Sampler example:
 
 ```odin
+GROUP_0 :: 0
 SMP_ape_sampler :: 0
 
 set_sampler_ape_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
 	if bindings == nil {
 		return
 	}
-	bindings.samplers[SMP_ape_sampler] = sampler
+	bindings.samplers[GROUP_0][SMP_ape_sampler] = sampler
 }
 ```
 
@@ -475,6 +507,7 @@ It fills:
 - storage image format metadata when package version is at least `6`
 - storage buffer stride metadata when package version is at least `7`
 - native binding space metadata when package version is at least `8`
+- logical binding group metadata when package version is at least `9`
 
 `gfx.create_shader` and `gfx.create_pipeline` validate that reflected metadata matches runtime descriptors and bindings.
 
@@ -496,23 +529,26 @@ Planned order:
 - [x] Settle generated binding record payload semantics before the generated binding-group contract.
 - [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
 - [x] Add a `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
-- [x] Exercise binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and a shared material-resource pass.
+- [x] Exercise binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and shared material/pass resource groups.
 - [x] Tighten `apply_binding_group` validation so generated layouts must match the currently applied pipeline's reflected logical slots, stages, names, payload metadata, and backend native slots.
 - [x] Replace the transient public apply path with `Binding_Group_Layout` and `Binding_Group` handles.
-- [ ] Next: traverse Slang layout data deeply enough to represent `ParameterBlock<>`, multiple logical groups, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
+- [x] Traverse Slang reflection JSON deeply enough to represent `ParameterBlock<>` resources, multiple logical groups, native slots, and native spaces without hand-authored binding registers.
+- [x] Generate group-aware Odin helpers and package binding records.
+- [x] Validate and apply multiple object-backed binding groups through `gfx.apply_binding_groups`.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
-- Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
-- Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.
+- [ ] Add negative shaderc coverage for unsupported `ParameterBlock<>` shapes. Ordinary data is covered; nested blocks and arrays still need focused cases.
+- [ ] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
+- [ ] Decide whether a public `Pipeline_Layout` object is needed once multiple groups are common.
 
 Open questions:
 
-- How `ParameterBlock<>` should map to logical binding groups when Slang assigns target-specific native groups or spaces.
 - Whether a `Pipeline_Layout` object should exist only when it enables reuse across multiple generated shader packages.
-- How D3D11 should emulate groups by flattening reflected group entries into stage slots while Vulkan later maps them to descriptor sets.
+- How to represent uniform data inside `ParameterBlock<>` without losing the current low-friction per-draw uniform path.
+- How to expose resource arrays or bindless-style layouts without weakening the simple generated helper path.
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: move directly into Slang group semantics. Add a focused shaderc pass that can detect and describe `ParameterBlock<>` or equivalent grouped resources from modern Slang reflection, then decide the generated Odin shape for multiple binding groups and whether that requires a `Pipeline_Layout` handle.
+Next implementation breadcrumb: harden Slang group semantics with negative shaderc tests for unsupported `ParameterBlock<>` shapes, then evaluate whether the current group-aware binding records are strong enough to design `Pipeline_Layout` without adding another compatibility layer.
 
 ## Validation
 
@@ -556,6 +592,7 @@ These generated names are intended to stay stable through v0.1:
 | `OFFSET_<UniformBlock>_<field>` | Reflected uniform field offset. |
 | `SIZE_<UniformBlock>_<field>` | Reflected uniform field size. |
 | `apply_uniform_<UniformBlock>` | Typed uniform upload helper. |
+| `GROUP_<n>` | Logical binding group index. |
 | `UB_<name>` | Logical uniform block slot. |
 | `VIEW_<name>` | Logical resource view slot. |
 | `SMP_<name>` | Logical sampler slot. |

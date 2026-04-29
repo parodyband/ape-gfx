@@ -335,49 +335,55 @@ d3d11_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	resource_views_by_stage: [3][MAX_RESOURCE_VIEWS]^d3d11.IShaderResourceView
 	resource_view_mask: u32
 	resource_view_native_masks: [3]u32
-	resource_view_logical_masks: [3]u32
-	for view, slot in bindings.views {
-		if !view_valid(view) {
-			continue
-		}
+	resource_view_logical_masks: [3][MAX_BINDING_GROUPS]u32
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
 
-		view_info, view_ok := state.views[view]
-		if !view_ok {
-			set_invalid_handle_error(ctx, "gfx.d3d11: resource view handle is unknown")
-			return false
-		}
+			view_info, view_ok := state.views[view]
+			if !view_ok {
+				set_invalid_handle_error(ctx, "gfx.d3d11: resource view handle is unknown")
+				return false
+			}
 
-		logical_mask := d3d11_slot_mask(u32(slot))
-		if pipeline_info.has_binding_metadata {
-			used := false
-			for stage in 0..<3 {
-				binding_slot := pipeline_info.view_slots[stage][slot]
-				if !binding_slot.active {
-					continue
+			logical_mask := d3d11_slot_mask(u32(slot))
+			if pipeline_info.has_binding_metadata {
+				used := false
+				for stage in 0..<3 {
+					binding_slot := pipeline_info.view_slots[stage][group][slot]
+					if !binding_slot.active {
+						continue
+					}
+
+					used = true
+					if !d3d11_validate_resource_view_binding(ctx, &view_info, binding_slot, u32(group), u32(slot), false) {
+						return false
+					}
+					if binding_slot.view_kind == .Sampled {
+						resource_views_by_stage[stage][int(binding_slot.native_slot)] = view_info.srv
+						resource_view_native_masks[stage] |= d3d11_slot_mask(binding_slot.native_slot)
+						resource_view_logical_masks[stage][group] |= logical_mask
+					}
 				}
 
-				used = true
-				if !d3d11_validate_resource_view_binding(ctx, &view_info, binding_slot, u32(slot), false) {
+				if !used {
+					set_validation_errorf(ctx, "gfx.d3d11: resource view group %d slot %d is not used by the current pipeline", group, slot)
 					return false
 				}
-				if binding_slot.view_kind == .Sampled {
-					resource_views_by_stage[stage][int(binding_slot.native_slot)] = view_info.srv
-					resource_view_native_masks[stage] |= d3d11_slot_mask(binding_slot.native_slot)
-					resource_view_logical_masks[stage] |= logical_mask
+			} else {
+				if group != 0 {
+					set_validation_errorf(ctx, "gfx.d3d11: resource view group %d requires shader binding metadata", group)
+					return false
 				}
+				if view_info.srv == nil || view_info.kind != .Sampled {
+					set_validation_error(ctx, "gfx.d3d11: shader resource binding requires a sampled view")
+					return false
+				}
+				resource_views[slot] = view_info.srv
+				resource_view_mask |= logical_mask
 			}
-
-			if !used {
-				set_validation_errorf(ctx, "gfx.d3d11: resource view slot %d is not used by the current pipeline", slot)
-				return false
-			}
-		} else {
-			if view_info.srv == nil || view_info.kind != .Sampled {
-				set_validation_error(ctx, "gfx.d3d11: shader resource binding requires a sampled view")
-				return false
-			}
-			resource_views[slot] = view_info.srv
-			resource_view_mask |= logical_mask
 		}
 	}
 	if pipeline_info.has_binding_metadata {
@@ -401,40 +407,46 @@ d3d11_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	samplers_by_stage: [3][MAX_SAMPLERS]^d3d11.ISamplerState
 	sampler_mask: u32
 	sampler_native_masks: [3]u32
-	sampler_logical_masks: [3]u32
-	for sampler, slot in bindings.samplers {
-		if !sampler_valid(sampler) {
-			continue
-		}
-
-		sampler_info, sampler_ok := state.samplers[sampler]
-		if !sampler_ok || sampler_info.sampler == nil {
-			set_invalid_handle_error(ctx, "gfx.d3d11: sampler handle is unknown")
-			return false
-		}
-
-		logical_mask := d3d11_slot_mask(u32(slot))
-		if pipeline_info.has_binding_metadata {
-			used := false
-			for stage in 0..<3 {
-				binding_slot := pipeline_info.sampler_slots[stage][slot]
-				if !binding_slot.active {
-					continue
-				}
-
-				used = true
-				samplers_by_stage[stage][int(binding_slot.native_slot)] = sampler_info.sampler
-				sampler_native_masks[stage] |= d3d11_slot_mask(binding_slot.native_slot)
-				sampler_logical_masks[stage] |= logical_mask
+	sampler_logical_masks: [3][MAX_BINDING_GROUPS]u32
+	for group_samplers, group in bindings.samplers {
+		for sampler, slot in group_samplers {
+			if !sampler_valid(sampler) {
+				continue
 			}
 
-			if !used {
-				set_validation_errorf(ctx, "gfx.d3d11: sampler slot %d is not used by the current pipeline", slot)
+			sampler_info, sampler_ok := state.samplers[sampler]
+			if !sampler_ok || sampler_info.sampler == nil {
+				set_invalid_handle_error(ctx, "gfx.d3d11: sampler handle is unknown")
 				return false
 			}
-		} else {
-			samplers[slot] = sampler_info.sampler
-			sampler_mask |= logical_mask
+
+			logical_mask := d3d11_slot_mask(u32(slot))
+			if pipeline_info.has_binding_metadata {
+				used := false
+				for stage in 0..<3 {
+					binding_slot := pipeline_info.sampler_slots[stage][group][slot]
+					if !binding_slot.active {
+						continue
+					}
+
+					used = true
+					samplers_by_stage[stage][int(binding_slot.native_slot)] = sampler_info.sampler
+					sampler_native_masks[stage] |= d3d11_slot_mask(binding_slot.native_slot)
+					sampler_logical_masks[stage][group] |= logical_mask
+				}
+
+				if !used {
+					set_validation_errorf(ctx, "gfx.d3d11: sampler group %d slot %d is not used by the current pipeline", group, slot)
+					return false
+				}
+			} else {
+				if group != 0 {
+					set_validation_errorf(ctx, "gfx.d3d11: sampler group %d requires shader binding metadata", group)
+					return false
+				}
+				samplers[slot] = sampler_info.sampler
+				sampler_mask |= logical_mask
+			}
 		}
 	}
 	if pipeline_info.has_binding_metadata {
@@ -461,8 +473,8 @@ d3d11_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		}
 	} else {
 		for stage in 0..<3 {
-			state.current_bindings[stage].views = resource_view_mask
-			state.current_bindings[stage].samplers = sampler_mask
+			state.current_bindings[stage].views[0] = resource_view_mask
+			state.current_bindings[stage].samplers[0] = sampler_mask
 		}
 	}
 
@@ -487,73 +499,79 @@ d3d11_apply_compute_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool 
 	unordered_views: [MAX_RESOURCE_VIEWS]^d3d11.IUnorderedAccessView
 	resource_view_mask: u32
 	unordered_view_mask: u32
-	resource_view_logical_mask: u32
-	for view, slot in bindings.views {
-		if !view_valid(view) {
-			continue
-		}
+	resource_view_logical_masks: [MAX_BINDING_GROUPS]u32
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
 
-		view_info, view_ok := state.views[view]
-		if !view_ok {
-			set_invalid_handle_error(ctx, "gfx.d3d11: resource view handle is unknown")
-			return false
-		}
-
-		logical_mask := d3d11_slot_mask(u32(slot))
-		if pipeline_info.has_binding_metadata {
-			binding_slot := pipeline_info.view_slots[compute_stage][slot]
-			if !binding_slot.active {
-				set_validation_errorf(ctx, "gfx.d3d11: resource view slot %d is not used by the current compute pipeline", slot)
+			view_info, view_ok := state.views[view]
+			if !view_ok {
+				set_invalid_handle_error(ctx, "gfx.d3d11: resource view handle is unknown")
 				return false
 			}
 
-			if !d3d11_validate_resource_view_binding(ctx, &view_info, binding_slot, u32(slot), true) {
-				return false
-			}
+			logical_mask := d3d11_slot_mask(u32(slot))
+			if pipeline_info.has_binding_metadata {
+				binding_slot := pipeline_info.view_slots[compute_stage][group][slot]
+				if !binding_slot.active {
+					set_validation_errorf(ctx, "gfx.d3d11: resource view group %d slot %d is not used by the current compute pipeline", group, slot)
+					return false
+				}
 
-			switch binding_slot.view_kind {
-			case .Sampled:
-				resource_views[int(binding_slot.native_slot)] = view_info.srv
-				resource_view_mask |= d3d11_slot_mask(binding_slot.native_slot)
-			case .Storage_Image:
-				unordered_views[int(binding_slot.native_slot)] = view_info.uav
-				unordered_view_mask |= d3d11_slot_mask(binding_slot.native_slot)
-			case .Storage_Buffer:
-				if binding_slot.access == .Read {
+				if !d3d11_validate_resource_view_binding(ctx, &view_info, binding_slot, u32(group), u32(slot), true) {
+					return false
+				}
+
+				switch binding_slot.view_kind {
+				case .Sampled:
 					resource_views[int(binding_slot.native_slot)] = view_info.srv
 					resource_view_mask |= d3d11_slot_mask(binding_slot.native_slot)
-				} else {
+				case .Storage_Image:
 					unordered_views[int(binding_slot.native_slot)] = view_info.uav
 					unordered_view_mask |= d3d11_slot_mask(binding_slot.native_slot)
+				case .Storage_Buffer:
+					if binding_slot.access == .Read {
+						resource_views[int(binding_slot.native_slot)] = view_info.srv
+						resource_view_mask |= d3d11_slot_mask(binding_slot.native_slot)
+					} else {
+						unordered_views[int(binding_slot.native_slot)] = view_info.uav
+						unordered_view_mask |= d3d11_slot_mask(binding_slot.native_slot)
+					}
+				case .Color_Attachment, .Depth_Stencil_Attachment:
 				}
-			case .Color_Attachment, .Depth_Stencil_Attachment:
+				resource_view_logical_masks[group] |= logical_mask
+			} else {
+				if group != 0 {
+					set_validation_errorf(ctx, "gfx.d3d11: resource view group %d requires shader binding metadata", group)
+					return false
+				}
+				switch view_info.kind {
+				case .Sampled:
+					if view_info.srv == nil {
+						set_validation_error(ctx, "gfx.d3d11: shader resource binding requires a sampled view")
+						return false
+					}
+					resource_views[slot] = view_info.srv
+					resource_view_mask |= logical_mask
+				case .Storage_Image, .Storage_Buffer:
+					if slot >= D3D11_MAX_UAV_SLOTS {
+						set_validation_errorf(ctx, "gfx.d3d11: storage resource view slot %d is out of range", slot)
+						return false
+					}
+					if view_info.uav == nil {
+						set_validation_error(ctx, "gfx.d3d11: storage resource binding requires a storage view")
+						return false
+					}
+					unordered_views[slot] = view_info.uav
+					unordered_view_mask |= logical_mask
+				case .Color_Attachment, .Depth_Stencil_Attachment:
+					set_validation_error(ctx, "gfx.d3d11: compute resource binding requires sampled or storage views")
+					return false
+				}
+				resource_view_logical_masks[0] |= logical_mask
 			}
-			resource_view_logical_mask |= logical_mask
-		} else {
-			switch view_info.kind {
-			case .Sampled:
-				if view_info.srv == nil {
-					set_validation_error(ctx, "gfx.d3d11: shader resource binding requires a sampled view")
-					return false
-				}
-				resource_views[slot] = view_info.srv
-				resource_view_mask |= logical_mask
-			case .Storage_Image, .Storage_Buffer:
-				if slot >= D3D11_MAX_UAV_SLOTS {
-					set_validation_errorf(ctx, "gfx.d3d11: storage resource view slot %d is out of range", slot)
-					return false
-				}
-				if view_info.uav == nil {
-					set_validation_error(ctx, "gfx.d3d11: storage resource binding requires a storage view")
-					return false
-				}
-				unordered_views[slot] = view_info.uav
-				unordered_view_mask |= logical_mask
-			case .Color_Attachment, .Depth_Stencil_Attachment:
-				set_validation_error(ctx, "gfx.d3d11: compute resource binding requires sampled or storage views")
-				return false
-			}
-			resource_view_logical_mask |= logical_mask
 		}
 	}
 
@@ -569,33 +587,39 @@ d3d11_apply_compute_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool 
 
 	samplers: [MAX_SAMPLERS]^d3d11.ISamplerState
 	sampler_mask: u32
-	sampler_logical_mask: u32
-	for sampler, slot in bindings.samplers {
-		if !sampler_valid(sampler) {
-			continue
-		}
+	sampler_logical_masks: [MAX_BINDING_GROUPS]u32
+	for group_samplers, group in bindings.samplers {
+		for sampler, slot in group_samplers {
+			if !sampler_valid(sampler) {
+				continue
+			}
 
-		sampler_info, sampler_ok := state.samplers[sampler]
-		if !sampler_ok || sampler_info.sampler == nil {
-			set_invalid_handle_error(ctx, "gfx.d3d11: sampler handle is unknown")
-			return false
-		}
-
-		logical_mask := d3d11_slot_mask(u32(slot))
-		if pipeline_info.has_binding_metadata {
-			binding_slot := pipeline_info.sampler_slots[compute_stage][slot]
-			if !binding_slot.active {
-				set_validation_errorf(ctx, "gfx.d3d11: sampler slot %d is not used by the current compute pipeline", slot)
+			sampler_info, sampler_ok := state.samplers[sampler]
+			if !sampler_ok || sampler_info.sampler == nil {
+				set_invalid_handle_error(ctx, "gfx.d3d11: sampler handle is unknown")
 				return false
 			}
 
-			samplers[int(binding_slot.native_slot)] = sampler_info.sampler
-			sampler_mask |= d3d11_slot_mask(binding_slot.native_slot)
-			sampler_logical_mask |= logical_mask
-		} else {
-			samplers[slot] = sampler_info.sampler
-			sampler_mask |= logical_mask
-			sampler_logical_mask |= logical_mask
+			logical_mask := d3d11_slot_mask(u32(slot))
+			if pipeline_info.has_binding_metadata {
+				binding_slot := pipeline_info.sampler_slots[compute_stage][group][slot]
+				if !binding_slot.active {
+					set_validation_errorf(ctx, "gfx.d3d11: sampler group %d slot %d is not used by the current compute pipeline", group, slot)
+					return false
+				}
+
+				samplers[int(binding_slot.native_slot)] = sampler_info.sampler
+				sampler_mask |= d3d11_slot_mask(binding_slot.native_slot)
+				sampler_logical_masks[group] |= logical_mask
+			} else {
+				if group != 0 {
+					set_validation_errorf(ctx, "gfx.d3d11: sampler group %d requires shader binding metadata", group)
+					return false
+				}
+				samplers[slot] = sampler_info.sampler
+				sampler_mask |= logical_mask
+				sampler_logical_masks[0] |= logical_mask
+			}
 		}
 	}
 
@@ -604,12 +628,12 @@ d3d11_apply_compute_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool 
 		state.immediate.CSSetSamplers(state.immediate, 0, sampler_count, &samplers[0])
 	}
 
-	state.current_bindings[compute_stage].views = resource_view_logical_mask
-	state.current_bindings[compute_stage].samplers = sampler_logical_mask
+	state.current_bindings[compute_stage].views = resource_view_logical_masks
+	state.current_bindings[compute_stage].samplers = sampler_logical_masks
 	return true
 }
 
-d3d11_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
+d3d11_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	state := d3d11_state(ctx)
 	if state == nil || state.device == nil || state.immediate == nil {
 		set_backend_error(ctx, "gfx.d3d11: backend state is not initialized")
@@ -617,7 +641,7 @@ d3d11_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
 	}
 
 	if ctx.pass_kind == .Compute {
-		return d3d11_apply_compute_uniforms(ctx, slot, data)
+		return d3d11_apply_compute_uniforms(ctx, group, slot, data)
 	}
 
 	pipeline_info, pipeline_ok := state.pipelines[state.current_pipeline]
@@ -632,15 +656,15 @@ d3d11_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
 		return false
 	}
 
-	if !d3d11_validate_uniform_upload(ctx, &pipeline_info, slot, data.size) {
+	if !d3d11_validate_uniform_upload(ctx, &pipeline_info, group, slot, data.size) {
 		return false
 	}
 
-	if !d3d11_ensure_uniform_buffer(ctx, state, slot, aligned_size) {
+	if !d3d11_ensure_uniform_buffer(ctx, state, group, slot, aligned_size) {
 		return false
 	}
 
-	buffer := state.uniform_buffers[slot]
+	buffer := state.uniform_buffers[group][slot]
 	mapped: d3d11.MAPPED_SUBRESOURCE
 	hr := state.immediate.Map(
 		state.immediate,
@@ -667,11 +691,11 @@ d3d11_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
 	buffers := [1]^d3d11.IBuffer{buffer}
 	slot_mask := d3d11_slot_mask(u32(slot))
 	if pipeline_info.has_binding_metadata {
-		vertex_slot := pipeline_info.uniform_slots[int(Shader_Stage.Vertex)][slot]
+		vertex_slot := pipeline_info.uniform_slots[int(Shader_Stage.Vertex)][group][slot]
 		if vertex_slot.active {
 			state.immediate.VSSetConstantBuffers(state.immediate, vertex_slot.native_slot, 1, &buffers[0])
 		}
-		fragment_slot := pipeline_info.uniform_slots[int(Shader_Stage.Fragment)][slot]
+		fragment_slot := pipeline_info.uniform_slots[int(Shader_Stage.Fragment)][group][slot]
 		if fragment_slot.active {
 			state.immediate.PSSetConstantBuffers(state.immediate, fragment_slot.native_slot, 1, &buffers[0])
 		}
@@ -681,19 +705,19 @@ d3d11_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
 	}
 	if pipeline_info.has_binding_metadata {
 		for stage in 0..<2 {
-			if pipeline_info.uniform_slots[stage][slot].active {
-				state.current_bindings[stage].uniforms |= slot_mask
+			if pipeline_info.uniform_slots[stage][group][slot].active {
+				state.current_bindings[stage].uniforms[group] |= slot_mask
 			}
 		}
 	} else {
 		for stage in 0..<2 {
-			state.current_bindings[stage].uniforms |= slot_mask
+			state.current_bindings[stage].uniforms[0] |= slot_mask
 		}
 	}
 	return true
 }
 
-d3d11_apply_compute_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
+d3d11_apply_compute_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	state := d3d11_state(ctx)
 	if state == nil || state.device == nil || state.immediate == nil {
 		set_backend_error(ctx, "gfx.d3d11: backend state is not initialized")
@@ -712,15 +736,15 @@ d3d11_apply_compute_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> b
 		return false
 	}
 
-	if !d3d11_validate_compute_uniform_upload(ctx, &pipeline_info, slot, data.size) {
+	if !d3d11_validate_compute_uniform_upload(ctx, &pipeline_info, group, slot, data.size) {
 		return false
 	}
 
-	if !d3d11_ensure_uniform_buffer(ctx, state, slot, aligned_size) {
+	if !d3d11_ensure_uniform_buffer(ctx, state, group, slot, aligned_size) {
 		return false
 	}
 
-	buffer := state.uniform_buffers[slot]
+	buffer := state.uniform_buffers[group][slot]
 	mapped: d3d11.MAPPED_SUBRESOURCE
 	hr := state.immediate.Map(
 		state.immediate,
@@ -748,14 +772,14 @@ d3d11_apply_compute_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> b
 	compute_stage := int(Shader_Stage.Compute)
 	slot_mask := d3d11_slot_mask(u32(slot))
 	if pipeline_info.has_binding_metadata {
-		compute_slot := pipeline_info.uniform_slots[compute_stage][slot]
+		compute_slot := pipeline_info.uniform_slots[compute_stage][group][slot]
 		if compute_slot.active {
 			state.immediate.CSSetConstantBuffers(state.immediate, compute_slot.native_slot, 1, &buffers[0])
-			state.current_bindings[compute_stage].uniforms |= slot_mask
+			state.current_bindings[compute_stage].uniforms[group] |= slot_mask
 		}
 	} else {
 		state.immediate.CSSetConstantBuffers(state.immediate, u32(slot), 1, &buffers[0])
-		state.current_bindings[compute_stage].uniforms |= slot_mask
+		state.current_bindings[compute_stage].uniforms[0] |= slot_mask
 	}
 	return true
 }
@@ -917,15 +941,15 @@ d3d11_clear_compute_resource_bindings :: proc(state: ^D3D11_State) {
 	state.immediate.CSSetUnorderedAccessViews(state.immediate, 0, D3D11_MAX_UAV_SLOTS, &null_uavs[0], nil)
 }
 
-d3d11_ensure_uniform_buffer :: proc(ctx: ^Context, state: ^D3D11_State, slot: int, size: u32) -> bool {
-	if state.uniform_buffers[slot] != nil && state.uniform_buffer_sizes[slot] >= size {
+d3d11_ensure_uniform_buffer :: proc(ctx: ^Context, state: ^D3D11_State, group: u32, slot: int, size: u32) -> bool {
+	if state.uniform_buffers[group][slot] != nil && state.uniform_buffer_sizes[group][slot] >= size {
 		return true
 	}
 
-	if state.uniform_buffers[slot] != nil {
-		state.uniform_buffers[slot].Release(state.uniform_buffers[slot])
-		state.uniform_buffers[slot] = nil
-		state.uniform_buffer_sizes[slot] = 0
+	if state.uniform_buffers[group][slot] != nil {
+		state.uniform_buffers[group][slot].Release(state.uniform_buffers[group][slot])
+		state.uniform_buffers[group][slot] = nil
+		state.uniform_buffer_sizes[group][slot] = 0
 	}
 
 	desc := d3d11.BUFFER_DESC {
@@ -937,16 +961,16 @@ d3d11_ensure_uniform_buffer :: proc(ctx: ^Context, state: ^D3D11_State, slot: in
 		StructureByteStride = 0,
 	}
 
-	hr := state.device.CreateBuffer(state.device, &desc, nil, &state.uniform_buffers[slot])
+	hr := state.device.CreateBuffer(state.device, &desc, nil, &state.uniform_buffers[group][slot])
 	if d3d11_failed(hr) {
 		set_backend_error(ctx, "gfx.d3d11: failed to create uniform buffer")
 		return false
 	}
 	label_storage: [64]u8
-	label := fmt.bprintf(label_storage[:], "uniform buffer %d", slot)
-	d3d11_set_debug_name(cast(^d3d11.IDeviceChild)state.uniform_buffers[slot], label)
+	label := fmt.bprintf(label_storage[:], "uniform buffer %d:%d", group, slot)
+	d3d11_set_debug_name(cast(^d3d11.IDeviceChild)state.uniform_buffers[group][slot], label)
 
-	state.uniform_buffer_sizes[slot] = size
+	state.uniform_buffer_sizes[group][slot] = size
 	return true
 }
 
@@ -1021,37 +1045,42 @@ d3d11_validate_draw_bindings :: proc(ctx: ^Context, state: ^D3D11_State, pipelin
 		required := pipeline_info.required[stage]
 		current := state.current_bindings[stage]
 
-		missing_uniforms := required.uniforms & ~current.uniforms
-		if missing_uniforms != 0 {
-			set_validation_errorf(
-				ctx,
-				"gfx.d3d11: missing required %s uniform slot %d",
-				d3d11_stage_name(stage),
-				d3d11_first_binding_slot(missing_uniforms),
-			)
-			return false
-		}
+		for group in 0..<MAX_BINDING_GROUPS {
+			missing_uniforms := required.uniforms[group] & ~current.uniforms[group]
+			if missing_uniforms != 0 {
+				set_validation_errorf(
+					ctx,
+					"gfx.d3d11: missing required %s uniform group %d slot %d",
+					d3d11_stage_name(stage),
+					group,
+					d3d11_first_binding_slot(missing_uniforms),
+				)
+				return false
+			}
 
-		missing_views := required.views & ~current.views
-		if missing_views != 0 {
-			set_validation_errorf(
-				ctx,
-				"gfx.d3d11: missing required %s resource view slot %d",
-				d3d11_stage_name(stage),
-				d3d11_first_binding_slot(missing_views),
-			)
-			return false
-		}
+			missing_views := required.views[group] & ~current.views[group]
+			if missing_views != 0 {
+				set_validation_errorf(
+					ctx,
+					"gfx.d3d11: missing required %s resource view group %d slot %d",
+					d3d11_stage_name(stage),
+					group,
+					d3d11_first_binding_slot(missing_views),
+				)
+				return false
+			}
 
-		missing_samplers := required.samplers & ~current.samplers
-		if missing_samplers != 0 {
-			set_validation_errorf(
-				ctx,
-				"gfx.d3d11: missing required %s sampler slot %d",
-				d3d11_stage_name(stage),
-				d3d11_first_binding_slot(missing_samplers),
-			)
-			return false
+			missing_samplers := required.samplers[group] & ~current.samplers[group]
+			if missing_samplers != 0 {
+				set_validation_errorf(
+					ctx,
+					"gfx.d3d11: missing required %s sampler group %d slot %d",
+					d3d11_stage_name(stage),
+					group,
+					d3d11_first_binding_slot(missing_samplers),
+				)
+				return false
+			}
 		}
 	}
 
@@ -1062,19 +1091,21 @@ d3d11_validate_resource_view_binding :: proc(
 	ctx: ^Context,
 	view_info: ^D3D11_View,
 	binding_slot: D3D11_Binding_Slot,
+	logical_group: u32,
 	logical_slot: u32,
 	allow_storage: bool,
 ) -> bool {
 	expected_kind := binding_slot.view_kind
 	if !d3d11_resource_view_kind_supported(expected_kind) {
-		set_unsupported_errorf(ctx, "gfx.d3d11: resource view slot %d has unsupported reflected view kind", logical_slot)
+		set_unsupported_errorf(ctx, "gfx.d3d11: resource view group %d slot %d has unsupported reflected view kind", logical_group, logical_slot)
 		return false
 	}
 
 	if view_info.kind != expected_kind {
 		set_validation_errorf(
 			ctx,
-			"gfx.d3d11: resource view slot %d expects %s view, got %s view",
+			"gfx.d3d11: resource view group %d slot %d expects %s view, got %s view",
+			logical_group,
 			logical_slot,
 			d3d11_view_kind_name(expected_kind),
 			d3d11_view_kind_name(view_info.kind),
@@ -1085,17 +1116,17 @@ d3d11_validate_resource_view_binding :: proc(
 	switch expected_kind {
 	case .Sampled:
 		if view_info.srv == nil {
-			set_validation_errorf(ctx, "gfx.d3d11: sampled resource view slot %d has no shader resource view", logical_slot)
+			set_validation_errorf(ctx, "gfx.d3d11: sampled resource view group %d slot %d has no shader resource view", logical_group, logical_slot)
 			return false
 		}
 		return true
 	case .Storage_Image, .Storage_Buffer:
 		if view_info.uav == nil {
-			set_validation_errorf(ctx, "gfx.d3d11: storage resource view slot %d has no unordered access view", logical_slot)
+			set_validation_errorf(ctx, "gfx.d3d11: storage resource view group %d slot %d has no unordered access view", logical_group, logical_slot)
 			return false
 		}
 		if !allow_storage {
-			set_unsupported_errorf(ctx, "gfx.d3d11: storage resource view slot %d is reflected but storage bindings are not implemented for graphics passes yet", logical_slot)
+			set_unsupported_errorf(ctx, "gfx.d3d11: storage resource view group %d slot %d is reflected but storage bindings are not implemented for graphics passes yet", logical_group, logical_slot)
 			return false
 		}
 		if expected_kind == .Storage_Image &&
@@ -1103,7 +1134,8 @@ d3d11_validate_resource_view_binding :: proc(
 		   view_info.format != binding_slot.storage_image_format {
 			set_validation_errorf(
 				ctx,
-				"gfx.d3d11: storage image resource view slot %d expects format %s, got %s",
+				"gfx.d3d11: storage image resource view group %d slot %d expects format %s, got %s",
+				logical_group,
 				logical_slot,
 				d3d11_pixel_format_name(binding_slot.storage_image_format),
 				d3d11_pixel_format_name(view_info.format),
@@ -1114,7 +1146,8 @@ d3d11_validate_resource_view_binding :: proc(
 			if binding_slot.storage_buffer_stride > 0 && view_info.storage_stride != binding_slot.storage_buffer_stride {
 				set_validation_errorf(
 					ctx,
-					"gfx.d3d11: storage buffer resource view slot %d expects stride %d, got %d",
+					"gfx.d3d11: storage buffer resource view group %d slot %d expects stride %d, got %d",
+					logical_group,
 					logical_slot,
 					binding_slot.storage_buffer_stride,
 					view_info.storage_stride,
@@ -1122,11 +1155,11 @@ d3d11_validate_resource_view_binding :: proc(
 				return false
 			}
 			if binding_slot.access == .Read && view_info.srv == nil {
-				set_validation_errorf(ctx, "gfx.d3d11: storage buffer resource view slot %d has no shader resource view", logical_slot)
+				set_validation_errorf(ctx, "gfx.d3d11: storage buffer resource view group %d slot %d has no shader resource view", logical_group, logical_slot)
 				return false
 			}
 			if binding_slot.access != .Read && view_info.uav == nil {
-				set_validation_errorf(ctx, "gfx.d3d11: storage buffer resource view slot %d has no unordered access view", logical_slot)
+				set_validation_errorf(ctx, "gfx.d3d11: storage buffer resource view group %d slot %d has no unordered access view", logical_group, logical_slot)
 				return false
 			}
 		}
@@ -1148,8 +1181,12 @@ d3d11_resource_view_kind_supported :: proc(kind: View_Kind) -> bool {
 	return false
 }
 
-d3d11_validate_uniform_upload :: proc(ctx: ^Context, pipeline_info: ^D3D11_Pipeline, slot: int, size: int) -> bool {
+d3d11_validate_uniform_upload :: proc(ctx: ^Context, pipeline_info: ^D3D11_Pipeline, group: u32, slot: int, size: int) -> bool {
 	if !pipeline_info.has_binding_metadata {
+		if group != 0 {
+			set_validation_errorf(ctx, "gfx.d3d11: uniform group %d requires shader binding metadata", group)
+			return false
+		}
 		return true
 	}
 
@@ -1157,47 +1194,51 @@ d3d11_validate_uniform_upload :: proc(ctx: ^Context, pipeline_info: ^D3D11_Pipel
 	used := false
 	expected_size: u32
 	for stage in 0..<2 {
-		if pipeline_info.required[stage].uniforms & slot_mask == 0 {
+		if pipeline_info.required[stage].uniforms[group] & slot_mask == 0 {
 			continue
 		}
 
 		used = true
-		reflected_size := pipeline_info.uniform_slots[stage][slot].size
+		reflected_size := pipeline_info.uniform_slots[stage][group][slot].size
 		if reflected_size == 0 {
 			continue
 		}
 		if expected_size != 0 && expected_size != reflected_size {
-			set_validation_errorf(ctx, "gfx.d3d11: uniform slot %d has conflicting reflected sizes across stages", slot)
+			set_validation_errorf(ctx, "gfx.d3d11: uniform group %d slot %d has conflicting reflected sizes across stages", group, slot)
 			return false
 		}
 		expected_size = reflected_size
 	}
 
 	if !used {
-		set_validation_errorf(ctx, "gfx.d3d11: uniform slot %d is not used by the current pipeline", slot)
+		set_validation_errorf(ctx, "gfx.d3d11: uniform group %d slot %d is not used by the current pipeline", group, slot)
 		return false
 	}
 	if expected_size != 0 && u32(size) != expected_size {
-		set_validation_errorf(ctx, "gfx.d3d11: uniform slot %d data size %d does not match reflected size %d", slot, size, expected_size)
+		set_validation_errorf(ctx, "gfx.d3d11: uniform group %d slot %d data size %d does not match reflected size %d", group, slot, size, expected_size)
 		return false
 	}
 
 	return true
 }
 
-d3d11_validate_compute_uniform_upload :: proc(ctx: ^Context, pipeline_info: ^D3D11_Compute_Pipeline, slot: int, size: int) -> bool {
+d3d11_validate_compute_uniform_upload :: proc(ctx: ^Context, pipeline_info: ^D3D11_Compute_Pipeline, group: u32, slot: int, size: int) -> bool {
 	if !pipeline_info.has_binding_metadata {
+		if group != 0 {
+			set_validation_errorf(ctx, "gfx.d3d11: uniform group %d requires shader binding metadata", group)
+			return false
+		}
 		return true
 	}
 
 	compute_stage := int(Shader_Stage.Compute)
-	binding_slot := pipeline_info.uniform_slots[compute_stage][slot]
+	binding_slot := pipeline_info.uniform_slots[compute_stage][group][slot]
 	if !binding_slot.active {
-		set_validation_errorf(ctx, "gfx.d3d11: uniform slot %d is not used by the current compute pipeline", slot)
+		set_validation_errorf(ctx, "gfx.d3d11: uniform group %d slot %d is not used by the current compute pipeline", group, slot)
 		return false
 	}
 	if binding_slot.size != 0 && u32(size) != binding_slot.size {
-		set_validation_errorf(ctx, "gfx.d3d11: uniform slot %d data size %d does not match reflected size %d", slot, size, binding_slot.size)
+		set_validation_errorf(ctx, "gfx.d3d11: uniform group %d slot %d data size %d does not match reflected size %d", group, slot, size, binding_slot.size)
 		return false
 	}
 
@@ -1213,34 +1254,39 @@ d3d11_validate_dispatch_bindings :: proc(ctx: ^Context, state: ^D3D11_State, pip
 	required := pipeline_info.required[stage]
 	current := state.current_bindings[stage]
 
-	missing_uniforms := required.uniforms & ~current.uniforms
-	if missing_uniforms != 0 {
-		set_validation_errorf(
-			ctx,
-			"gfx.d3d11: missing required compute uniform slot %d",
-			d3d11_first_binding_slot(missing_uniforms),
-		)
-		return false
-	}
+	for group in 0..<MAX_BINDING_GROUPS {
+		missing_uniforms := required.uniforms[group] & ~current.uniforms[group]
+		if missing_uniforms != 0 {
+			set_validation_errorf(
+				ctx,
+				"gfx.d3d11: missing required compute uniform group %d slot %d",
+				group,
+				d3d11_first_binding_slot(missing_uniforms),
+			)
+			return false
+		}
 
-	missing_views := required.views & ~current.views
-	if missing_views != 0 {
-		set_validation_errorf(
-			ctx,
-			"gfx.d3d11: missing required compute resource view slot %d",
-			d3d11_first_binding_slot(missing_views),
-		)
-		return false
-	}
+		missing_views := required.views[group] & ~current.views[group]
+		if missing_views != 0 {
+			set_validation_errorf(
+				ctx,
+				"gfx.d3d11: missing required compute resource view group %d slot %d",
+				group,
+				d3d11_first_binding_slot(missing_views),
+			)
+			return false
+		}
 
-	missing_samplers := required.samplers & ~current.samplers
-	if missing_samplers != 0 {
-		set_validation_errorf(
-			ctx,
-			"gfx.d3d11: missing required compute sampler slot %d",
-			d3d11_first_binding_slot(missing_samplers),
-		)
-		return false
+		missing_samplers := required.samplers[group] & ~current.samplers[group]
+		if missing_samplers != 0 {
+			set_validation_errorf(
+				ctx,
+				"gfx.d3d11: missing required compute sampler group %d slot %d",
+				group,
+				d3d11_first_binding_slot(missing_samplers),
+			)
+			return false
+		}
 	}
 
 	return true

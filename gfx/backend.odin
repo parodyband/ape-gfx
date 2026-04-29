@@ -421,14 +421,14 @@ backend_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	return false
 }
 
-backend_apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
+backend_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	switch ctx.backend {
 	case .Null:
-		return null_apply_uniforms(ctx, slot, data)
+		return null_apply_uniforms(ctx, group, slot, data)
 	case .D3D11:
-		return d3d11_apply_uniforms(ctx, slot, data)
+		return d3d11_apply_uniforms(ctx, group, slot, data)
 	case .Vulkan:
-		return vulkan_apply_uniforms(ctx, slot, data)
+		return vulkan_apply_uniforms(ctx, group, slot, data)
 	case .Auto:
 	}
 

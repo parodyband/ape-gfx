@@ -49,6 +49,7 @@ Composite statuses are comma-separated.
 | `COLOR_MASK_RGBA` | keep, needs_docs | Stable combined color-write mask. |
 | `Compute_Pipeline_Invalid` | keep | Stable invalid sentinel. |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
+| `MAX_BINDING_GROUPS` | keep | Public logical binding group limit. |
 | `MAX_BINDING_GROUP_ENTRIES` | keep | Generated binding group layout entry limit. |
 | `MAX_COLOR_ATTACHMENTS` | keep | Public fixed array limit. |
 | `MAX_IMAGE_MIPS` | keep | Public fixed array limit. |
@@ -68,6 +69,7 @@ Composite statuses are comma-separated.
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
 | `apply_binding_group` | keep, needs_test | Applies an object-backed binding group with optional geometry bindings. |
+| `apply_binding_groups` | keep, needs_test | Applies multiple object-backed binding groups with optional geometry bindings. |
 | `apply_bindings` | keep, needs_test | Core command. Expand validation tests around buffer/view/sampler slots. |
 | `apply_compute_pipeline` | keep, needs_test | Core compute command. Keep if compute is v0.1-stable. |
 | `apply_pipeline` | keep, needs_test | Core render command. |

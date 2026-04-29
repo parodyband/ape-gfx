@@ -15,8 +15,13 @@ cbuffer FrameUniforms
 	row_major float4x4 ape_mvp;
 };
 
-Texture2D<float4> ape_texture;
-SamplerState ape_sampler;
+struct Material_Params
+{
+	Texture2D<float4> ape_texture;
+	SamplerState ape_sampler;
+};
+
+ParameterBlock<Material_Params> material;
 
 [shader("vertex")]
 VS_Output vs_main(VS_Input input)
@@ -32,5 +37,5 @@ VS_Output vs_main(VS_Input input)
 [shader("fragment")]
 float4 fs_main(VS_Output input) : SV_Target
 {
-	return ape_texture.Sample(ape_sampler, input.uv);
+	return material.ape_texture.Sample(material.ape_sampler, input.uv);
 }

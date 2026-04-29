@@ -10,8 +10,13 @@ struct VS_Output
 	float2 uv : TEXCOORD0;
 };
 
-Texture2D<float4> ape_texture;
-SamplerState ape_sampler;
+struct Depth_Visualize_Params
+{
+	Texture2D<float4> ape_texture;
+	SamplerState ape_sampler;
+};
+
+ParameterBlock<Depth_Visualize_Params> depth_visualize;
 
 [shader("vertex")]
 VS_Output vs_main(VS_Input input)
@@ -25,7 +30,7 @@ VS_Output vs_main(VS_Input input)
 [shader("fragment")]
 float4 fs_main(VS_Output input) : SV_Target
 {
-	float sampled_depth = ape_texture.Sample(ape_sampler, input.uv).r;
+	float sampled_depth = depth_visualize.ape_texture.Sample(depth_visualize.ape_sampler, input.uv).r;
 	float shade = saturate((1.0 - sampled_depth) * 28.0);
 	return float4(shade, shade, shade, 1.0);
 }

@@ -220,8 +220,8 @@ main :: proc() {
 	texture_bindings: gfx.Bindings
 	texture_bindings.vertex_buffers[0] = {buffer = texture_vertex_buffer, offset = 0}
 	texture_bindings.index_buffer = {buffer = texture_index_buffer, offset = 0}
-	textured_quad_shader.set_view_ape_texture(&texture_bindings, offscreen_sample_view)
-	textured_quad_shader.set_sampler_ape_sampler(&texture_bindings, sampler)
+	textured_quad_shader.set_view_material_ape_texture(&texture_bindings, offscreen_sample_view)
+	textured_quad_shader.set_sampler_material_ape_sampler(&texture_bindings, sampler)
 
 	render_width := fb_width
 	render_height := fb_height

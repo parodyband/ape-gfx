@@ -49,6 +49,7 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 	return layout
 }
 
+GROUP_0 :: 0
 D3D11_VS_UB_FrameUniforms :: 0
 D3D11_VS_UB_FrameUniforms_SPACE :: 0
 UB_FrameUniforms :: 0
@@ -73,6 +74,7 @@ Binding_Record_Desc :: struct {
 	stage: gfx.Shader_Stage,
 	kind: gfx.Shader_Binding_Kind,
 	name: cstring,
+	group: u32,
 	logical_slot: u32,
 	native_slot: u32,
 	native_space: u32,
@@ -87,6 +89,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("FrameUniforms"),
+		group = 0,
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
@@ -99,6 +102,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("FrameUniforms"),
+		group = 0,
 		logical_slot = 0,
 		native_slot = 0,
 		native_space = 0,
@@ -109,36 +113,43 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	return records
 }
 
-binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layout_Desc {
+binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc {
 	desc: gfx.Binding_Group_Layout_Desc
 	desc.label = label
-	desc.entries[0] = {
-		active = true,
-		stages = {.Vertex},
-		kind = gfx.Shader_Binding_Kind.Uniform_Block,
-		slot = 0,
-		name = "FrameUniforms",
-		uniform_block = {
-			size = 64,
-		},
+	desc.group = group
+	if group == 0 {
+		desc.entries[0] = {
+			active = true,
+			stages = {.Vertex},
+			kind = gfx.Shader_Binding_Kind.Uniform_Block,
+			slot = 0,
+			name = "FrameUniforms",
+			uniform_block = {
+				size = 64,
+			},
+		}
 	}
-	desc.native_bindings[0] = {
-		active = true,
-		target = gfx.Backend.D3D11,
-		stage = gfx.Shader_Stage.Vertex,
-		kind = gfx.Shader_Binding_Kind.Uniform_Block,
-		slot = 0,
-		native_slot = 0,
-		native_space = 0,
+	if group == 0 {
+		desc.native_bindings[0] = {
+			active = true,
+			target = gfx.Backend.D3D11,
+			stage = gfx.Shader_Stage.Vertex,
+			kind = gfx.Shader_Binding_Kind.Uniform_Block,
+			slot = 0,
+			native_slot = 0,
+			native_space = 0,
+		}
 	}
-	desc.native_bindings[1] = {
-		active = true,
-		target = gfx.Backend.Vulkan,
-		stage = gfx.Shader_Stage.Vertex,
-		kind = gfx.Shader_Binding_Kind.Uniform_Block,
-		slot = 0,
-		native_slot = 0,
-		native_space = 0,
+	if group == 0 {
+		desc.native_bindings[1] = {
+			active = true,
+			target = gfx.Backend.Vulkan,
+			stage = gfx.Shader_Stage.Vertex,
+			kind = gfx.Shader_Binding_Kind.Uniform_Block,
+			slot = 0,
+			native_slot = 0,
+			native_space = 0,
+		}
 	}
 	return desc
 }
@@ -146,5 +157,5 @@ binding_group_layout_desc :: proc(label: string = "") -> gfx.Binding_Group_Layou
 
 apply_uniform_FrameUniforms :: proc(ctx: ^gfx.Context, value: ^$T) -> bool {
 	#assert(size_of(T) == SIZE_FrameUniforms)
-	return gfx.apply_uniform(ctx, UB_FrameUniforms, value)
+	return gfx.apply_uniform(ctx, GROUP_0, UB_FrameUniforms, value)
 }

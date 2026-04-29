@@ -112,11 +112,15 @@ apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 }
 
 // apply_uniforms uploads one reflected uniform block to the current pipeline.
-apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
+apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	if !require_any_pass(ctx, "gfx.apply_uniforms") {
 		return false
 	}
 
+	if group >= MAX_BINDING_GROUPS {
+		set_validation_error(ctx, "gfx.apply_uniforms: group is out of range")
+		return false
+	}
 	if slot < 0 || slot >= MAX_UNIFORM_BLOCKS {
 		set_validation_error(ctx, "gfx.apply_uniforms: slot is out of range")
 		return false
@@ -127,7 +131,7 @@ apply_uniforms :: proc(ctx: ^Context, slot: int, data: Range) -> bool {
 		return false
 	}
 
-	return backend_apply_uniforms(ctx, slot, data)
+	return backend_apply_uniforms(ctx, group, slot, data)
 }
 
 // draw issues a non-indexed or indexed draw depending on the active pipeline.
@@ -469,25 +473,27 @@ validate_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		}
 	}
 
-	for view, slot in bindings.views {
-		if !view_valid(view) {
-			continue
-		}
-		if !require_resource(ctx, &ctx.view_pool, u64(view), "gfx.apply_bindings", "resource view") {
-			return false
-		}
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+			if !require_resource(ctx, &ctx.view_pool, u64(view), "gfx.apply_bindings", "resource view") {
+				return false
+			}
 
-		view_state := query_view_state(ctx, view)
-		if !view_state.valid {
-			set_invalid_handle_errorf(ctx, "gfx.apply_bindings: resource view slot %d handle is invalid", slot)
-			return false
-		}
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				set_invalid_handle_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d handle is invalid", group, slot)
+				return false
+			}
 
-		switch view_state.kind {
-		case .Sampled, .Storage_Image, .Storage_Buffer:
-		case .Color_Attachment, .Depth_Stencil_Attachment:
-			set_validation_errorf(ctx, "gfx.apply_bindings: resource view slot %d requires a sampled or storage view", slot)
-			return false
+			switch view_state.kind {
+			case .Sampled, .Storage_Image, .Storage_Buffer:
+			case .Color_Attachment, .Depth_Stencil_Attachment:
+				set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d requires a sampled or storage view", group, slot)
+				return false
+			}
 		}
 	}
 
@@ -495,12 +501,14 @@ validate_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		return false
 	}
 
-	for sampler in bindings.samplers {
-		if !sampler_valid(sampler) {
-			continue
-		}
-		if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), "gfx.apply_bindings", "sampler") {
-			return false
+	for group_samplers in bindings.samplers {
+		for sampler in group_samplers {
+			if !sampler_valid(sampler) {
+				continue
+			}
+			if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), "gfx.apply_bindings", "sampler") {
+				return false
+			}
 		}
 	}
 
@@ -509,46 +517,50 @@ validate_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 
 @(private)
 validate_binding_resource_hazards :: proc(ctx: ^Context, bindings: Bindings) -> bool {
-	for view, slot in bindings.views {
-		if !view_valid(view) {
-			continue
-		}
-
-		view_state := query_view_state(ctx, view)
-		if !view_state.valid {
-			continue
-		}
-
-		if ctx.pass_kind == .Render && view_state_aliases_active_pass_attachment(ctx, view_state) {
-			set_validation_errorf(ctx, "gfx.apply_bindings: resource view slot %d aliases an active pass attachment", slot)
-			return false
-		}
-
-		current_writes := view_state_writes_resource(view_state)
-		current_reads := view_state_reads_resource(view_state)
-		for other_view, other_slot in bindings.views {
-			if other_slot >= slot || !view_valid(other_view) {
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
 				continue
 			}
 
-			other_state := query_view_state(ctx, other_view)
-			if !other_state.valid || !view_states_alias_resource(view_state, other_state) {
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
 				continue
 			}
 
-			other_writes := view_state_writes_resource(other_state)
-			other_reads := view_state_reads_resource(other_state)
-			if current_writes && other_writes {
-				set_validation_errorf(ctx, "gfx.apply_bindings: resource view slots %d and %d write the same resource", other_slot, slot)
+			if ctx.pass_kind == .Render && view_state_aliases_active_pass_attachment(ctx, view_state) {
+				set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d aliases an active pass attachment", group, slot)
 				return false
 			}
-			if current_reads && other_writes {
-				set_validation_errorf(ctx, "gfx.apply_bindings: resource view slot %d reads a resource written by slot %d", slot, other_slot)
-				return false
-			}
-			if current_writes && other_reads {
-				set_validation_errorf(ctx, "gfx.apply_bindings: resource view slot %d writes a resource read by slot %d", slot, other_slot)
-				return false
+
+			current_writes := view_state_writes_resource(view_state)
+			current_reads := view_state_reads_resource(view_state)
+			for other_group_views, other_group in bindings.views {
+				for other_view, other_slot in other_group_views {
+					if other_group > group || (other_group == group && other_slot >= slot) || !view_valid(other_view) {
+						continue
+					}
+
+					other_state := query_view_state(ctx, other_view)
+					if !other_state.valid || !view_states_alias_resource(view_state, other_state) {
+						continue
+					}
+
+					other_writes := view_state_writes_resource(other_state)
+					other_reads := view_state_reads_resource(other_state)
+					if current_writes && other_writes {
+						set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d and group %d slot %d write the same resource", other_group, other_slot, group, slot)
+						return false
+					}
+					if current_reads && other_writes {
+						set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d reads a resource written by group %d slot %d", group, slot, other_group, other_slot)
+						return false
+					}
+					if current_writes && other_reads {
+						set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d writes a resource read by group %d slot %d", group, slot, other_group, other_slot)
+						return false
+					}
+				}
 			}
 		}
 	}

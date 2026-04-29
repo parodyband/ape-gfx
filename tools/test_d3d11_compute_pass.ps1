@@ -332,45 +332,45 @@ main :: proc() {
 	}
 
 	wrong_bindings: gfx.Bindings
-	wrong_bindings.views[0] = sampled_view
+	wrong_bindings.views[0][0] = sampled_view
 	if gfx.apply_bindings(&ctx, wrong_bindings) {
 		fmt.eprintln("sampled view bound to storage slot unexpectedly succeeded")
 		os.exit(1)
 	}
-	expected := "gfx.d3d11: resource view slot 0 expects storage image view, got sampled view"
+	expected := "gfx.d3d11: resource view group 0 slot 0 expects storage image view, got sampled view"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid compute view kind failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
 	wrong_format_bindings: gfx.Bindings
-	wrong_format_bindings.views[0] = wrong_format_view
+	wrong_format_bindings.views[0][0] = wrong_format_view
 	if gfx.apply_bindings(&ctx, wrong_format_bindings) {
 		fmt.eprintln("storage image format mismatch unexpectedly succeeded")
 		os.exit(1)
 	}
-	expected = "gfx.d3d11: storage image resource view slot 0 expects format RGBA32F, got R32F"
+	expected = "gfx.d3d11: storage image resource view group 0 slot 0 expects format RGBA32F, got R32F"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid compute storage image format failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
 	wrong_stride_bindings: gfx.Bindings
-	wrong_stride_bindings.views[2] = wrong_stride_view
+	wrong_stride_bindings.views[0][2] = wrong_stride_view
 	if gfx.apply_bindings(&ctx, wrong_stride_bindings) {
 		fmt.eprintln("storage buffer stride mismatch unexpectedly succeeded")
 		os.exit(1)
 	}
-	expected = "gfx.d3d11: storage buffer resource view slot 2 expects stride 20, got 16"
+	expected = "gfx.d3d11: storage buffer resource view group 0 slot 2 expects stride 20, got 16"
 	if gfx.last_error(&ctx) != expected {
 		fmt.eprintln("invalid compute storage buffer stride failed with unexpected error: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 
 	bindings: gfx.Bindings
-	bindings.views[0] = storage_image_view
-	bindings.views[1] = storage_buffer_view
-	bindings.views[2] = structured_buffer_view
+	bindings.views[0][0] = storage_image_view
+	bindings.views[0][1] = storage_buffer_view
+	bindings.views[0][2] = structured_buffer_view
 	if !gfx.apply_bindings(&ctx, bindings) {
 		fmt.eprintln("apply_bindings failed: ", gfx.last_error(&ctx))
 		os.exit(1)

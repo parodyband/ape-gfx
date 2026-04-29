@@ -80,8 +80,14 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 		}
 
 		stage := int(binding.stage)
+		group := int(binding.group)
 		switch binding.kind {
 		case .Uniform_Block:
+			if binding.group >= MAX_BINDING_GROUPS {
+				set_validation_errorf(ctx, "gfx.d3d11: uniform binding group %d is out of range", binding.group)
+				d3d11_release_shader(&shader_info)
+				return false
+			}
 			if binding.slot >= MAX_UNIFORM_BLOCKS {
 				set_validation_errorf(ctx, "gfx.d3d11: uniform binding slot %d is out of range", binding.slot)
 				d3d11_release_shader(&shader_info)
@@ -93,20 +99,25 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				return false
 			}
 
-			existing_slot := shader_info.uniform_slots[stage][int(binding.slot)]
+			existing_slot := shader_info.uniform_slots[stage][group][int(binding.slot)]
 			existing_size := existing_slot.size
 			if existing_size != 0 && binding.size != 0 && existing_size != binding.size {
 				set_validation_errorf(ctx, "gfx.d3d11: uniform binding slot %d has conflicting reflected sizes", binding.slot)
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			shader_info.required[stage].uniforms |= d3d11_slot_mask(binding.slot)
-			shader_info.uniform_slots[stage][int(binding.slot)] = {
+			shader_info.required[stage].uniforms[group] |= d3d11_slot_mask(binding.slot)
+			shader_info.uniform_slots[stage][group][int(binding.slot)] = {
 				active = true,
 				native_slot = binding.native_slot,
 				size = binding.size,
 			}
 		case .Resource_View:
+			if binding.group >= MAX_BINDING_GROUPS {
+				set_validation_errorf(ctx, "gfx.d3d11: resource view binding group %d is out of range", binding.group)
+				d3d11_release_shader(&shader_info)
+				return false
+			}
 			if binding.slot >= MAX_RESOURCE_VIEWS {
 				set_validation_errorf(ctx, "gfx.d3d11: resource view binding slot %d is out of range", binding.slot)
 				d3d11_release_shader(&shader_info)
@@ -127,8 +138,8 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			shader_info.required[stage].views |= d3d11_slot_mask(binding.slot)
-			shader_info.view_slots[stage][int(binding.slot)] = {
+			shader_info.required[stage].views[group] |= d3d11_slot_mask(binding.slot)
+			shader_info.view_slots[stage][group][int(binding.slot)] = {
 				active = true,
 				native_slot = binding.native_slot,
 				view_kind = binding.view_kind,
@@ -137,6 +148,11 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				storage_buffer_stride = binding.storage_buffer_stride,
 			}
 		case .Sampler:
+			if binding.group >= MAX_BINDING_GROUPS {
+				set_validation_errorf(ctx, "gfx.d3d11: sampler binding group %d is out of range", binding.group)
+				d3d11_release_shader(&shader_info)
+				return false
+			}
 			if binding.slot >= MAX_SAMPLERS {
 				set_validation_errorf(ctx, "gfx.d3d11: sampler binding slot %d is out of range", binding.slot)
 				d3d11_release_shader(&shader_info)
@@ -147,8 +163,8 @@ d3d11_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				d3d11_release_shader(&shader_info)
 				return false
 			}
-			shader_info.required[stage].samplers |= d3d11_slot_mask(binding.slot)
-			shader_info.sampler_slots[stage][int(binding.slot)] = {
+			shader_info.required[stage].samplers[group] |= d3d11_slot_mask(binding.slot)
+			shader_info.sampler_slots[stage][group][int(binding.slot)] = {
 				active = true,
 				native_slot = binding.native_slot,
 			}

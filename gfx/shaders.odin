@@ -112,12 +112,13 @@ validate_shader_binding_metadata :: proc(ctx: ^Context, desc: Shader_Desc, stage
 			if other_index >= index || !other.active {
 				continue
 			}
-			if other.stage == binding.stage && other.kind == binding.kind && other.slot == binding.slot {
+			if other.stage == binding.stage && other.kind == binding.kind && other.group == binding.group && other.slot == binding.slot {
 				set_validation_errorf(
 					ctx,
-					"gfx.create_shader: duplicate %s binding metadata for %s slot %d",
+					"gfx.create_shader: duplicate %s binding metadata for %s group %d slot %d",
 					shader_binding_kind_name(binding.kind),
 					shader_stage_name(binding.stage),
+					binding.group,
 					binding.slot,
 				)
 				return false
@@ -145,6 +146,10 @@ validate_shader_binding_desc :: proc(ctx: ^Context, binding: Shader_Binding_Desc
 	}
 	if !shader_binding_kind_valid(binding.kind) {
 		set_validation_errorf(ctx, "gfx.create_shader: binding metadata index %d has an invalid kind", index)
+		return false
+	}
+	if binding.group >= MAX_BINDING_GROUPS {
+		set_validation_errorf(ctx, "gfx.create_shader: binding group %d is out of range", binding.group)
 		return false
 	}
 

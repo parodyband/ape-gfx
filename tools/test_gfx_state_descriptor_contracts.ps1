@@ -490,30 +490,13 @@ main :: proc() {
 	if gfx.apply_binding_group(&ctx, wrong_slot_group, group_base_bindings) {
 		fail("binding group layout for unused pipeline slot unexpectedly succeeded")
 	}
-	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout resource view slot 1 for fragment is not used by current pipeline")
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout resource view group 0 slot 1 for fragment is not used by current pipeline")
 
-	missing_required_layout := group_layout
-	missing_required_layout.entries[1] = {}
-	missing_required_layout.native_bindings[1] = {}
-	missing_required_layout_handle, missing_required_layout_ok := gfx.create_binding_group_layout(&ctx, missing_required_layout)
-	if !missing_required_layout_ok || !gfx.binding_group_layout_valid(missing_required_layout_handle) {
-		fmt.eprintln("missing required binding group layout creation failed: ", gfx.last_error(&ctx))
-		os.exit(1)
+	duplicate_apply_groups := [?]gfx.Binding_Group{valid_group, valid_group}
+	if gfx.apply_binding_groups(&ctx, duplicate_apply_groups[:], group_base_bindings) {
+		fail("duplicate logical binding groups unexpectedly succeeded")
 	}
-	defer gfx.destroy(&ctx, missing_required_layout_handle)
-	missing_required_group_desc := valid_group_desc
-	missing_required_group_desc.layout = missing_required_layout_handle
-	missing_required_group_desc.samplers[0] = gfx.Sampler_Invalid
-	missing_required_group, missing_required_group_ok := gfx.create_binding_group(&ctx, missing_required_group_desc)
-	if !missing_required_group_ok || !gfx.binding_group_valid(missing_required_group) {
-		fmt.eprintln("missing required binding group creation failed: ", gfx.last_error(&ctx))
-		os.exit(1)
-	}
-	defer gfx.destroy(&ctx, missing_required_group)
-	if gfx.apply_binding_group(&ctx, missing_required_group, group_base_bindings) {
-		fail("binding group layout missing current pipeline sampler unexpectedly succeeded")
-	}
-	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout is missing current pipeline fragment sampler slot 0")
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_groups: duplicate binding group 0")
 
 	missing_sampler_group := valid_group_desc
 	missing_sampler_group.samplers[0] = gfx.Sampler_Invalid
@@ -540,15 +523,15 @@ main :: proc() {
 	expect_error_info(&ctx, .Validation, "gfx.create_binding_group: resource view slot 5 is not declared by layout")
 
 	base_with_resource := group_base_bindings
-	base_with_resource.views[0] = sampled_view
+	base_with_resource.views[0][0] = sampled_view
 	if gfx.apply_binding_group(&ctx, valid_group, base_with_resource) {
 		fail("binding group with shader resources in base bindings unexpectedly succeeded")
 	}
 	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: base bindings must not contain resource views or samplers")
 
 	sparse_bindings: gfx.Bindings
-	sparse_bindings.views[2] = sampled_view
-	sparse_bindings.samplers[3] = sampler
+	sparse_bindings.views[0][2] = sampled_view
+	sparse_bindings.samplers[0][3] = sampler
 	if !gfx.apply_bindings(&ctx, sparse_bindings) {
 		fmt.eprintln("sparse resource bindings failed: ", gfx.last_error(&ctx))
 		os.exit(1)

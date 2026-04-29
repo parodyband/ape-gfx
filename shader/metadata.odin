@@ -8,7 +8,7 @@ PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
 @(private)
 PACKAGE_VERSION_MIN :: u32(1)
 @(private)
-PACKAGE_VERSION :: u32(8)
+PACKAGE_VERSION :: u32(9)
 @(private)
 PACKAGE_HEADER_SIZE_V1 :: 16
 @(private)
@@ -25,6 +25,8 @@ PACKAGE_BINDING_RECORD_SIZE_V5 :: 48
 PACKAGE_BINDING_RECORD_SIZE_V7 :: 52
 @(private)
 PACKAGE_BINDING_RECORD_SIZE_V8 :: 56
+@(private)
+PACKAGE_BINDING_RECORD_SIZE_V9 :: 60
 @(private)
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
 
@@ -82,6 +84,7 @@ Binding_Record :: struct {
 	kind: Binding_Kind,
 	slot: u32,
 	native_space: u32,
+	group: u32,
 	logical_slot: u32,
 	name_offset: u32,
 	name_size: u32,
@@ -218,6 +221,7 @@ shader_desc :: proc(pkg: ^Package, target: Backend_Target, label: string) -> (gf
 			active = true,
 			stage = stage,
 			kind = kind,
+			group = record.group,
 			slot = record.logical_slot,
 			native_slot = record.slot,
 			native_space = record.native_space,
@@ -391,6 +395,9 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 			if version >= 8 {
 				record.native_space = read_u32(bytes, offset + 52)
 			}
+			if version >= 9 {
+				record.group = read_u32(bytes, offset + 56)
+			}
 
 			if !range_valid(bytes, u64(record.name_offset), u64(record.name_size)) ||
 			   !binding_record_metadata_valid(record) {
@@ -449,6 +456,9 @@ package_header_size :: proc(version: u32) -> int {
 @(private)
 package_binding_record_size :: proc(version: u32) -> int {
 	if version >= 5 {
+		if version >= 9 {
+			return PACKAGE_BINDING_RECORD_SIZE_V9
+		}
 		if version >= 8 {
 			return PACKAGE_BINDING_RECORD_SIZE_V8
 		}
@@ -530,6 +540,10 @@ vertex_format_valid :: proc(format: gfx.Vertex_Format) -> bool {
 
 @(private)
 binding_record_metadata_valid :: proc(record: Binding_Record) -> bool {
+	if record.group >= gfx.MAX_BINDING_GROUPS {
+		return false
+	}
+
 	if record.kind != .Resource_View {
 		return true
 	}

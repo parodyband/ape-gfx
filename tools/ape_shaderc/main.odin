@@ -8,10 +8,10 @@ import "core:path/filepath"
 import "core:strings"
 
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
-PACKAGE_VERSION :: u32(8)
+PACKAGE_VERSION :: u32(9)
 PACKAGE_HEADER_SIZE :: 20
 PACKAGE_STAGE_RECORD_SIZE :: 48
-PACKAGE_BINDING_RECORD_SIZE :: 56
+PACKAGE_BINDING_RECORD_SIZE :: 60
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
 
 Target :: enum u32 {
@@ -88,6 +88,7 @@ Binding_Record :: struct {
 	kind: Binding_Kind,
 	slot: u32,
 	space: u32,
+	group: u32,
 	logical_slot: u32,
 	name: string,
 	name_offset: u32,
@@ -101,6 +102,7 @@ Binding_Record :: struct {
 
 Binding_Group_Layout_Entry :: struct {
 	kind: Binding_Kind,
+	group: u32,
 	logical_slot: u32,
 	name: string,
 	stages: [3]bool,
@@ -953,35 +955,398 @@ collect_bindings_from_reflection :: proc(
 		})
 	}
 
-	return true
-}
-
-assign_logical_binding_slots :: proc(bindings: ^[dynamic]Binding_Record) -> bool {
-	next_slots: [3]u32
-
-	for i in 0..<len(bindings^) {
-		binding := &bindings^[i]
-		if slot, found := find_existing_logical_binding(bindings^[:i], binding.kind, binding.name); found {
-			binding.logical_slot = slot
-			continue
-		}
-
-		kind_index := int(binding.kind)
-		if next_slots[kind_index] >= binding_kind_limit(binding.kind) {
-			fmt.eprintln("ape_shaderc: too many reflected ", binding_prefix(binding.kind), " bindings")
-			return false
-		}
-
-		binding.logical_slot = next_slots[kind_index]
-		next_slots[kind_index] += 1
+	if !collect_parameter_block_bindings_from_json(metadata, stage, reflection_model, bindings) {
+		return false
 	}
 
 	return true
 }
 
-find_existing_logical_binding :: proc(bindings: []Binding_Record, kind: Binding_Kind, name: string) -> (u32, bool) {
+collect_parameter_block_bindings_from_json :: proc(
+	metadata: ^ISlangMetadata,
+	stage: Stage_Desc,
+	reflection_model: Reflection_Model,
+	bindings: ^[dynamic]Binding_Record,
+) -> bool {
+	parameters_value, parameters_ok := json_field(reflection_model.root, "parameters")
+	if !parameters_ok {
+		return true
+	}
+	parameters, parameters_array_ok := json_array(parameters_value)
+	if !parameters_array_ok {
+		fmt.eprintln("ape_shaderc: Slang reflection parameters field is not an array")
+		return false
+	}
+
+	default_group_reserved := parameter_list_has_global_bindings(parameters)
+	parameter_block_index: u32
+	for parameter_value in parameters {
+		parameter, parameter_ok := json_object(parameter_value)
+		if !parameter_ok {
+			continue
+		}
+
+		type_value, type_ok := json_field(parameter, "type")
+		if !type_ok || !json_type_kind_is(type_value, "parameterBlock") {
+			continue
+		}
+
+		group_name, group_name_ok := json_string_field(parameter, "name")
+		if !group_name_ok || group_name == "" {
+			fmt.eprintln("ape_shaderc: reflected ParameterBlock is missing a name")
+			return false
+		}
+
+		group := parameter_block_index
+		if default_group_reserved {
+			group += 1
+		}
+		if group >= 8 {
+			fmt.eprintln("ape_shaderc: too many reflected ParameterBlock groups")
+			return false
+		}
+		parameter_block_index += 1
+
+		native_space := parameter_block_native_space(parameter, group)
+		fields, fields_ok := parameter_block_fields(type_value)
+		if !fields_ok {
+			fmt.eprintln("ape_shaderc: reflected ParameterBlock has no element fields: ", group_name)
+			return false
+		}
+
+		for field_value in fields {
+			if !append_parameter_block_field_binding(metadata, stage, parameter, group_name, group, native_space, field_value, bindings) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+parameter_list_has_global_bindings :: proc(parameters: json.Array) -> bool {
+	for parameter_value in parameters {
+		parameter, parameter_ok := json_object(parameter_value)
+		if !parameter_ok {
+			continue
+		}
+		type_value, type_ok := json_field(parameter, "type")
+		if type_ok && json_type_kind_is(type_value, "parameterBlock") {
+			continue
+		}
+		if _, binding_ok := json_field(parameter, "binding"); binding_ok {
+			return true
+		}
+		if _, bindings_ok := json_field(parameter, "bindings"); bindings_ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+parameter_block_native_space :: proc(parameter: json.Object, fallback_group: u32) -> u32 {
+	binding_value, binding_ok := json_field(parameter, "binding")
+	if binding_ok {
+		if binding, binding_object_ok := json_object(binding_value); binding_object_ok {
+			if kind, kind_ok := json_string_field(binding, "kind"); kind_ok && kind == "subElementRegisterSpace" {
+				if index, index_ok := json_u32_field(binding, "index"); index_ok {
+					return index
+				}
+			}
+		}
+	}
+
+	type_value, type_ok := json_field(parameter, "type")
+	if type_ok {
+		if type_object, type_object_ok := json_object(type_value); type_object_ok {
+			if container_value, container_ok := json_field(type_object, "containerVarLayout"); container_ok {
+				if container, container_object_ok := json_object(container_value); container_object_ok {
+					if container_binding_value, container_binding_ok := json_field(container, "binding"); container_binding_ok {
+						if container_binding, container_binding_object_ok := json_object(container_binding_value); container_binding_object_ok {
+							if kind, kind_ok := json_string_field(container_binding, "kind"); kind_ok && kind == "subElementRegisterSpace" {
+								if index, index_ok := json_u32_field(container_binding, "index"); index_ok {
+									return index
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return fallback_group
+}
+
+parameter_block_fields :: proc(type_value: json.Value) -> (json.Array, bool) {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return nil, false
+	}
+
+	if element_layout_value, element_layout_ok := json_field(type_object, "elementVarLayout"); element_layout_ok {
+		if element_layout, element_layout_object_ok := json_object(element_layout_value); element_layout_object_ok {
+			if element_type_value, element_type_ok := json_field(element_layout, "type"); element_type_ok {
+				if fields, fields_ok := struct_fields_from_type(element_type_value); fields_ok {
+					return fields, true
+				}
+			}
+		}
+	}
+
+	if element_type_value, element_type_ok := json_field(type_object, "elementType"); element_type_ok {
+		return struct_fields_from_type(element_type_value)
+	}
+
+	return nil, false
+}
+
+struct_fields_from_type :: proc(type_value: json.Value) -> (json.Array, bool) {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return nil, false
+	}
+	kind, kind_ok := json_string_field(type_object, "kind")
+	if !kind_ok || kind != "struct" {
+		return nil, false
+	}
+	fields_value, fields_ok := json_field(type_object, "fields")
+	if !fields_ok {
+		return nil, false
+	}
+	return json_array(fields_value)
+}
+
+append_parameter_block_field_binding :: proc(
+	metadata: ^ISlangMetadata,
+	stage: Stage_Desc,
+	parameter: json.Object,
+	group_name: string,
+	group: u32,
+	native_space: u32,
+	field_value: json.Value,
+	bindings: ^[dynamic]Binding_Record,
+) -> bool {
+	field, field_ok := json_object(field_value)
+	if !field_ok {
+		return true
+	}
+
+	field_name, field_name_ok := json_string_field(field, "name")
+	if !field_name_ok || field_name == "" {
+		fmt.eprintln("ape_shaderc: reflected ParameterBlock field is missing a name: ", group_name)
+		return false
+	}
+
+	field_type_value, field_type_ok := json_field(field, "type")
+	if !field_type_ok {
+		fmt.eprintln("ape_shaderc: reflected ParameterBlock field is missing a type: ", group_name, ".", field_name)
+		return false
+	}
+
+	binding_value, binding_ok := json_field(field, "binding")
+	if !binding_ok {
+		if parameter_block_field_requires_ordinary_data_support(field_type_value) {
+			fmt.eprintln("ape_shaderc: ParameterBlock ordinary data is not supported yet; keep uniforms in cbuffer declarations for now: ", group_name, ".", field_name)
+			return false
+		}
+		return true
+	}
+	binding, binding_object_ok := json_object(binding_value)
+	if !binding_object_ok {
+		fmt.eprintln("ape_shaderc: reflected ParameterBlock field binding is not an object: ", group_name, ".", field_name)
+		return false
+	}
+
+	binding_kind, binding_kind_ok := json_string_field(binding, "kind")
+	native_slot, native_slot_ok := json_u32_field(binding, "index")
+	if parameter_block_field_requires_ordinary_data_support(field_type_value) {
+		fmt.eprintln("ape_shaderc: ParameterBlock ordinary data is not supported yet; keep uniforms in cbuffer declarations for now: ", group_name, ".", field_name)
+		return false
+	}
+	if !binding_kind_ok || !native_slot_ok {
+		fmt.eprintln("ape_shaderc: reflected ParameterBlock field binding is incomplete: ", group_name, ".", field_name)
+		return false
+	}
+	native_slot = parameter_block_field_native_slot(parameter, binding_kind, native_slot)
+
+	kind, kind_ok := binding_kind_from_json_type(field_type_value)
+	if !kind_ok {
+		fmt.eprintln("ape_shaderc: unsupported ParameterBlock field binding type: ", group_name, ".", field_name)
+		return false
+	}
+
+	category, category_ok := json_binding_category(binding_kind, kind)
+	if !category_ok {
+		fmt.eprintln("ape_shaderc: unsupported ParameterBlock field binding kind: ", binding_kind)
+		return false
+	}
+
+	space := native_space
+	if category != .Descriptor_Table_Slot {
+		space = 0
+	}
+
+	used := false
+	result := metadata.vtable.isParameterLocationUsed(
+		metadata,
+		category,
+		SlangUInt(space),
+		SlangUInt(native_slot),
+		&used,
+	)
+	if slang_failed(result) {
+		fmt.eprintln("ape_shaderc: failed to query ParameterBlock field usage")
+		return false
+	}
+	if !used {
+		return true
+	}
+
+	full_name := fmt.aprintf("%s.%s", group_name, field_name)
+
+	binding_size: u32
+	view_kind := Resource_View_Kind.Sampled
+	access := Resource_Access.Unknown
+	storage_image_format := Storage_Image_Format.Invalid
+	storage_buffer_stride: u32
+	if kind == .Resource_View {
+		metadata_kind, metadata_access, metadata_format, metadata_stride, metadata_ok := resource_view_metadata_from_type_json(field_type_value, binding_kind)
+		if !metadata_ok {
+			delete(full_name)
+			fmt.eprintln("ape_shaderc: failed to classify reflected ParameterBlock resource view: ", group_name, ".", field_name)
+			return false
+		}
+		view_kind = metadata_kind
+		access = metadata_access
+		storage_image_format = metadata_format
+		storage_buffer_stride = metadata_stride
+	}
+
+	append(bindings, Binding_Record {
+		target = stage.target,
+		stage = stage.stage,
+		kind = kind,
+		group = group,
+		slot = native_slot,
+		space = space,
+		name = full_name,
+		size = binding_size,
+		view_kind = view_kind,
+		access = access,
+		storage_image_format = storage_image_format,
+		storage_buffer_stride = storage_buffer_stride,
+	})
+
+	return true
+}
+
+parameter_block_field_native_slot :: proc(parameter: json.Object, binding_kind: string, relative_slot: u32) -> u32 {
+	bindings_value, bindings_ok := json_field(parameter, "bindings")
+	if !bindings_ok {
+		return relative_slot
+	}
+	bindings, bindings_array_ok := json_array(bindings_value)
+	if !bindings_array_ok {
+		return relative_slot
+	}
+
+	for binding_value in bindings {
+		binding, binding_object_ok := json_object(binding_value)
+		if !binding_object_ok {
+			continue
+		}
+		kind, kind_ok := json_string_field(binding, "kind")
+		index, index_ok := json_u32_field(binding, "index")
+		if kind_ok && index_ok && kind == binding_kind {
+			return index + relative_slot
+		}
+	}
+
+	return relative_slot
+}
+
+parameter_block_field_requires_ordinary_data_support :: proc(type_value: json.Value) -> bool {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return true
+	}
+	kind, kind_ok := json_string_field(type_object, "kind")
+	if !kind_ok {
+		return true
+	}
+	switch kind {
+	case "resource", "samplerState", "shaderStorageBuffer", "structuredBuffer", "constantBuffer", "parameterBlock":
+		return false
+	}
+	return true
+}
+
+json_type_kind_is :: proc(type_value: json.Value, expected: string) -> bool {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return false
+	}
+	kind, kind_ok := json_string_field(type_object, "kind")
+	return kind_ok && kind == expected
+}
+
+json_binding_category :: proc(binding_kind: string, kind: Binding_Kind) -> (Slang_Parameter_Category, bool) {
+	switch binding_kind {
+	case "shaderResource":
+		return .Shader_Resource, true
+	case "unorderedAccess":
+		return .Unordered_Access, true
+	case "samplerState":
+		return .Sampler_State, true
+	case "descriptorTableSlot":
+		return .Descriptor_Table_Slot, true
+	}
+
+	switch kind {
+	case .Resource_View:
+		return .Shader_Resource, true
+	case .Sampler:
+		return .Sampler_State, true
+	case .Uniform_Block:
+		return .Constant_Buffer, true
+	}
+
+	return .None, false
+}
+
+assign_logical_binding_slots :: proc(bindings: ^[dynamic]Binding_Record) -> bool {
+	next_slots: [3][8]u32
+
+	for i in 0..<len(bindings^) {
+		binding := &bindings^[i]
+		if slot, found := find_existing_logical_binding(bindings^[:i], binding.kind, binding.group, binding.name); found {
+			binding.logical_slot = slot
+			continue
+		}
+
+		kind_index := int(binding.kind)
+		group_index := int(binding.group)
+		if group_index < 0 || group_index >= 8 {
+			fmt.eprintln("ape_shaderc: reflected binding group is out of range: ", binding.group)
+			return false
+		}
+		if next_slots[kind_index][group_index] >= binding_kind_limit(binding.kind) {
+			fmt.eprintln("ape_shaderc: too many reflected ", binding_prefix(binding.kind), " bindings")
+			return false
+		}
+
+		binding.logical_slot = next_slots[kind_index][group_index]
+		next_slots[kind_index][group_index] += 1
+	}
+
+	return true
+}
+
+find_existing_logical_binding :: proc(bindings: []Binding_Record, kind: Binding_Kind, group: u32, name: string) -> (u32, bool) {
 	for binding in bindings {
-		if binding.kind == kind && binding.name == name {
+		if binding.kind == kind && binding.group == group && binding.name == name {
 			return binding.logical_slot, true
 		}
 	}
@@ -2255,6 +2620,8 @@ write_generated_bindings :: proc(
 	defer delete(emitted_native)
 	emitted_logical := make(map[string]bool)
 	defer delete(emitted_logical)
+	emitted_groups := make(map[u32]bool)
+	defer delete(emitted_groups)
 	emitted_resource_metadata := make(map[string]bool)
 	defer delete(emitted_resource_metadata)
 
@@ -2263,6 +2630,10 @@ write_generated_bindings :: proc(
 		target_prefix := target_prefix(binding.target)
 		stage_prefix := stage_prefix(binding.stage)
 		name := odin_identifier(binding.name)
+		if !(binding.group in emitted_groups) {
+			append_string(&out, fmt.tprintf("GROUP_%d :: %d\n", binding.group, binding.group))
+			emitted_groups[binding.group] = true
+		}
 		native_constant_name := fmt.tprintf("%s_%s_%s_%s", target_prefix, stage_prefix, prefix, name)
 		native_key := fmt.tprintf("%s:%d:%d", native_constant_name, binding.slot, binding.space)
 		if !(native_key in emitted_native) {
@@ -2272,7 +2643,7 @@ write_generated_bindings :: proc(
 		}
 
 		logical_constant_name := fmt.tprintf("%s_%s", prefix, name)
-		logical_key := fmt.tprintf("%s:%d", logical_constant_name, binding.logical_slot)
+		logical_key := fmt.tprintf("%s:%d:%d", logical_constant_name, binding.group, binding.logical_slot)
 		if !(logical_key in emitted_logical) {
 			append_string(&out, fmt.tprintf("%s :: %d\n", logical_constant_name, binding.logical_slot))
 			emitted_logical[logical_key] = true
@@ -2373,6 +2744,7 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 	append_string(out, "\tstage: gfx.Shader_Stage,\n")
 	append_string(out, "\tkind: gfx.Shader_Binding_Kind,\n")
 	append_string(out, "\tname: cstring,\n")
+	append_string(out, "\tgroup: u32,\n")
 	append_string(out, "\tlogical_slot: u32,\n")
 	append_string(out, "\tnative_slot: u32,\n")
 	append_string(out, "\tnative_space: u32,\n")
@@ -2389,6 +2761,7 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 		append_string(out, fmt.tprintf("\t\tstage = gfx.Shader_Stage.%s,\n", stage_odin(binding.stage)))
 		append_string(out, fmt.tprintf("\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(binding.kind)))
 		append_string(out, fmt.tprintf("\t\tname = cstring(\"%s\"),\n", binding.name))
+		append_string(out, fmt.tprintf("\t\tgroup = %d,\n", binding.group))
 		append_string(out, fmt.tprintf("\t\tlogical_slot = %d,\n", binding.logical_slot))
 		append_string(out, fmt.tprintf("\t\tnative_slot = %d,\n", binding.slot))
 		append_string(out, fmt.tprintf("\t\tnative_space = %d,\n", binding.space))
@@ -2422,49 +2795,62 @@ append_binding_group_layout_odin :: proc(out: ^[dynamic]byte, bindings: []Bindin
 		return false
 	}
 
-	append_string(out, "binding_group_layout_desc :: proc(label: string = \"\") -> gfx.Binding_Group_Layout_Desc {\n")
+	append_string(out, "binding_group_layout_desc :: proc(group: u32 = 0, label: string = \"\") -> gfx.Binding_Group_Layout_Desc {\n")
 	append_string(out, "\tdesc: gfx.Binding_Group_Layout_Desc\n")
 	append_string(out, "\tdesc.label = label\n")
+	append_string(out, "\tdesc.group = group\n")
 
-	for entry, index in entries {
-		append_string(out, fmt.tprintf("\tdesc.entries[%d] = ", index))
+	entry_indices: [8]int
+	for entry in entries {
+		entry_index := entry_indices[int(entry.group)]
+		entry_indices[int(entry.group)] += 1
+		append_string(out, fmt.tprintf("\tif group == %d ", entry.group))
 		append_string(out, "{\n")
-		append_string(out, "\t\tactive = true,\n")
-		append_string(out, "\t\tstages = ")
+		append_string(out, fmt.tprintf("\t\tdesc.entries[%d] = ", entry_index))
+		append_string(out, "{\n")
+		append_string(out, "\t\t\tactive = true,\n")
+		append_string(out, "\t\t\tstages = ")
 		append_stage_set_odin(out, entry.stages)
 		append_string(out, ",\n")
-		append_string(out, fmt.tprintf("\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(entry.kind)))
-		append_string(out, fmt.tprintf("\t\tslot = %d,\n", entry.logical_slot))
-		append_string(out, fmt.tprintf("\t\tname = \"%s\",\n", entry.name))
+		append_string(out, fmt.tprintf("\t\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(entry.kind)))
+		append_string(out, fmt.tprintf("\t\t\tslot = %d,\n", entry.logical_slot))
+		append_string(out, fmt.tprintf("\t\t\tname = \"%s\",\n", entry.name))
 
 		switch entry.kind {
 		case .Uniform_Block:
-			append_string(out, "\t\tuniform_block = {\n")
-			append_string(out, fmt.tprintf("\t\t\tsize = %d,\n", entry.size))
-			append_string(out, "\t\t},\n")
+			append_string(out, "\t\t\tuniform_block = {\n")
+			append_string(out, fmt.tprintf("\t\t\t\tsize = %d,\n", entry.size))
+			append_string(out, "\t\t\t},\n")
 		case .Resource_View:
-			append_string(out, "\t\tresource_view = {\n")
-			append_string(out, fmt.tprintf("\t\t\tview_kind = gfx.View_Kind.%s,\n", resource_view_kind_odin(entry.view_kind)))
-			append_string(out, fmt.tprintf("\t\t\taccess = gfx.Shader_Resource_Access.%s,\n", resource_access_odin(entry.access)))
-			append_string(out, fmt.tprintf("\t\t\tstorage_image_format = gfx.Pixel_Format.%s,\n", storage_image_format_odin(entry.storage_image_format)))
-			append_string(out, fmt.tprintf("\t\t\tstorage_buffer_stride = %d,\n", entry.storage_buffer_stride))
-			append_string(out, "\t\t},\n")
+			append_string(out, "\t\t\tresource_view = {\n")
+			append_string(out, fmt.tprintf("\t\t\t\tview_kind = gfx.View_Kind.%s,\n", resource_view_kind_odin(entry.view_kind)))
+			append_string(out, fmt.tprintf("\t\t\t\taccess = gfx.Shader_Resource_Access.%s,\n", resource_access_odin(entry.access)))
+			append_string(out, fmt.tprintf("\t\t\t\tstorage_image_format = gfx.Pixel_Format.%s,\n", storage_image_format_odin(entry.storage_image_format)))
+			append_string(out, fmt.tprintf("\t\t\t\tstorage_buffer_stride = %d,\n", entry.storage_buffer_stride))
+			append_string(out, "\t\t\t},\n")
 		case .Sampler:
 		}
 
+		append_string(out, "\t\t}\n")
 		append_string(out, "\t}\n")
 	}
 
-	for binding, index in bindings {
-		append_string(out, fmt.tprintf("\tdesc.native_bindings[%d] = ", index))
+	native_indices: [8]int
+	for binding in bindings {
+		native_index := native_indices[int(binding.group)]
+		native_indices[int(binding.group)] += 1
+		append_string(out, fmt.tprintf("\tif group == %d ", binding.group))
 		append_string(out, "{\n")
-		append_string(out, "\t\tactive = true,\n")
-		append_string(out, fmt.tprintf("\t\ttarget = gfx.Backend.%s,\n", backend_odin(binding.target)))
-		append_string(out, fmt.tprintf("\t\tstage = gfx.Shader_Stage.%s,\n", stage_odin(binding.stage)))
-		append_string(out, fmt.tprintf("\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(binding.kind)))
-		append_string(out, fmt.tprintf("\t\tslot = %d,\n", binding.logical_slot))
-		append_string(out, fmt.tprintf("\t\tnative_slot = %d,\n", binding.slot))
-		append_string(out, fmt.tprintf("\t\tnative_space = %d,\n", binding.space))
+		append_string(out, fmt.tprintf("\t\tdesc.native_bindings[%d] = ", native_index))
+		append_string(out, "{\n")
+		append_string(out, "\t\t\tactive = true,\n")
+		append_string(out, fmt.tprintf("\t\t\ttarget = gfx.Backend.%s,\n", backend_odin(binding.target)))
+		append_string(out, fmt.tprintf("\t\t\tstage = gfx.Shader_Stage.%s,\n", stage_odin(binding.stage)))
+		append_string(out, fmt.tprintf("\t\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(binding.kind)))
+		append_string(out, fmt.tprintf("\t\t\tslot = %d,\n", binding.logical_slot))
+		append_string(out, fmt.tprintf("\t\t\tnative_slot = %d,\n", binding.slot))
+		append_string(out, fmt.tprintf("\t\t\tnative_space = %d,\n", binding.space))
+		append_string(out, "\t\t}\n")
 		append_string(out, "\t}\n")
 	}
 
@@ -2480,6 +2866,7 @@ collect_binding_group_layout_entries :: proc(entries: ^[dynamic]Binding_Group_La
 		if !entry_found {
 			entry := Binding_Group_Layout_Entry {
 				kind = binding.kind,
+				group = binding.group,
 				logical_slot = binding.logical_slot,
 				name = binding.name,
 				size = binding.size,
@@ -2507,6 +2894,7 @@ collect_binding_group_layout_entries :: proc(entries: ^[dynamic]Binding_Group_La
 binding_group_layout_entry_index :: proc(entries: []Binding_Group_Layout_Entry, binding: Binding_Record) -> (int, bool) {
 	for entry, index in entries {
 		if entry.kind == binding.kind &&
+		   entry.group == binding.group &&
 		   entry.logical_slot == binding.logical_slot &&
 		   entry.name == binding.name {
 			return index, true
@@ -2517,7 +2905,7 @@ binding_group_layout_entry_index :: proc(entries: []Binding_Group_Layout_Entry, 
 }
 
 binding_group_layout_entry_payload_matches :: proc(entry: Binding_Group_Layout_Entry, binding: Binding_Record) -> bool {
-	if entry.kind != binding.kind || entry.logical_slot != binding.logical_slot || entry.name != binding.name {
+	if entry.kind != binding.kind || entry.group != binding.group || entry.logical_slot != binding.logical_slot || entry.name != binding.name {
 		return false
 	}
 
@@ -2561,7 +2949,7 @@ append_binding_helpers_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Rec
 	for binding in bindings {
 		prefix := binding_prefix(binding.kind)
 		name := odin_identifier(binding.name)
-		key := fmt.tprintf("%s:%s", prefix, name)
+		key := fmt.tprintf("%s:%d:%s", prefix, binding.group, name)
 		if key in emitted {
 			continue
 		}
@@ -2579,13 +2967,13 @@ append_binding_helpers_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Rec
 			append_string(out, fmt.tprintf("apply_uniform_%s :: proc(ctx: ^gfx.Context, value: ^$T) -> bool ", block_name))
 			append_string(out, "{\n")
 			append_string(out, fmt.tprintf("\t#assert(size_of(T) == SIZE_%s)\n", block_name))
-			append_string(out, fmt.tprintf("\treturn gfx.apply_uniform(ctx, UB_%s, value)\n", name))
+			append_string(out, fmt.tprintf("\treturn gfx.apply_uniform(ctx, GROUP_%d, UB_%s, value)\n", binding.group, name))
 			append_string(out, "}\n\n")
 		case .Resource_View:
 			append_string(out, fmt.tprintf("set_view_%s :: proc(bindings: ^gfx.Bindings, view: gfx.View) ", name))
 			append_string(out, "{\n")
 			append_string(out, "\tif bindings == nil {\n\t\treturn\n\t}\n")
-			append_string(out, fmt.tprintf("\tbindings.views[VIEW_%s] = view\n", name))
+			append_string(out, fmt.tprintf("\tbindings.views[GROUP_%d][VIEW_%s] = view\n", binding.group, name))
 			append_string(out, "}\n\n")
 			append_string(out, fmt.tprintf("set_group_view_%s :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) ", name))
 			append_string(out, "{\n")
@@ -2596,7 +2984,7 @@ append_binding_helpers_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Rec
 			append_string(out, fmt.tprintf("set_sampler_%s :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) ", name))
 			append_string(out, "{\n")
 			append_string(out, "\tif bindings == nil {\n\t\treturn\n\t}\n")
-			append_string(out, fmt.tprintf("\tbindings.samplers[SMP_%s] = sampler\n", name))
+			append_string(out, fmt.tprintf("\tbindings.samplers[GROUP_%d][SMP_%s] = sampler\n", binding.group, name))
 			append_string(out, "}\n\n")
 			append_string(out, fmt.tprintf("set_group_sampler_%s :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) ", name))
 			append_string(out, "{\n")
@@ -2794,6 +3182,7 @@ write_package :: proc(
 		write_u32(&output, u32(record.storage_image_format))
 		write_u32(&output, record.storage_buffer_stride)
 		write_u32(&output, record.space)
+		write_u32(&output, record.group)
 	}
 
 	for attr, index in vertex_layout.attrs {

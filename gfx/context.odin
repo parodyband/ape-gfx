@@ -148,6 +148,7 @@ api_limits :: proc() -> Limits {
 		max_resource_views = MAX_RESOURCE_VIEWS,
 		max_samplers = MAX_SAMPLERS,
 		max_uniform_blocks = MAX_UNIFORM_BLOCKS,
+		max_binding_groups = MAX_BINDING_GROUPS,
 		max_shader_bindings = MAX_SHADER_BINDINGS,
 		max_image_mips = MAX_IMAGE_MIPS,
 	}
