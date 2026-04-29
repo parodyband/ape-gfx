@@ -89,6 +89,7 @@ Composite statuses are comma-separated.
 | `apply_uniform_at` | keep, needs_test | Offset-aware uniform binding (APE-21) that binds a `Transient_Slice` as a constant buffer at a slot. |
 | `apply_uniform_at_typed` | keep, needs_docs | Ergonomic typed wrapper over `apply_uniform_at`. |
 | `apply_uniforms` | keep, needs_test | Core uniform upload. |
+| `barrier` | keep, needs_test | APE-16 immediate-mode barrier verb. D3D11 no-ops; in debug builds runs the per-frame last-known-usage tracker to flag wrong-barrier and missing-barrier scenarios. |
 | `barrier_buffer_target` | defer | APE-15 helper that builds a whole-buffer `Barrier_Target`. |
 | `barrier_image_target` | defer | APE-15 helper that builds an image `Barrier_Target` with optional `Subresource_Range`. |
 | `backend_name` | keep | Small diagnostic helper. |

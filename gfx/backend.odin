@@ -559,6 +559,20 @@ backend_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr,
 	return nil, false
 }
 
+backend_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_barrier(ctx, desc)
+	case .D3D11:
+		return d3d11_barrier(ctx, desc)
+	case .Vulkan:
+		return vulkan_barrier(ctx, desc)
+	case .Auto:
+	}
+
+	return false
+}
+
 backend_commit :: proc(ctx: ^Context) -> bool {
 	switch ctx.backend {
 	case .Null:

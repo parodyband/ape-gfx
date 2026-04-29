@@ -29,10 +29,15 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 		return false
 	}
 
+	if !barrier_tracker_check_pass_attachments(ctx, resolved, "gfx.begin_pass") {
+		return false
+	}
+
 	if !backend_begin_pass(ctx, resolved) {
 		return false
 	}
 
+	barrier_tracker_record_pass_attachments(ctx, resolved)
 	capture_pass_attachments(ctx, resolved)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
@@ -143,10 +148,15 @@ apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		return false
 	}
 
+	if !barrier_tracker_check_bindings(ctx, bindings, "gfx.apply_bindings") {
+		return false
+	}
+
 	if !backend_apply_bindings(ctx, bindings) {
 		return false
 	}
 
+	barrier_tracker_record_bindings(ctx, bindings)
 	ctx.current_bindings = bindings
 	return true
 }
@@ -354,6 +364,7 @@ commit :: proc(ctx: ^Context) -> bool {
 		return false
 	}
 
+	barrier_tracker_clear(ctx)
 	ctx.frame_index += 1
 	return true
 }

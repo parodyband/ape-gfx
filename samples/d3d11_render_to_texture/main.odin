@@ -277,6 +277,17 @@ main :: proc() {
 			return
 		}
 
+		// APE-16: barrier the offscreen color image from Color_Target to
+		// Sampled before the resolve pass binds it as a sampled view. D3D11
+		// no-ops the call; Vulkan/D3D12 will require this exact transition.
+		offscreen_to_sampled := [?]gfx.Image_Transition {
+			{image = offscreen_image, from = .Color_Target, to = .Sampled},
+		}
+		if !gfx.barrier(&ctx, {image_transitions = offscreen_to_sampled[:]}) {
+			fmt.eprintln("offscreen->sampled barrier failed: ", gfx.last_error(&ctx))
+			return
+		}
+
 		if !gfx.begin_pass(&ctx, {
 			label = "main resolve pass",
 			action = {colors = {0 = {clear_value = {r = 0.015, g = 0.018, b = 0.024, a = 1}}}},

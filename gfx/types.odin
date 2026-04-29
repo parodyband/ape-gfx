@@ -1010,6 +1010,16 @@ Context :: struct {
 	compute_pass_resource_write_count: int,
 	pass_color_attachments: [MAX_COLOR_ATTACHMENTS]View,
 	pass_depth_stencil_attachment: View,
+	// Per-frame barrier tracker (APE-16). Populated only when desc.debug == true.
+	// Records the most recent declared usage of each resource within the current
+	// frame so cmd_barrier / barrier / apply_bindings / begin_pass can flag a
+	// declared `from` that does not match prior state (wrong barrier) or a
+	// binding that demands a transition the user did not write (missing
+	// barrier). Cleared at every frame boundary by `commit`. This is the
+	// "transient per-list state log" §9.5 of gfx-barriers-note.md permits — it
+	// never drives backend state, only validation.
+	image_last_usage: map[Image]Resource_Usage,
+	buffer_last_usage: map[Buffer]Resource_Usage,
 	backend_data: rawptr,
 	last_error: string,
 	last_error_code: Error_Code,

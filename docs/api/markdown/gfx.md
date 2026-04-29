@@ -18,6 +18,12 @@ Binding_Group_Invalid :: Binding_Group(0)
 Binding_Group_Layout_Invalid :: Binding_Group_Layout(0)
 ```
 
+### `Binding_Heap_Invalid`
+
+```odin
+Binding_Heap_Invalid :: Binding_Heap(0)
+```
+
 ### `Buffer_Invalid`
 
 ```odin
@@ -80,11 +86,32 @@ Image_Invalid :: Image(0)
 MAX_BINDING_GROUPS :: 8
 ```
 
+### `MAX_BINDING_GROUP_ARRAYS`
+
+```odin
+MAX_BINDING_GROUP_ARRAYS :: 8
+```
+
+MAX_BINDING_GROUP_ARRAYS bounds the number of distinct fixed-array slots
+in one `Binding_Group_Desc`. The number must be small because every entry
+holds a slice header and is part of the immutable group payload.
+
 ### `MAX_BINDING_GROUP_ENTRIES`
 
 ```odin
 MAX_BINDING_GROUP_ENTRIES :: MAX_SHADER_BINDINGS
 ```
+
+### `MAX_BINDING_HEAPS`
+
+```odin
+MAX_BINDING_HEAPS :: MAX_BINDING_GROUPS
+```
+
+MAX_BINDING_HEAPS bounds the number of `Binding_Heap` handles a pipeline
+layout may bind in one draw / dispatch.
+One heap per logical pipeline-layout slot; `MAX_BINDING_GROUPS` is the
+matching upper bound for groups, so heap and group budgets compose.
 
 ### `MAX_COLOR_ATTACHMENTS`
 
@@ -288,6 +315,22 @@ apply_binding_groups :: proc(ctx: ^Context, groups: []Binding_Group, base_bindin
 
 apply_binding_groups validates all object-backed binding groups against the active pipeline and applies them with optional geometry bindings.
 
+### `apply_binding_heap`
+
+```odin
+apply_binding_heap :: proc(ctx: ^Context, group: u32, heap: Binding_Heap) -> bool {...}
+```
+
+apply_binding_heap binds a `Binding_Heap` at one logical pipeline-layout
+slot, parallel to `apply_binding_group`.
+`group` is the logical group index the pipeline layout reserved for the
+heap (the layout slot's `kind == .Heap`). Mixing `apply_binding_group`
+and `apply_binding_heap` for the same logical slot in one draw is a
+validation error.
+Per the indexing model in §6, the *shader* declaration decides whether
+reads use a constant, dynamic-uniform, or fully-dynamic index into the
+heap. The runtime does not pick.
+
 ### `apply_bindings`
 
 ```odin
@@ -374,6 +417,36 @@ backend_name :: proc(backend: Backend) -> string {...}
 
 backend_name returns a stable lowercase display name for a Backend.
 
+### `barrier`
+
+```odin
+barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {...}
+```
+
+barrier records one set of explicit transitions on a Context.
+The immediate-mode counterpart of `cmd_barrier`. Recorded outside any pass
+(calling between `begin_pass` / `end_pass` is a validation error). The
+runtime emits one backend barrier record on Vulkan / D3D12 covering all
+transitions in `desc`; D3D11 routes through the APE-16 validation policy
+and otherwise no-ops.
+Validation (APE-16):
+  - Always: handles valid, kind/handle agreement, ranges in bounds for the
+    resource, `from`/`to` in the `Resource_Usage` enum.
+  - Debug builds (`Desc.debug == true`): checks each transition's `from`
+    against the per-frame last-known declared usage of the resource. A
+    mismatch is reported as a wrong-barrier validation error. Successful
+    transitions update the tracker; the tracker is flushed at every
+    `commit`.
+On D3D11 the actual D3D11 call is a no-op; the validator is the entire
+observable behavior. The schema is the explicit one — D3D11 just has
+nothing to do with it (gfx-barriers-note.md §9.6).
+example:
+  gfx.barrier(&ctx, gfx.Barrier_Desc{
+      image_transitions = []gfx.Image_Transition{
+          {image = offscreen_color, from = .Color_Target, to = .Sampled},
+      },
+  })
+
 ### `barrier_buffer_target`
 
 ```odin
@@ -438,6 +511,15 @@ binding_group_valid :: proc(group: Binding_Group) -> bool {...}
 
 binding_group_valid reports whether a Binding_Group handle is nonzero.
 
+### `binding_heap_capacity`
+
+```odin
+binding_heap_capacity :: proc(ctx: ^Context, heap: Binding_Heap) -> u32 {...}
+```
+
+binding_heap_capacity reports the slot count a heap was created with.
+Returns 0 for an invalid handle.
+
 ### `buffer_valid`
 
 ```odin
@@ -445,6 +527,17 @@ buffer_valid :: proc(buffer: Buffer) -> bool {...}
 ```
 
 buffer_valid reports whether a Buffer handle is nonzero.
+
+### `cmd_apply_binding_heap`
+
+```odin
+cmd_apply_binding_heap :: proc(encoder: ^Render_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {...}
+```
+
+cmd_apply_binding_heap is the encoder-side counterpart to
+`apply_binding_heap`, recorded into a `Command_List`.
+Lands when `Command_List` recording lands; today this is the same kind
+of forward-declared sketch as the rest of `command_list.odin`.
 
 ### `cmd_apply_bindings`
 
@@ -454,6 +547,15 @@ cmd_apply_bindings :: proc(encoder: ^Render_Pass_Encoder, bindings: Bindings) ->
 
 cmd_apply_bindings binds vertex/index buffers, resource views, and samplers
 on a render pass encoder.
+
+### `cmd_apply_compute_binding_heap`
+
+```odin
+cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {...}
+```
+
+cmd_apply_compute_binding_heap mirrors `cmd_apply_binding_heap` for
+compute encoders.
 
 ### `cmd_apply_compute_bindings`
 
@@ -621,6 +723,36 @@ create_binding_group_layout :: proc(ctx: ^Context, desc: Binding_Group_Layout_De
 ```
 
 create_binding_group_layout creates an immutable generated binding group layout handle.
+
+### `create_binding_heap`
+
+```odin
+create_binding_heap :: proc(ctx: ^Context, desc: Binding_Heap_Desc) -> (: Binding_Heap, : bool) {...}
+```
+
+create_binding_heap allocates a long-lived descriptor heap.
+Must be called on the Context thread. Returns `Binding_Heap_Invalid` and
+`false` on validation/backend failure; check `last_error(ctx)`.
+Backends:
+  D3D11   — permanently rejected with `Features.bindless_resource_tables
+            = false` (item 29 / APE-25). The error code is
+            `Error_Code.Unsupported`; the message names D3D11 explicitly
+            so the rejection is not confused with the implementation-
+            pending Unsupported on other backends. See §9 of the
+            bindless note.
+  D3D12   — allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
+            matching `D3D12_DESCRIPTOR_HEAP_TYPE`.
+  Vulkan  — allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
+            with `UPDATE_AFTER_BIND` / `PARTIALLY_BOUND` /
+            `runtimeDescriptorArray` flags from
+            `VK_EXT_descriptor_indexing`.
+example:
+  heap, ok := gfx.create_binding_heap(&ctx, gfx.Binding_Heap_Desc{
+      label     = "particle textures",
+      capacity  = 4096,
+      view_kind = .Sampled,
+      access    = .Read,
+  })
 
 ### `create_buffer`
 
@@ -799,6 +931,16 @@ destroy_binding_group_layout :: proc(ctx: ^Context, layout: Binding_Group_Layout
 ```
 
 destroy_binding_group_layout releases a live binding group layout handle.
+
+### `destroy_binding_heap`
+
+```odin
+destroy_binding_heap :: proc(ctx: ^Context, heap: Binding_Heap) {...}
+```
+
+destroy_binding_heap releases a `Binding_Heap`'s backing storage.
+All in-flight submits that bound or read the heap must have completed;
+the call does not block on its own slots. The typical caller is shutdown.
 
 ### `destroy_buffer`
 
@@ -1135,6 +1277,24 @@ read_buffer :: proc(ctx: ^Context, desc: Buffer_Read_Desc) -> bool {...}
 
 read_buffer synchronously copies GPU buffer data into CPU memory.
 
+### `release_binding_heap_slot`
+
+```odin
+release_binding_heap_slot :: proc(ctx: ^Context, heap: Binding_Heap, index: u32, frame_done: Semaphore_Wait) -> bool {...}
+```
+
+release_binding_heap_slot records that slot `index` will not be safe to
+overwrite until `frame_done` has been reached.
+The heap remembers the wait. The next `update_binding_heap_views` /
+`update_binding_heap_samplers` for that slot is rejected as a validation
+error until `gfx.timeline_semaphore_value(frame_done.semaphore) >=
+frame_done.value`. Callers that already serialize frame pacing on the
+CPU side may pass `{Timeline_Semaphore_Invalid, 0}` to release without
+a fence (§7.2 of the bindless note).
+Releasing a slot does not zero or null its descriptor; readers that race
+the release see the old contents. The fence guarantees no submit reads
+the descriptor after release completes.
+
 ### `render_target_pass_desc`
 
 ```odin
@@ -1305,6 +1465,40 @@ transient_allocator_used reports how many bytes have been handed out
 since the last `reset_transient_allocator`, summed across roles.
 Includes alignment padding. Returns 0 for an invalid handle.
 
+### `update_binding_heap_samplers`
+
+```odin
+update_binding_heap_samplers :: proc(ctx: ^Context, heap: Binding_Heap, first_index: u32, samplers: []Sampler) -> bool {...}
+```
+
+update_binding_heap_samplers writes a contiguous range of sampler
+descriptors into a sampler heap. Mirrors `update_binding_heap_views`.
+
+### `update_binding_heap_views`
+
+```odin
+update_binding_heap_views :: proc(ctx: ^Context, heap: Binding_Heap, first_index: u32, views: []View) -> bool {...}
+```
+
+update_binding_heap_views writes a contiguous range of resource-view
+descriptors into a heap.
+The write is **visible to every submit issued after this call returns**
+(§7.1 of the bindless note). It is *not* visible to in-flight submits;
+a slot already read by an unfinished submit must be released first.
+Validation:
+  - `heap` is a resource-view heap (not a sampler heap).
+  - `len(views)` slots fit at `[first_index, first_index + len(views))`.
+  - every `view` in `views` is valid and matches the heap's
+    `view_kind` / `access` / `storage_image_format` /
+    `storage_buffer_stride`.
+  - no slot in the range has a pending fence recorded by
+    `release_binding_heap_slot` that has not yet retired (§7.2).
+Returns false on validation/backend failure; check `last_error(ctx)`.
+example:
+  gfx.update_binding_heap_views(&ctx, heap, 0, []gfx.View{
+      tex_smoke, tex_spark, tex_glow,
+  })
+
 ### `update_buffer`
 
 ```odin
@@ -1377,7 +1571,7 @@ Backend selects the native graphics implementation used by a Context.
 Barrier_Desc :: struct {image_transitions: []Image_Transition, buffer_transitions: []Buffer_Transition}
 ```
 
-Barrier_Desc is the description for one `cmd_barrier` call.
+Barrier_Desc is the description for one `cmd_barrier` / `barrier` call.
 Both arrays may be empty (the call no-ops); both may be populated (one
 barrier per record on Vulkan / D3D12, freely batched). Arrays are read by
 the runtime during the call and may be reused or freed immediately after.
@@ -1425,10 +1619,37 @@ step.
 Binding_Group :: distinct u64
 ```
 
+### `Binding_Group_Array_Desc`
+
+```odin
+Binding_Group_Array_Desc :: struct {active: bool, kind: Shader_Binding_Kind, slot: u32, first_index: u32, count: u32, views: []View, samplers: []Sampler}
+```
+
+Binding_Group_Array_Desc is the immutable, fixed-count array payload that
+lives inside `Binding_Group_Desc.arrays` (declared in types.odin, locked
+by item 27).
+`kind` is `.Resource_View` or `.Sampler`; uniform-block arrays are not in
+the contract (uniform arrays go through the existing `apply_uniform_*`
+path).
+`slot` names the *logical* base slot reflected from Slang. The array
+occupies `[slot, slot + count)` in the layout's per-kind slot space.
+Backend-native expansion uses `Binding_Group_Native_Binding_Desc` for the
+base slot; the per-element native slots are `base + index` and are not
+emitted into `native_bindings` separately.
+`views` and `samplers` are mutually exclusive — exactly one is non-empty,
+gated by `kind`. `len(views)` (or `len(samplers)`) must equal the
+generated array's reflected `count` for full population, or the user must
+use the `_range` setter from the generated binding to populate a subset.
+Slots not populated by `_range` are validation errors at
+`create_binding_group` time.
+`first_index` is meaningful only for the `_range` setter writing into a
+staging payload before group creation; the create call collapses partial
+ranges into the final array and rejects gaps.
+
 ### `Binding_Group_Desc`
 
 ```odin
-Binding_Group_Desc :: struct {label: string, layout: Binding_Group_Layout, views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler}
+Binding_Group_Desc :: struct {label: string, layout: Binding_Group_Layout, views: [MAX_RESOURCE_VIEWS]View, samplers: [MAX_SAMPLERS]Sampler, arrays: [MAX_BINDING_GROUP_ARRAYS]Binding_Group_Array_Desc}
 ```
 
 Binding_Group_Desc creates an object-backed binding group from a generated layout handle.
@@ -1450,10 +1671,18 @@ Binding_Group_Layout_Desc is generated from Slang reflection and creates Binding
 ### `Binding_Group_Layout_Entry_Desc`
 
 ```odin
-Binding_Group_Layout_Entry_Desc :: struct {active: bool, stages: Shader_Stage_Set, kind: Shader_Binding_Kind, slot: u32, name: string, uniform_block: Binding_Group_Uniform_Block_Layout_Desc, resource_view: Binding_Group_Resource_View_Layout_Desc}
+Binding_Group_Layout_Entry_Desc :: struct {active: bool, stages: Shader_Stage_Set, kind: Shader_Binding_Kind, slot: u32, array_count: u32, unsized: bool, name: string, uniform_block: Binding_Group_Uniform_Block_Layout_Desc, resource_view: Binding_Group_Resource_View_Layout_Desc}
 ```
 
 Binding_Group_Layout_Entry_Desc describes one logical entry in a generated binding group.
+`array_count` is the descriptor-array element count reflected from Slang
+(AAA roadmap item 28 / APE-24). `0` and `1` both mean "scalar binding"; a
+value `> 1` declares a fixed-size descriptor array that occupies the slot
+range `[slot, slot + array_count)` in the entry's per-kind slot space.
+`unsized = true` reserves the entry for the runtime / bindless `Binding_Heap`
+path (see `gfx/bindless.odin` and gfx-bindless-note.md §5.3). Item 28 ships
+fixed arrays only; `unsized = true` is rejected at layout creation until the
+`Binding_Heap` backend lands.
 
 ### `Binding_Group_Native_Binding_Desc`
 
@@ -1478,6 +1707,53 @@ Binding_Group_Uniform_Block_Layout_Desc :: struct {size: u32}
 ```
 
 Binding_Group_Uniform_Block_Layout_Desc describes one reflected uniform block entry.
+
+### `Binding_Heap`
+
+```odin
+Binding_Heap :: distinct u64
+```
+
+Binding_Heap is the opaque handle for a long-lived, mutable descriptor
+table.
+Created by `create_binding_heap`. Slots are written individually with
+`update_binding_heap_views` / `update_binding_heap_samplers`. Unlike
+`Binding_Group`, a heap is *not* immutable; per-entry reuse is fence-
+gated through `Timeline_Semaphore` (see §7.2 of the bindless note).
+One heap holds one element kind — sampled views, storage images, storage
+buffers, *or* samplers. Mixed-kind heaps are not in the public contract
+(Vulkan and D3D12 both forbid them in their natural form).
+
+### `Binding_Heap_Desc`
+
+```odin
+Binding_Heap_Desc :: struct {label: string, capacity: u32, samplers: bool, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
+```
+
+Binding_Heap_Desc creates a `Binding_Heap`.
+Exactly one of (`view_kind`, `samplers`) names the heap's element kind:
+  samplers = true                  -> sampler heap; view_kind / format /
+                                      stride must be zero-init.
+  samplers = false, view_kind = … -> resource-view heap; field semantics
+                                      follow `Binding_Group_Resource_View_Layout_Desc`.
+`capacity` is the number of slots. Fence-gated reuse means a 4096-slot
+heap can serve far more than 4096 distinct resources over its lifetime;
+pick capacity based on "how many descriptors must be in flight at once",
+not "how many resources will ever pass through".
+`access` follows the existing `Shader_Resource_Access` enum
+(`.Read` / `.Write` / `.Read_Write`). Mixing access kinds inside one
+heap is rejected; create separate heaps if a binding needs both.
+
+### `Binding_Heap_Slot_Range`
+
+```odin
+Binding_Heap_Slot_Range :: struct {first_index: u32, count: u32}
+```
+
+Binding_Heap_Slot_Range names a contiguous slot range for batched
+updates and partial binds.
+`count == 0` is a no-op (validated as success). `first_index + count`
+must be `<= capacity`.
 
 ### `Bindings`
 
@@ -1862,9 +2138,8 @@ Image_Transition names one image-side state move.
 move to a subresource (mip range, layer range, or a specific aspect). The
 runtime widens the range to "all aspects of this image" when the bit set
 is empty — so a depth-only or color-only image needs no explicit aspect.
-`from` and `to` use `Resource_Usage` from types.odin. Validation rules
-(item 20 / APE-16) own which `from -> to` pairs are legal on which
-backends.
+`from` and `to` use `Resource_Usage` from types.odin. Validation (APE-16)
+owns which `from -> to` pairs are legal on which backends.
 
 ### `Image_Update_Desc`
 
@@ -2203,10 +2478,16 @@ Shader :: distinct u64
 ### `Shader_Binding_Desc`
 
 ```odin
-Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, group: u32, slot: u32, native_slot: u32, native_space: u32, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
+Shader_Binding_Desc :: struct {active: bool, stage: Shader_Stage, kind: Shader_Binding_Kind, group: u32, slot: u32, native_slot: u32, native_space: u32, array_count: u32, unsized: bool, name: string, size: u32, view_kind: View_Kind, access: Shader_Resource_Access, storage_image_format: Pixel_Format, storage_buffer_stride: u32}
 ```
 
 Shader_Binding_Desc carries Slang-reflected binding metadata for runtime validation.
+`array_count` carries the descriptor-array element count reflected from
+Slang (AAA roadmap item 28 / APE-24). `0` and `1` both mean "scalar
+binding"; a value `> 1` declares a fixed-size descriptor array. The runtime
+cross-checks this against the matching `Binding_Group_Layout_Entry_Desc`
+when a pipeline binds against the layout. `unsized = true` reserves the
+binding for the runtime / bindless `Binding_Heap` path.
 
 ### `Shader_Binding_Kind`
 

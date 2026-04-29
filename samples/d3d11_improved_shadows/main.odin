@@ -233,6 +233,14 @@ main :: proc() {
 		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
 		gfx_app.end_pass(&ctx)
 
+		// APE-16: barrier the shadow depth image from Depth_Target_Write to
+		// Sampled before the lit pass binds it through shadow_resources_group.
+		// D3D11 no-ops; Vulkan/D3D12 require this transition.
+		shadow_to_sampled := [?]gfx.Image_Transition {
+			{image = shadow_target.depth_image, from = .Depth_Target_Write, to = .Sampled},
+		}
+		gfx_app.must_gfx(&ctx, gfx.barrier(&ctx, {image_transitions = shadow_to_sampled[:]}), "shadow->sampled barrier failed")
+
 		camera_pos := camera_position(&camera)
 		view := camera_view(&camera)
 		projection := camera_projection(&camera, render_width, render_height)

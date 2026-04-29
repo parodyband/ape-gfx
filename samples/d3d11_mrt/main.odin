@@ -270,6 +270,18 @@ main :: proc() {
 			return
 		}
 
+		// APE-16: barrier both MRT color images from Color_Target to Sampled
+		// before the display pass binds them as sampled views. D3D11 no-ops;
+		// Vulkan/D3D12 require these transitions per attachment.
+		mrt_to_sampled := [?]gfx.Image_Transition {
+			{image = target_warm.color_image, from = .Color_Target, to = .Sampled},
+			{image = target_cool.color_image, from = .Color_Target, to = .Sampled},
+		}
+		if !gfx.barrier(&ctx, {image_transitions = mrt_to_sampled[:]}) {
+			fmt.eprintln("mrt->sampled barrier failed: ", gfx.last_error(&ctx))
+			return
+		}
+
 		if !gfx.begin_pass(&ctx, {
 			label = "mrt display pass",
 			action = {colors = {0 = {clear_value = {r = 0.012, g = 0.014, b = 0.018, a = 1}}}},

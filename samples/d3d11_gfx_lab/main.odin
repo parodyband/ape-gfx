@@ -328,6 +328,17 @@ main :: proc() {
 			return
 		}
 
+		// APE-16: barrier the offscreen color image from Color_Target to
+		// Sampled before the swapchain pass binds it through texture_group.
+		// D3D11 no-ops; Vulkan/D3D12 require this transition.
+		offscreen_to_sampled := [?]gfx.Image_Transition {
+			{image = offscreen_target.color_image, from = .Color_Target, to = .Sampled},
+		}
+		if !gfx.barrier(&ctx, {image_transitions = offscreen_to_sampled[:]}) {
+			fmt.eprintln("offscreen->sampled barrier failed: ", gfx.last_error(&ctx))
+			return
+		}
+
 		if !gfx.begin_pass(&ctx, {
 			label = "lab swapchain display pass",
 			action = {colors = {0 = {clear_value = {r = 0.010, g = 0.012, b = 0.016, a = 1}}}},

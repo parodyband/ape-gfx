@@ -1090,6 +1090,18 @@ d3d11_end_compute_pass :: proc(ctx: ^Context) -> bool {
 	return true
 }
 
+// d3d11_barrier no-ops the public barrier verb on D3D11.
+//
+// D3D11 has no public concept of resource state or pipeline barrier — the
+// runtime/driver handles transitions implicitly when a resource is bound.
+// The schema is still the explicit one (gfx-barriers-note.md §9.6); the
+// validator in barriers.odin runs ahead of this call and is the entire
+// observable behavior in debug builds. The release-build call is a true
+// no-op so user code costs nothing.
+d3d11_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
+	return true
+}
+
 d3d11_commit :: proc(ctx: ^Context) -> bool {
 	state := d3d11_state(ctx)
 	if state == nil || state.swapchain == nil {

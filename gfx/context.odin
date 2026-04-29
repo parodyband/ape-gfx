@@ -100,6 +100,7 @@ shutdown :: proc(ctx: ^Context) {
 
 	transient_unregister_context(ctx)
 	backend_shutdown(ctx)
+	barrier_tracker_release(ctx)
 	delete_resource_pools(ctx)
 	ctx.initialized = false
 }

@@ -348,6 +348,17 @@ main :: proc() {
 			return
 		}
 
+		// APE-16: barrier the depth image from Depth_Target_Write to Sampled
+		// before the resolve pass binds it as a sampled view. D3D11 no-ops;
+		// Vulkan/D3D12 require this transition.
+		depth_to_sampled := [?]gfx.Image_Transition {
+			{image = offscreen_depth_image, from = .Depth_Target_Write, to = .Sampled},
+		}
+		if !gfx.barrier(&ctx, {image_transitions = depth_to_sampled[:]}) {
+			fmt.eprintln("depth->sampled barrier failed: ", gfx.last_error(&ctx))
+			return
+		}
+
 		if !gfx.begin_pass(&ctx, {
 			label = "main resolve pass",
 			action = {colors = {0 = {clear_value = {r = 0.015, g = 0.018, b = 0.024, a = 1}}}},

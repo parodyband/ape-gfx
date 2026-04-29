@@ -1,25 +1,26 @@
 package gfx
 
-// Barrier addressing API sketch — AAA roadmap item 19 / APE-15.
+import "core:fmt"
+
+// Barrier API — AAA roadmap items 19 and 20 / APE-15 and APE-16.
 //
-// This file is a header-only stub. Every entry point panics. The shapes here
-// reflect the decision in docs/private/gfx-barriers-note.md §10 (barriers
-// name resources, not views, render targets, or pass aliases) and compose
-// with:
+// The shapes here reflect the decisions in
+// docs/private/gfx-barriers-note.md §9 and §10:
 //
-//   gfx-barriers-note.md §9   — hybrid model (auto inside a pass, explicit
-//                               between passes/queues).
-//   gfx-barriers-note.md §10  — barrier addressing scheme (this file).
-//   gfx-command-recording-note.md §7 — per-list error slot; `cmd_barrier`
-//                               records into it on validation failure.
-//   queue.odin                — cross-queue ownership transfer verbs land
-//                               in APE-21; they reuse `Barrier_Target` and
-//                               `Subresource_Range` so the addressing scheme
-//                               stays uniform across barrier and handoff.
+//   §9   — hybrid model (auto inside a pass, explicit between passes/queues).
+//   §10  — barrier addressing scheme (resource handle plus image
+//          Subresource_Range; views, render-target aggregates, and
+//          pass-resource aliases are rejected).
 //
 // `Resource_Usage` lives in types.odin and supplies the from/to vocabulary.
-// `Subresource_Aspect` is duplicated nowhere — it is the only aspect type in
-// the public API.
+// `Subresource_Aspect` is the only aspect type in the public API.
+//
+// On the immediate-mode `Context` API (`gfx.barrier`), the D3D11 backend
+// validates the desc, runs the APE-16 debug-build consistency check against
+// a per-frame last-known-usage tracker on `Context`, and otherwise no-ops.
+// `cmd_barrier(list, desc)` is the encoder-mode equivalent and stays panicking
+// until the `Command_List` runtime lands in APE-5; both verbs share the same
+// validator so the schema does not drift.
 
 // Subresource_Aspect_Flag selects which planes of an image a barrier names.
 //
@@ -120,9 +121,8 @@ Barrier_Target :: struct {
 // runtime widens the range to "all aspects of this image" when the bit set
 // is empty — so a depth-only or color-only image needs no explicit aspect.
 //
-// `from` and `to` use `Resource_Usage` from types.odin. Validation rules
-// (item 20 / APE-16) own which `from -> to` pairs are legal on which
-// backends.
+// `from` and `to` use `Resource_Usage` from types.odin. Validation (APE-16)
+// owns which `from -> to` pairs are legal on which backends.
 Image_Transition :: struct {
 	image: Image,
 	range: Subresource_Range,
@@ -142,7 +142,7 @@ Buffer_Transition :: struct {
 	to:     Resource_Usage,
 }
 
-// Barrier_Desc is the description for one `cmd_barrier` call.
+// Barrier_Desc is the description for one `cmd_barrier` / `barrier` call.
 //
 // Both arrays may be empty (the call no-ops); both may be populated (one
 // barrier per record on Vulkan / D3D12, freely batched). Arrays are read by
@@ -179,6 +179,54 @@ barrier_buffer_target :: proc(buffer: Buffer) -> Barrier_Target {
 	}
 }
 
+// barrier records one set of explicit transitions on a Context.
+//
+// The immediate-mode counterpart of `cmd_barrier`. Recorded outside any pass
+// (calling between `begin_pass` / `end_pass` is a validation error). The
+// runtime emits one backend barrier record on Vulkan / D3D12 covering all
+// transitions in `desc`; D3D11 routes through the APE-16 validation policy
+// and otherwise no-ops.
+//
+// Validation (APE-16):
+//
+//   - Always: handles valid, kind/handle agreement, ranges in bounds for the
+//     resource, `from`/`to` in the `Resource_Usage` enum.
+//   - Debug builds (`Desc.debug == true`): checks each transition's `from`
+//     against the per-frame last-known declared usage of the resource. A
+//     mismatch is reported as a wrong-barrier validation error. Successful
+//     transitions update the tracker; the tracker is flushed at every
+//     `commit`.
+//
+// On D3D11 the actual D3D11 call is a no-op; the validator is the entire
+// observable behavior. The schema is the explicit one — D3D11 just has
+// nothing to do with it (gfx-barriers-note.md §9.6).
+//
+// example:
+//   gfx.barrier(&ctx, gfx.Barrier_Desc{
+//       image_transitions = []gfx.Image_Transition{
+//           {image = offscreen_color, from = .Color_Target, to = .Sampled},
+//       },
+//   })
+barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
+	if !require_initialized(ctx, "gfx.barrier") {
+		return false
+	}
+	if ctx.in_pass {
+		set_validation_error(ctx, "gfx.barrier: cannot record barriers while a pass is in progress")
+		return false
+	}
+	if !validate_barrier_desc(ctx, desc, "gfx.barrier") {
+		return false
+	}
+	if ctx.desc.debug {
+		if !validate_barrier_against_tracker(ctx, desc, "gfx.barrier") {
+			return false
+		}
+		record_barrier_into_tracker(ctx, desc)
+	}
+	return backend_barrier(ctx, desc)
+}
+
 // cmd_barrier records one set of explicit transitions on a Command_List.
 //
 // Recorded between encoder scopes (§9.2 of the barriers note); calling it
@@ -191,5 +239,413 @@ barrier_buffer_target :: proc(buffer: Buffer) -> Barrier_Target {
 // Returns false on validation/backend failure; per-list error follows
 // recording-note §7.3.
 cmd_barrier :: proc(list: ^Command_List, desc: Barrier_Desc) -> bool {
-	panic("gfx.cmd_barrier: unimplemented (APE-15 sketch only)")
+	panic("gfx.cmd_barrier: unimplemented (APE-5 sketch only)")
+}
+
+@(private)
+validate_barrier_desc :: proc(ctx: ^Context, desc: Barrier_Desc, op: string) -> bool {
+	if len(desc.image_transitions) == 0 && len(desc.buffer_transitions) == 0 {
+		return true
+	}
+
+	for transition, i in desc.image_transitions {
+		if !image_valid(transition.image) {
+			set_validation_errorf(ctx, "%s: image transition %d has an invalid image handle", op, i)
+			return false
+		}
+		if !require_resource(ctx, &ctx.image_pool, u64(transition.image), op, "image transition") {
+			return false
+		}
+		image_state := query_image_state(ctx, transition.image)
+		if !image_state.valid {
+			set_invalid_handle_errorf(ctx, "%s: image transition %d image handle is invalid", op, i)
+			return false
+		}
+		if !validate_subresource_range(ctx, op, i, transition.range, image_state) {
+			return false
+		}
+		if !resource_usage_legal_for_image(transition.from, image_state) {
+			set_validation_errorf(ctx, "%s: image transition %d from=%v is not a legal image usage", op, i, transition.from)
+			return false
+		}
+		if !resource_usage_legal_for_image(transition.to, image_state) {
+			set_validation_errorf(ctx, "%s: image transition %d to=%v is not a legal image usage", op, i, transition.to)
+			return false
+		}
+	}
+
+	for transition, i in desc.buffer_transitions {
+		if !buffer_valid(transition.buffer) {
+			set_validation_errorf(ctx, "%s: buffer transition %d has an invalid buffer handle", op, i)
+			return false
+		}
+		if !require_resource(ctx, &ctx.buffer_pool, u64(transition.buffer), op, "buffer transition") {
+			return false
+		}
+		if !resource_usage_legal_for_buffer(transition.from) {
+			set_validation_errorf(ctx, "%s: buffer transition %d from=%v is not a legal buffer usage", op, i, transition.from)
+			return false
+		}
+		if !resource_usage_legal_for_buffer(transition.to) {
+			set_validation_errorf(ctx, "%s: buffer transition %d to=%v is not a legal buffer usage", op, i, transition.to)
+			return false
+		}
+	}
+
+	return true
+}
+
+@(private)
+validate_subresource_range :: proc(ctx: ^Context, op: string, transition_index: int, range: Subresource_Range, image_state: Image_State) -> bool {
+	mip_total := u32(image_state.mip_count)
+	if mip_total == 0 {
+		mip_total = 1
+	}
+	layer_total := u32(image_state.array_count)
+	if layer_total == 0 {
+		layer_total = 1
+	}
+	if image_state.kind == .Cube {
+		layer_total = max(layer_total, 6)
+	}
+
+	if range.base_mip >= mip_total {
+		set_validation_errorf(ctx, "%s: image transition %d base_mip %d exceeds image mip count %d", op, transition_index, range.base_mip, mip_total)
+		return false
+	}
+	if range.mip_count != 0 && range.base_mip + range.mip_count > mip_total {
+		set_validation_errorf(ctx, "%s: image transition %d mip range exceeds image mip count %d", op, transition_index, mip_total)
+		return false
+	}
+	if range.base_layer >= layer_total {
+		set_validation_errorf(ctx, "%s: image transition %d base_layer %d exceeds image layer count %d", op, transition_index, range.base_layer, layer_total)
+		return false
+	}
+	if range.layer_count != 0 && range.base_layer + range.layer_count > layer_total {
+		set_validation_errorf(ctx, "%s: image transition %d layer range exceeds image layer count %d", op, transition_index, layer_total)
+		return false
+	}
+
+	if image_state.kind == .Image_3D && (range.base_layer != 0 || (range.layer_count != 0 && range.layer_count != 1)) {
+		set_validation_errorf(ctx, "%s: image transition %d names a layer range on a 3D image", op, transition_index)
+		return false
+	}
+
+	return true
+}
+
+@(private)
+resource_usage_legal_for_image :: proc(usage: Resource_Usage, image_state: Image_State) -> bool {
+	switch usage {
+	case .None, .Sampled, .Storage_Read, .Storage_Write,
+	     .Color_Target, .Depth_Target_Read, .Depth_Target_Write,
+	     .Copy_Source, .Copy_Dest, .Present:
+		return true
+	case .Indirect_Argument:
+		return false
+	}
+	return false
+}
+
+@(private)
+resource_usage_legal_for_buffer :: proc(usage: Resource_Usage) -> bool {
+	switch usage {
+	case .None, .Storage_Read, .Storage_Write, .Copy_Source, .Copy_Dest, .Indirect_Argument:
+		return true
+	case .Sampled, .Color_Target, .Depth_Target_Read, .Depth_Target_Write, .Present:
+		return false
+	}
+	return false
+}
+
+@(private)
+validate_barrier_against_tracker :: proc(ctx: ^Context, desc: Barrier_Desc, op: string) -> bool {
+	for transition, i in desc.image_transitions {
+		prior, has_prior := ctx.image_last_usage[transition.image]
+		if has_prior && prior != transition.from {
+			set_validation_errorf(
+				ctx,
+				"%s: image transition %d declares from=%v but resource is currently %v (wrong barrier)",
+				op,
+				i,
+				transition.from,
+				prior,
+			)
+			return false
+		}
+	}
+	for transition, i in desc.buffer_transitions {
+		prior, has_prior := ctx.buffer_last_usage[transition.buffer]
+		if has_prior && prior != transition.from {
+			set_validation_errorf(
+				ctx,
+				"%s: buffer transition %d declares from=%v but resource is currently %v (wrong barrier)",
+				op,
+				i,
+				transition.from,
+				prior,
+			)
+			return false
+		}
+	}
+	return true
+}
+
+@(private)
+record_barrier_into_tracker :: proc(ctx: ^Context, desc: Barrier_Desc) {
+	if ctx.image_last_usage == nil {
+		ctx.image_last_usage = make(map[Image]Resource_Usage)
+	}
+	if ctx.buffer_last_usage == nil {
+		ctx.buffer_last_usage = make(map[Buffer]Resource_Usage)
+	}
+	for transition in desc.image_transitions {
+		ctx.image_last_usage[transition.image] = transition.to
+	}
+	for transition in desc.buffer_transitions {
+		ctx.buffer_last_usage[transition.buffer] = transition.to
+	}
+}
+
+@(private)
+barrier_tracker_record_image_usage :: proc(ctx: ^Context, image: Image, usage: Resource_Usage) {
+	if ctx == nil || !ctx.desc.debug || !image_valid(image) {
+		return
+	}
+	if ctx.image_last_usage == nil {
+		ctx.image_last_usage = make(map[Image]Resource_Usage)
+	}
+	ctx.image_last_usage[image] = usage
+}
+
+@(private)
+barrier_tracker_record_buffer_usage :: proc(ctx: ^Context, buffer: Buffer, usage: Resource_Usage) {
+	if ctx == nil || !ctx.desc.debug || !buffer_valid(buffer) {
+		return
+	}
+	if ctx.buffer_last_usage == nil {
+		ctx.buffer_last_usage = make(map[Buffer]Resource_Usage)
+	}
+	ctx.buffer_last_usage[buffer] = usage
+}
+
+// barrier_tracker_check_image_use validates a debug-build use site against the
+// per-frame tracker. Returns false (and reports a missing-barrier validation
+// error) when the resource was previously declared in an incompatible usage
+// without an intervening `barrier()` that transitioned it to `usage`.
+@(private)
+barrier_tracker_check_image_use :: proc(ctx: ^Context, image: Image, usage: Resource_Usage, op, role: string) -> bool {
+	if ctx == nil || !ctx.desc.debug || !image_valid(image) {
+		return true
+	}
+	prior, has_prior := ctx.image_last_usage[image]
+	if has_prior && !image_usages_compatible(prior, usage) {
+		set_validation_errorf(
+			ctx,
+			"%s: %s declares image as %v but resource is currently %v (missing barrier from %v to %v)",
+			op,
+			role,
+			usage,
+			prior,
+			prior,
+			usage,
+		)
+		return false
+	}
+	return true
+}
+
+@(private)
+barrier_tracker_check_buffer_use :: proc(ctx: ^Context, buffer: Buffer, usage: Resource_Usage, op, role: string) -> bool {
+	if ctx == nil || !ctx.desc.debug || !buffer_valid(buffer) {
+		return true
+	}
+	prior, has_prior := ctx.buffer_last_usage[buffer]
+	if has_prior && !buffer_usages_compatible(prior, usage) {
+		set_validation_errorf(
+			ctx,
+			"%s: %s declares buffer as %v but resource is currently %v (missing barrier from %v to %v)",
+			op,
+			role,
+			usage,
+			prior,
+			prior,
+			usage,
+		)
+		return false
+	}
+	return true
+}
+
+@(private)
+image_usages_compatible :: proc(prior, next: Resource_Usage) -> bool {
+	if prior == next {
+		return true
+	}
+	// Read-only sampled and read-only depth coexist with each other on
+	// D3D12/Vulkan when the resource carries both states. Track only direct
+	// equality for now — the conservative rule is "any change of role needs
+	// a barrier", matching the wrong-barrier policy on barrier() calls.
+	return false
+}
+
+@(private)
+buffer_usages_compatible :: proc(prior, next: Resource_Usage) -> bool {
+	return prior == next
+}
+
+@(private)
+barrier_tracker_clear :: proc(ctx: ^Context) {
+	if ctx == nil {
+		return
+	}
+	clear(&ctx.image_last_usage)
+	clear(&ctx.buffer_last_usage)
+}
+
+@(private)
+barrier_tracker_release :: proc(ctx: ^Context) {
+	if ctx == nil {
+		return
+	}
+	delete(ctx.image_last_usage)
+	delete(ctx.buffer_last_usage)
+	ctx.image_last_usage = nil
+	ctx.buffer_last_usage = nil
+}
+
+@(private)
+barrier_tracker_record_pass_attachments :: proc(ctx: ^Context, desc: Pass_Desc) {
+	if ctx == nil || !ctx.desc.debug {
+		return
+	}
+	for view, _ in desc.color_attachments {
+		if !view_valid(view) {
+			continue
+		}
+		view_state := query_view_state(ctx, view)
+		if !view_state.valid || !image_valid(view_state.image) {
+			continue
+		}
+		barrier_tracker_record_image_usage(ctx, view_state.image, .Color_Target)
+	}
+	if view_valid(desc.depth_stencil_attachment) {
+		view_state := query_view_state(ctx, desc.depth_stencil_attachment)
+		if view_state.valid && image_valid(view_state.image) {
+			barrier_tracker_record_image_usage(ctx, view_state.image, .Depth_Target_Write)
+		}
+	}
+}
+
+@(private)
+barrier_tracker_check_pass_attachments :: proc(ctx: ^Context, desc: Pass_Desc, op: string) -> bool {
+	if ctx == nil || !ctx.desc.debug {
+		return true
+	}
+	for view, slot in desc.color_attachments {
+		if !view_valid(view) {
+			continue
+		}
+		view_state := query_view_state(ctx, view)
+		if !view_state.valid || !image_valid(view_state.image) {
+			continue
+		}
+		role := fmt.tprintf("color attachment slot %d", slot)
+		if !barrier_tracker_check_image_use(ctx, view_state.image, .Color_Target, op, role) {
+			return false
+		}
+	}
+	if view_valid(desc.depth_stencil_attachment) {
+		view_state := query_view_state(ctx, desc.depth_stencil_attachment)
+		if view_state.valid && image_valid(view_state.image) {
+			if !barrier_tracker_check_image_use(ctx, view_state.image, .Depth_Target_Write, op, "depth-stencil attachment") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// barrier_tracker_role_for_view maps a sampled/storage view to the resource
+// usage it implies at the bind site. Attachment views never reach
+// apply_bindings (validate_bindings rejects them earlier).
+@(private)
+barrier_tracker_role_for_view :: proc(view_state: View_State) -> Resource_Usage {
+	switch view_state.kind {
+	case .Sampled:
+		return .Sampled
+	case .Storage_Image, .Storage_Buffer:
+		// D3D11 has no public split between storage read and storage write,
+		// and Slang reflection access on a binding-group entry is item-28's
+		// concern. Conservatively classify storage views as Storage_Write so
+		// any prior Sampled / Color_Target / Copy_Dest declaration on the
+		// same resource flags as a missing barrier.
+		return .Storage_Write
+	case .Color_Attachment, .Depth_Stencil_Attachment:
+		return .None
+	}
+	return .None
+}
+
+@(private)
+barrier_tracker_check_bindings :: proc(ctx: ^Context, bindings: Bindings, op: string) -> bool {
+	if ctx == nil || !ctx.desc.debug {
+		return true
+	}
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				continue
+			}
+			usage := barrier_tracker_role_for_view(view_state)
+			if usage == .None {
+				continue
+			}
+			if image_valid(view_state.image) {
+				role := fmt.tprintf("resource view group %d slot %d", group, slot)
+				if !barrier_tracker_check_image_use(ctx, view_state.image, usage, op, role) {
+					return false
+				}
+			}
+			if buffer_valid(view_state.buffer) {
+				role := fmt.tprintf("resource view group %d slot %d", group, slot)
+				if !barrier_tracker_check_buffer_use(ctx, view_state.buffer, usage, op, role) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+@(private)
+barrier_tracker_record_bindings :: proc(ctx: ^Context, bindings: Bindings) {
+	if ctx == nil || !ctx.desc.debug {
+		return
+	}
+	for group_views in bindings.views {
+		for view in group_views {
+			if !view_valid(view) {
+				continue
+			}
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				continue
+			}
+			usage := barrier_tracker_role_for_view(view_state)
+			if usage == .None {
+				continue
+			}
+			if image_valid(view_state.image) {
+				barrier_tracker_record_image_usage(ctx, view_state.image, usage)
+			}
+			if buffer_valid(view_state.buffer) {
+				barrier_tracker_record_buffer_usage(ctx, view_state.buffer, usage)
+			}
+		}
+	}
 }

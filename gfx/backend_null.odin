@@ -267,6 +267,10 @@ null_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	return true
 }
 
+null_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
+	return true
+}
+
 null_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	return true
 }

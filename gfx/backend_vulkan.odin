@@ -157,6 +157,11 @@ vulkan_end_compute_pass :: proc(ctx: ^Context) -> bool {
 	return false
 }
 
+vulkan_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: barrier is not implemented yet")
+	return false
+}
+
 vulkan_commit :: proc(ctx: ^Context) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: commit is not implemented yet")
 	return false
