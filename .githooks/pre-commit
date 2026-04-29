@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+odin run ./tools/ape -- hygiene
+git diff --cached --check

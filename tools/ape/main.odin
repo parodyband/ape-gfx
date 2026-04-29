@@ -80,6 +80,15 @@ run :: proc(args: []string) -> bool {
 		}
 	}
 
+	if args[0] == "hygiene" {
+		options, ok := parse_hygiene_options(args[1:])
+		if !ok {
+			print_usage()
+			return false
+		}
+		return run_hygiene(options)
+	}
+
 	if args[0] == "docs" {
 		if len(args) >= 2 && args[1] == "generate" {
 			options, ok := parse_docs_generate_options(args[2:])
@@ -300,6 +309,7 @@ print_usage :: proc() {
 	fmt.eprintln("usage: ape shader compile [-all] [-root <repo>] [-shader-name <name>] [-kind graphics|compute] [-source <path>] [-build-dir <dir>]")
 	fmt.eprintln("       ape shader test [-all|-name <test>] [-root <repo>]")
 	fmt.eprintln("       ape docs generate [-root <repo>] [-out-dir <dir>] [-markdown-dir <dir>]")
+	fmt.eprintln("       ape hygiene [-root <repo>]")
 	fmt.eprintln("       ape validate core [-root <repo>] [-skip-shader-compile] [-skip-git-diff-check]")
 	fmt.eprintln("       ape validate full [-root <repo>] [-auto-exit-frames <n>] [-skip-shader-compile] [-skip-d3d11-builds] [-skip-d3d11-runs] [-skip-git-diff-check]")
 	fmt.eprintln("       ape compile-shaders [-all] [-root <repo>] [-shader-name <name>] [-kind graphics|compute] [-source <path>] [-build-dir <dir>]")

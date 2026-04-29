@@ -22,6 +22,32 @@ Validate_Full_Options :: struct {
 	skip_git_diff_check: bool,
 }
 
+Hygiene_Options :: struct {
+	root_path: string,
+}
+
+parse_hygiene_options :: proc(args: []string) -> (Hygiene_Options, bool) {
+	options := Hygiene_Options {
+		root_path = ".",
+	}
+
+	for i := 0; i < len(args); i += 1 {
+		arg := args[i]
+		switch arg {
+		case "-root", "-Root":
+			i += 1
+			if i >= len(args) {
+				return {}, false
+			}
+			options.root_path = args[i]
+		case:
+			return {}, false
+		}
+	}
+
+	return options, true
+}
+
 parse_validate_core_options :: proc(args: []string) -> (Validate_Core_Options, bool) {
 	options := Validate_Core_Options {
 		root_path = ".",
@@ -87,6 +113,21 @@ parse_validate_full_options :: proc(args: []string) -> (Validate_Full_Options, b
 	}
 
 	return options, true
+}
+
+run_hygiene :: proc(options: Hygiene_Options) -> bool {
+	root, root_ok := filepath.abs(options.root_path, context.temp_allocator)
+	if !root_ok {
+		fmt.eprintln("ape: failed to resolve repo root: ", options.root_path)
+		return false
+	}
+
+	if !check_repo_hygiene(root) {
+		return false
+	}
+
+	fmt.println("repo hygiene passed")
+	return true
 }
 
 validate_core :: proc(options: Validate_Core_Options) -> bool {
