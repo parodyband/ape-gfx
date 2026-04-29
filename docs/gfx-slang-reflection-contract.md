@@ -186,6 +186,8 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
 
 This is the first explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical slots, native slots, and native spaces available for later binding group and pipeline layout design.
 
+`Binding_Record_Desc` is currently a flat record. `view_kind`, `access`, `storage_image_format`, and `storage_buffer_stride` are meaningful only when `kind == .Resource_View`; consumers must ignore those fields for uniform-block and sampler records. Before a generated binding-group API becomes public, decide whether the group contract should keep this flat shape with stricter validation or split into per-kind records.
+
 Logical slots are assigned per binding kind:
 
 | Kind | Prefix | Limit |
@@ -467,7 +469,8 @@ Planned order:
 - [x] Read reflection JSON from modern `ProgramLayout` and used-binding data from entry-point metadata.
 - [x] Add focused descriptor-table validation for register-free constant buffers, sampled textures, samplers, storage images, and storage buffers across D3D11 and Vulkan records.
 - [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
-- [ ] Next: design the first generated binding-group contract on top of reflected names, logical slots, native slots, and native spaces.
+- [ ] Next: settle descriptor slot validation and kind-conditional binding record semantics before the generated binding-group contract.
+- [ ] Then design the first generated binding-group contract on top of reflected names, logical slots, native slots, and native spaces.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - Preserve the current `.ashader` and generated Odin output format while the reflection implementation hardens.
 - Traverse Slang program layout data deeply enough to represent `ParameterBlock<>`, implicit constant buffers, native slots, and native spaces without hand-authored binding registers.

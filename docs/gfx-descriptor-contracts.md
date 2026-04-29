@@ -13,6 +13,17 @@ This document records the v0.1 contract for the first hardened `gfx` descriptors
 - Creation procedures return `(invalid_handle, false)` on descriptor failure and set `last_error_info(ctx)` with a typed code.
 - Descriptor validation errors use `Error_Code.Validation`; unsupported but intentional gaps use `Error_Code.Unsupported`.
 
+## Fixed-Size Slot Arrays
+
+Ape GFX uses fixed-size arrays instead of count fields in several descriptors. The active-slot rule is explicit per descriptor:
+
+- `Pass_Desc.color_attachments` and `Pipeline_Desc.color_formats` are packed active spans. Non-empty entries must be contiguous from slot `0`.
+- `Layout_Desc.attrs` is sparse by semantic. Active attributes have a non-empty `semantic`; inactive entries may appear between active entries. Each active attribute must reference a vertex buffer slot with nonzero stride.
+- `Bindings.vertex_buffers` is sparse. The active graphics pipeline determines which vertex buffer slots are required before draw.
+- `Bindings.views` and `Bindings.samplers` are sparse logical shader slots. Generated shader helpers write the exact reflected logical slot. Backends with shader metadata validate missing required slots and incompatible view kinds at draw or dispatch time.
+
+Near-term hardening should add explicit tests for these slot rules and decide whether debug validation should reject extra unused `Bindings` entries after reflected shader metadata is known.
+
 ## Desc
 
 `Desc` creates one `Context`.
