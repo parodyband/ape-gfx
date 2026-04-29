@@ -34,16 +34,6 @@ The current contract lives in `docs/gfx-v0.1-contract.md`. The release notes liv
 
 Shader compilation uses the Slang API through `tools/ape_shaderc`. `tools/ape` is the Odin task runner for repo workflows. PowerShell scripts are convenience wrappers where they still exist.
 
-## Setup
-
-Optional local Git hooks live in `.githooks`. Enable them with:
-
-```powershell
-git config core.hooksPath .githooks
-```
-
-The pre-commit hook runs the quick repo hygiene check and staged whitespace check. The full validation gate below remains the source of truth before pushing or opening review.
-
 ## Quick start
 
 Run the null-backend smoke check:
@@ -62,6 +52,12 @@ Run the full validation gate:
 
 ```powershell
 odin run .\tools\ape -- validate full
+```
+
+Run the quick repo hygiene check:
+
+```powershell
+odin run .\tools\ape -- hygiene
 ```
 
 The Windows wrapper delegates to the same Odin validation path:
