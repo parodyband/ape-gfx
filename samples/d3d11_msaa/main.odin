@@ -1,7 +1,7 @@
 package main
 
 import "core:fmt"
-import ape_sample "ape:samples/ape_sample"
+import gfx_app "ape:gfx_app"
 import app "ape:app"
 import gfx "ape:gfx"
 import textured_quad_shader "ape:assets/shaders/generated/textured_quad"
@@ -196,7 +196,7 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, texture_index_buffer)
 
-	color_program_desc := ape_sample.Shader_Program_Desc {
+	color_program_desc := gfx_app.Shader_Program_Desc {
 		package_path = "build/shaders/triangle.ashader",
 		shader_label = "msaa triangle shader",
 		pipeline_desc = {
@@ -208,17 +208,17 @@ main :: proc() {
 		},
 		binding_group_layout_desc = triangle_shader.binding_group_layout_desc,
 	}
-	color_program: ape_sample.Reloadable_Shader_Program
-	if !ape_sample.reloadable_shader_program_init(&ctx, &color_program, color_program_desc, {
+	color_program: gfx_app.Reloadable_Shader_Program
+	if !gfx_app.reloadable_shader_program_init(&ctx, &color_program, color_program_desc, {
 		shader_name = "triangle",
 		source_path = "assets/shaders/triangle.slang",
 		package_path = "build/shaders/triangle.ashader",
 	}) {
 		return
 	}
-	defer ape_sample.reloadable_shader_program_destroy(&ctx, &color_program)
+	defer gfx_app.reloadable_shader_program_destroy(&ctx, &color_program)
 
-	texture_program_desc := ape_sample.Shader_Program_Desc {
+	texture_program_desc := gfx_app.Shader_Program_Desc {
 		package_path = "build/shaders/textured_quad.ashader",
 		shader_label = "msaa display shader",
 		pipeline_desc = {
@@ -229,15 +229,15 @@ main :: proc() {
 		},
 		binding_group_layout_desc = textured_quad_shader.binding_group_layout_desc,
 	}
-	texture_program: ape_sample.Reloadable_Shader_Program
-	if !ape_sample.reloadable_shader_program_init(&ctx, &texture_program, texture_program_desc, {
+	texture_program: gfx_app.Reloadable_Shader_Program
+	if !gfx_app.reloadable_shader_program_init(&ctx, &texture_program, texture_program_desc, {
 		shader_name = "textured_quad",
 		source_path = "assets/shaders/textured_quad.slang",
 		package_path = "build/shaders/textured_quad.ashader",
 	}) {
 		return
 	}
-	defer ape_sample.reloadable_shader_program_destroy(&ctx, &texture_program)
+	defer gfx_app.reloadable_shader_program_destroy(&ctx, &texture_program)
 
 	color_bindings: gfx.Bindings
 	color_bindings.vertex_buffers[0] = {buffer = color_vertex_buffer}
@@ -254,7 +254,7 @@ main :: proc() {
 	for !app.should_close(&window) {
 		app.poll_events()
 
-		resize, resize_ok := ape_sample.resize_swapchain(&ctx, &window, &render_width, &render_height)
+		resize, resize_ok := gfx_app.resize_swapchain(&ctx, &window, &render_width, &render_height)
 		if !resize_ok {
 			fmt.eprintln("resize failed: ", gfx.last_error(&ctx))
 			return
@@ -270,8 +270,8 @@ main :: proc() {
 			}
 		}
 
-		ape_sample.reloadable_shader_program_poll(&ctx, &color_program)
-		ape_sample.reloadable_shader_program_poll(&ctx, &texture_program)
+		gfx_app.reloadable_shader_program_poll(&ctx, &color_program)
+		gfx_app.reloadable_shader_program_poll(&ctx, &texture_program)
 
 		offscreen_action := gfx.default_pass_action()
 		offscreen_action.colors[0].clear_value = gfx.Color{r = 0.035, g = 0.04, b = 0.052, a = 1}
@@ -284,7 +284,7 @@ main :: proc() {
 			fmt.eprintln("offscreen begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}
-		if !gfx.apply_pipeline(&ctx, ape_sample.reloadable_shader_program_pipeline(&color_program)) {
+		if !gfx.apply_pipeline(&ctx, gfx_app.reloadable_shader_program_pipeline(&color_program)) {
 			fmt.eprintln("offscreen apply_pipeline failed: ", gfx.last_error(&ctx))
 			return
 		}
@@ -317,7 +317,7 @@ main :: proc() {
 			fmt.eprintln("display begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}
-		if !gfx.apply_pipeline(&ctx, ape_sample.reloadable_shader_program_pipeline(&texture_program)) {
+		if !gfx.apply_pipeline(&ctx, gfx_app.reloadable_shader_program_pipeline(&texture_program)) {
 			fmt.eprintln("display apply_pipeline failed: ", gfx.last_error(&ctx))
 			return
 		}
@@ -348,7 +348,7 @@ main :: proc() {
 }
 
 make_texture_vertices :: proc(render_width, render_height: i32) -> [4]Texture_Vertex {
-	half_width, half_height := ape_sample.aspect_fit_half_extents(render_width, render_height, RENDER_TARGET_SIZE, RENDER_TARGET_SIZE, DISPLAY_HALF_EXTENT)
+	half_width, half_height := gfx_app.aspect_fit_half_extents(render_width, render_height, RENDER_TARGET_SIZE, RENDER_TARGET_SIZE, DISPLAY_HALF_EXTENT)
 	return [4]Texture_Vertex {
 		{position = {-half_width, -half_height, 0}, uv = {0, 1}},
 		{position = {-half_width,  half_height, 0}, uv = {0, 0}},

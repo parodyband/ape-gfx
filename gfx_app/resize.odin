@@ -1,4 +1,4 @@
-package ape_sample
+package gfx_app
 
 import app "ape:app"
 import gfx "ape:gfx"

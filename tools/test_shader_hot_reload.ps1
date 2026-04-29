@@ -28,7 +28,7 @@ import "core:fmt"
 import "core:os"
 import os2 "core:os/os2"
 import "core:time"
-import ape_sample "ape:samples/ape_sample"
+import gfx_app "ape:gfx_app"
 
 main :: proc() {
 	source_path := `__SOURCE_PATH__`
@@ -36,8 +36,8 @@ main :: proc() {
 	compiler_path := `__COMPILER_PATH__`
 	working_dir := `__WORKING_DIR__`
 
-	reloader: ape_sample.Shader_Reloader
-	if !ape_sample.shader_reload_init(&reloader, {
+	reloader: gfx_app.Shader_Reloader
+	if !gfx_app.shader_reload_init(&reloader, {
 		shader_name = "reload_test",
 		source_path = source_path,
 		package_path = package_path,
@@ -45,7 +45,7 @@ main :: proc() {
 		working_dir = working_dir,
 		debounce = 1 * time.Millisecond,
 	}) {
-		fmt.eprintln(ape_sample.shader_reload_last_error(&reloader))
+		fmt.eprintln(gfx_app.shader_reload_last_error(&reloader))
 		os2.exit(1)
 	}
 
@@ -56,17 +56,17 @@ main :: proc() {
 		os2.exit(1)
 	}
 
-	result := ape_sample.shader_reload_poll(&reloader)
+	result := gfx_app.shader_reload_poll(&reloader)
 	if result.status != .Pending {
 		fmt.eprintln("expected pending reload after source change")
 		os2.exit(1)
 	}
 
 	time.sleep(20 * time.Millisecond)
-	result = ape_sample.shader_reload_poll(&reloader)
+	result = gfx_app.shader_reload_poll(&reloader)
 	if result.status != .Recompiled {
 		fmt.eprintln("expected shader reload to recompile, got ", result.status)
-		fmt.eprintln(ape_sample.shader_reload_last_error(&reloader))
+		fmt.eprintln(gfx_app.shader_reload_last_error(&reloader))
 		os2.exit(1)
 	}
 

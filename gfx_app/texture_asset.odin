@@ -1,10 +1,13 @@
-package ape_sample
+package gfx_app
 
 import "core:fmt"
 import "core:os"
 
+@(private)
 TEXTURE_MAGIC :: u32(0x58545041) // "APTX"
+@(private)
 TEXTURE_VERSION :: u32(1)
+@(private)
 TEXTURE_HEADER_SIZE :: 16
 
 Texture_Asset :: struct {
@@ -72,6 +75,7 @@ must_load_texture_asset :: proc(path: string) -> Texture_Asset {
 	return asset
 }
 
+@(private)
 read_u32 :: proc(bytes: []u8, offset: int) -> u32 {
 	return u32(bytes[offset]) |
 	       (u32(bytes[offset + 1]) << 8) |

@@ -1,4 +1,4 @@
-package ape_sample
+package gfx_app
 
 import "core:fmt"
 import "core:os"
@@ -442,6 +442,7 @@ shader_reload_poll :: proc(reloader: ^Shader_Reloader) -> Shader_Reload_Result {
 	return {status = .Recompiled}
 }
 
+@(private)
 normalize_shader_reload_desc :: proc(desc: Shader_Reload_Desc) -> Shader_Reload_Desc {
 	result := desc
 	if result.compile_script_path == "" {
@@ -456,10 +457,12 @@ normalize_shader_reload_desc :: proc(desc: Shader_Reload_Desc) -> Shader_Reload_
 	return result
 }
 
+@(private)
 normalize_shader_program_desc :: proc(desc: Shader_Program_Desc) -> Shader_Program_Desc {
 	return desc
 }
 
+@(private)
 shader_reload_compile :: proc(reloader: ^Shader_Reloader) -> bool {
 	command := [?]string {
 		"powershell.exe",
@@ -508,6 +511,7 @@ shader_reload_compile :: proc(reloader: ^Shader_Reloader) -> bool {
 	return true
 }
 
+@(private)
 file_modification_time_ns :: proc(path: string) -> (i64, bool) {
 	info, err := os.stat(path)
 	if err != nil {
@@ -518,6 +522,7 @@ file_modification_time_ns :: proc(path: string) -> (i64, bool) {
 	return time.to_unix_nanoseconds(info.modification_time), true
 }
 
+@(private)
 set_shader_reload_error :: proc(reloader: ^Shader_Reloader, message: string) {
 	if reloader == nil {
 		return
@@ -525,6 +530,7 @@ set_shader_reload_error :: proc(reloader: ^Shader_Reloader, message: string) {
 	reloader.last_error = message
 }
 
+@(private)
 set_shader_reload_errorf :: proc(reloader: ^Shader_Reloader, format: string, args: ..any) {
 	if reloader == nil {
 		return

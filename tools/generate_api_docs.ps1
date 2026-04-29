@@ -223,12 +223,14 @@ These docs are checked in so API drift is visible in normal diffs.
 
 - `raw/gfx_api.txt`: low-level graphics API symbols.
 - `raw/app_api.txt`: minimal window/event facade used by the samples.
+- `raw/gfx_app_api.txt`: app-facing graphics helper package.
 - `raw/shader_api.txt`: `.ashader` package loader and shader descriptor conversion.
 
 ## Markdown
 
 - `markdown/gfx.md`: low-level graphics API reference.
 - `markdown/app.md`: minimal window/event API reference.
+- `markdown/gfx_app.md`: app-facing graphics helper API reference.
 - `markdown/shader.md`: shader package loader API reference.
 
 ## Status
@@ -242,9 +244,11 @@ The `gfx` docs are filtered with Odin private-file/private-symbol annotations fo
 
 $GfxRaw = Write-OdinDoc -Name "gfx_api" -PackagePath "gfx"
 $AppRaw = Write-OdinDoc -Name "app_api" -PackagePath "app"
+$GfxAppRaw = Write-OdinDoc -Name "gfx_app_api" -PackagePath "gfx_app"
 $ShaderRaw = Write-OdinDoc -Name "shader_api" -PackagePath "shader"
 Convert-RawDocToMarkdown -Name "gfx" -Title "gfx" -RawPath $GfxRaw
 Convert-RawDocToMarkdown -Name "app" -Title "app" -RawPath $AppRaw
+Convert-RawDocToMarkdown -Name "gfx_app" -Title "gfx_app" -RawPath $GfxAppRaw
 Convert-RawDocToMarkdown -Name "shader" -Title "shader" -RawPath $ShaderRaw
 Write-ApiIndex
 

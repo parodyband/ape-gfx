@@ -169,7 +169,7 @@ If you were using earlier prototype code:
 - Use generated Slang `layout_desc()` helpers for simple packed vertex layouts.
 - Use generated binding setters/constants instead of handwritten view and sampler slot numbers.
 - Check `last_error_info` when a command returns `false`; the typed `Error_Code` is now the stable programmatic category.
-- Treat `samples/ape_sample` as the current provisional helper layer for shader-program setup, resize handling, binding layout ownership, and hot reload. The reusable pieces are planned to move into a supported companion package.
+- Use `gfx_app` for shader-program setup, resize handling, binding layout ownership, fail-fast sample calls, sample texture assets, and hot reload. Helper names are still easier to change than the low-level `gfx` contract while the project is pre-1.0.
 
 ## Known Limits
 
@@ -201,14 +201,13 @@ These pieces exist, but should not be treated as long-term frozen yet:
 - Generated binding helper naming for less common shader shapes beyond the documented v0.1 contract.
 - Storage and compute ergonomics beyond the current D3D11 compute samples.
 - `app` as a sample-grade windowing layer.
-- `samples/ape_sample` as the temporary home for app-facing helper code.
+- `gfx_app` helper names, especially shader reload helpers.
 - Generated Markdown API docs format.
 
 ## Deferred Work
 
 After v0.1-alpha, the next larger areas are:
 
-- promote the reusable `samples/ape_sample` helper pieces into a supported companion package
 - add a low-level render-target helper for common color/depth target setup
 - harden the immediate `gfx.Bindings` path against `Pipeline_Layout` metadata before backend checks
 - sketch resource-array and bindless reflection before freezing the group record shape further

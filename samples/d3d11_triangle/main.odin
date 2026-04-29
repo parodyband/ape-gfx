@@ -3,7 +3,7 @@ package main
 import "core:fmt"
 import app "ape:app"
 import gfx "ape:gfx"
-import ape_sample "ape:samples/ape_sample"
+import gfx_app "ape:gfx_app"
 import triangle_shader "ape:assets/shaders/generated/triangle"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
@@ -75,7 +75,7 @@ main :: proc() {
 
 	layout := triangle_shader.layout_desc()
 
-	program_desc := ape_sample.Shader_Program_Desc {
+	program_desc := gfx_app.Shader_Program_Desc {
 		package_path = "build/shaders/triangle.ashader",
 		shader_label = "triangle shader",
 		pipeline_desc = {
@@ -86,15 +86,15 @@ main :: proc() {
 		},
 		binding_group_layout_desc = triangle_shader.binding_group_layout_desc,
 	}
-	program: ape_sample.Reloadable_Shader_Program
-	if !ape_sample.reloadable_shader_program_init(&ctx, &program, program_desc, {
+	program: gfx_app.Reloadable_Shader_Program
+	if !gfx_app.reloadable_shader_program_init(&ctx, &program, program_desc, {
 		shader_name = "triangle",
 		source_path = "assets/shaders/triangle.slang",
 		package_path = "build/shaders/triangle.ashader",
 	}) {
 		return
 	}
-	defer ape_sample.reloadable_shader_program_destroy(&ctx, &program)
+	defer gfx_app.reloadable_shader_program_destroy(&ctx, &program)
 
 	bindings: gfx.Bindings
 	bindings.vertex_buffers[0] = {buffer = vertex_buffer, offset = 0}
@@ -105,7 +105,7 @@ main :: proc() {
 	for !app.should_close(&window) {
 		app.poll_events()
 
-		resize, resize_ok := ape_sample.resize_swapchain(&ctx, &window, &render_width, &render_height)
+		resize, resize_ok := gfx_app.resize_swapchain(&ctx, &window, &render_width, &render_height)
 		if !resize_ok {
 			fmt.eprintln("resize failed: ", gfx.last_error(&ctx))
 			return
@@ -121,7 +121,7 @@ main :: proc() {
 			}
 		}
 
-		ape_sample.reloadable_shader_program_poll(&ctx, &program)
+		gfx_app.reloadable_shader_program_poll(&ctx, &program)
 
 		action := gfx.default_pass_action()
 		action.colors[0].clear_value = gfx.Color{r = 0.025, g = 0.03, b = 0.045, a = 1}
@@ -130,7 +130,7 @@ main :: proc() {
 			fmt.eprintln("begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}
-		if !gfx.apply_pipeline(&ctx, ape_sample.reloadable_shader_program_pipeline(&program)) {
+		if !gfx.apply_pipeline(&ctx, gfx_app.reloadable_shader_program_pipeline(&program)) {
 			fmt.eprintln("apply_pipeline failed: ", gfx.last_error(&ctx))
 			return
 		}
@@ -140,7 +140,7 @@ main :: proc() {
 		}
 
 		t := triangle_wave(frame, 180)
-		x_scale := ape_sample.reference_aspect_x_scale(render_width, render_height, REFERENCE_ASPECT)
+		x_scale := gfx_app.reference_aspect_x_scale(render_width, render_height, REFERENCE_ASPECT)
 		uniforms := Frame_Uniforms {
 			ape_frame = {
 				(t * 2.0 - 1.0) * 0.22 * x_scale,
@@ -190,7 +190,7 @@ triangle_wave :: proc(frame: int, period: int) -> f32 {
 }
 
 make_triangle_vertices :: proc(render_width, render_height: i32) -> [3]Vertex {
-	x_scale := ape_sample.reference_aspect_x_scale(render_width, render_height, REFERENCE_ASPECT)
+	x_scale := gfx_app.reference_aspect_x_scale(render_width, render_height, REFERENCE_ASPECT)
 	return [3]Vertex {
 		{position = {0.0, 0.55, 0.0}, color = {1.0, 0.18, 0.12}},
 		{position = {0.52 * x_scale, -0.42, 0.0}, color = {0.12, 0.78, 0.32}},

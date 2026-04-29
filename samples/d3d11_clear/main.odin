@@ -3,7 +3,7 @@ package main
 import "core:fmt"
 import app "ape:app"
 import gfx "ape:gfx"
-import ape_sample "ape:samples/ape_sample"
+import gfx_app "ape:gfx_app"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
 
@@ -49,7 +49,7 @@ main :: proc() {
 	for !app.should_close(&window) {
 		app.poll_events()
 
-		resize, resize_ok := ape_sample.resize_swapchain(&ctx, &window, &render_width, &render_height)
+		resize, resize_ok := gfx_app.resize_swapchain(&ctx, &window, &render_width, &render_height)
 		if !resize_ok {
 			fmt.eprintln("resize failed: ", gfx.last_error(&ctx))
 			return

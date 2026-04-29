@@ -563,7 +563,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Roadmap note: the overall next implementation batch is promoting the reusable `samples/ape_sample` shader-program and resize helpers into a supported companion package. The next shader-contract-specific task after that is to harden the remaining immediate `gfx.Bindings` path against `Pipeline_Layout` metadata so transient resource bindings get the same public validation coverage as object-backed binding groups before backend-specific D3D11 checks run.
+Roadmap note: `gfx_app` now owns the reusable shader-program and resize helpers. The next shader-contract-specific task is to harden the remaining immediate `gfx.Bindings` path against `Pipeline_Layout` metadata so transient resource bindings get the same public validation coverage as object-backed binding groups before backend-specific D3D11 checks run.
 
 ## Validation
 

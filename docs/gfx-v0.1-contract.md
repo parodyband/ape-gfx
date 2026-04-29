@@ -41,7 +41,7 @@ Provisional means the feature exists and is useful, but we expect to refine deta
 - Generated binding helper names for documented v0.1 shader shapes are listed in `docs/gfx-slang-reflection-contract.md`; less common future shapes may still refine helper naming.
 - D3D11 compute, storage image views, and storage buffer views are present, but the storage/compute surface should keep evolving only from real use cases.
 - `app` is a minimal sample/windowing facade. It is not the long-term platform contract.
-- `samples/ape_sample` is the current canonical app-facing helper layer for samples: resize handling, shader-program loading, pipeline-layout setup, binding-group-layout ownership, must-style sample calls, and hot reload. Its current package path is provisional; reusable pieces should move into a supported companion package before a stronger v0.1 promise.
+- `gfx_app` is the current app-facing helper layer: resize handling, shader-program loading, pipeline-layout setup, binding-group-layout ownership, fail-fast sample calls, sample texture assets, and shader reload.
 - Generated API Markdown format under `docs/api` is a validation aid. The public API is the Odin package itself.
 - Vulkan SPIR-V output from `ape_shaderc` is useful for future backend work, but no Vulkan runtime contract exists yet.
 
@@ -75,13 +75,10 @@ The stable package boundary is:
 
 - `gfx`: public low-level graphics API.
 - `shader`: `.ashader` package loading and conversion to `gfx.Shader_Desc`.
+- `gfx_app`: app-facing graphics helper package built on `gfx`, `shader`, and `app`.
 - `app`: sample-grade desktop window creation and native-window access.
 
-The provisional app-facing helper boundary is:
-
-- `samples/ape_sample`: current home for the practical sample/application helpers that make generated Slang shader programs usable without repeating pipeline-layout and binding-group-layout setup by hand.
-
-This helper package is important, but the path is not stable yet. The active roadmap promotes the reusable parts into a supported companion package, working name `gfx_app`, while keeping core `gfx` as the explicit recoverable API.
+`gfx_app` is supported as the practical helper path, but individual helper names remain easier to change than the low-level `gfx` command/resource contract while the project is pre-1.0. Hot reload is useful, but still provisional.
 
 Backend implementation files and generated build outputs are not part of the stable framework API.
 

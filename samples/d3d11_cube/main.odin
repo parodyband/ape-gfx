@@ -3,7 +3,7 @@ package main
 import "core:fmt"
 import "core:time"
 import ape_math "ape:samples/ape_math"
-import ape_sample "ape:samples/ape_sample"
+import gfx_app "ape:gfx_app"
 import app "ape:app"
 import cube_shader "ape:assets/shaders/generated/cube"
 import gfx "ape:gfx"
@@ -127,7 +127,7 @@ main :: proc() {
 
 	layout := cube_shader.layout_desc()
 
-	program_desc := ape_sample.Shader_Program_Desc {
+	program_desc := gfx_app.Shader_Program_Desc {
 		package_path = "build/shaders/cube.ashader",
 		shader_label = "cube shader",
 		pipeline_desc = {
@@ -149,15 +149,15 @@ main :: proc() {
 		},
 		binding_group_layout_desc = cube_shader.binding_group_layout_desc,
 	}
-	program: ape_sample.Reloadable_Shader_Program
-	if !ape_sample.reloadable_shader_program_init(&ctx, &program, program_desc, {
+	program: gfx_app.Reloadable_Shader_Program
+	if !gfx_app.reloadable_shader_program_init(&ctx, &program, program_desc, {
 		shader_name = "cube",
 		source_path = "assets/shaders/cube.slang",
 		package_path = "build/shaders/cube.ashader",
 	}) {
 		return
 	}
-	defer ape_sample.reloadable_shader_program_destroy(&ctx, &program)
+	defer gfx_app.reloadable_shader_program_destroy(&ctx, &program)
 
 	bindings: gfx.Bindings
 	bindings.vertex_buffers[0] = {buffer = vertex_buffer, offset = 0}
@@ -173,7 +173,7 @@ main :: proc() {
 	for !app.should_close(&window) {
 		app.poll_events()
 
-		resize, resize_ok := ape_sample.resize_swapchain(&ctx, &window, &render_width, &render_height)
+		resize, resize_ok := gfx_app.resize_swapchain(&ctx, &window, &render_width, &render_height)
 		if !resize_ok {
 			fmt.eprintln("resize failed: ", gfx.last_error(&ctx))
 			return
@@ -185,7 +185,7 @@ main :: proc() {
 			projection = ape_math.cube_projection(render_width, render_height)
 		}
 
-		ape_sample.reloadable_shader_program_poll(&ctx, &program)
+		gfx_app.reloadable_shader_program_poll(&ctx, &program)
 
 		action := gfx.default_pass_action()
 		action.colors[0].clear_value = gfx.Color{r = 0.018, g = 0.021, b = 0.030, a = 1}
@@ -195,7 +195,7 @@ main :: proc() {
 			fmt.eprintln("begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}
-		if !gfx.apply_pipeline(&ctx, ape_sample.reloadable_shader_program_pipeline(&program)) {
+		if !gfx.apply_pipeline(&ctx, gfx_app.reloadable_shader_program_pipeline(&program)) {
 			fmt.eprintln("apply_pipeline failed: ", gfx.last_error(&ctx))
 			return
 		}

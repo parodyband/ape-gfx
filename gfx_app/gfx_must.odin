@@ -1,4 +1,4 @@
-package ape_sample
+package gfx_app
 
 import "core:fmt"
 import "core:os"

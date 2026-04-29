@@ -3,7 +3,7 @@ package main
 import "core:math"
 import "core:time"
 import ape_math "ape:samples/ape_math"
-import ape_sample "ape:samples/ape_sample"
+import gfx_app "ape:gfx_app"
 import app "ape:app"
 import gfx "ape:gfx"
 import improved_shadows_shader "ape:assets/shaders/generated/improved_shadows"
@@ -58,10 +58,10 @@ Frame_Uniforms :: struct {
 }
 
 main :: proc() {
-	ape_sample.must(app.init(), "app init failed")
+	gfx_app.must(app.init(), "app init failed")
 	defer app.shutdown()
 
-	window := ape_sample.must_create_window({
+	window := gfx_app.must_create_window({
 		width = 800,
 		height = 600,
 		title = "Improved Shadows (Ape GFX)",
@@ -70,7 +70,7 @@ main :: proc() {
 	defer app.destroy_window(&window)
 
 	fb_width, fb_height := app.framebuffer_size(&window)
-	ctx := ape_sample.must_init_gfx({
+	ctx := gfx_app.must_init_gfx({
 		backend = .D3D11,
 		width = fb_width,
 		height = fb_height,
@@ -84,7 +84,7 @@ main :: proc() {
 
 	scene := make_scene()
 
-	shadow_image := ape_sample.must_create_image(&ctx, {
+	shadow_image := gfx_app.must_create_image(&ctx, {
 		label = "shadow map",
 		kind = .Image_2D,
 		usage = {.Texture, .Depth_Stencil_Attachment},
@@ -97,22 +97,22 @@ main :: proc() {
 	})
 	defer gfx.destroy(&ctx, shadow_image)
 
-	shadow_depth_view := ape_sample.must_create_view(&ctx, {
+	shadow_depth_view := gfx_app.must_create_view(&ctx, {
 		label = "shadow depth attachment",
 		depth_stencil_attachment = {image = shadow_image, format = .D32F},
 	})
 	defer gfx.destroy(&ctx, shadow_depth_view)
 
-	shadow_sample_view := ape_sample.must_create_view(&ctx, {
+	shadow_sample_view := gfx_app.must_create_view(&ctx, {
 		label = "shadow sampled depth",
 		texture = {image = shadow_image, format = .D32F},
 	})
 	defer gfx.destroy(&ctx, shadow_sample_view)
 
-	texture_asset := ape_sample.must_load_texture_asset("build/textures/texture.aptex")
-	defer ape_sample.unload_texture_asset(&texture_asset)
+	texture_asset := gfx_app.must_load_texture_asset("build/textures/texture.aptex")
+	defer gfx_app.unload_texture_asset(&texture_asset)
 
-	diffuse_texture := ape_sample.must_create_image(&ctx, {
+	diffuse_texture := gfx_app.must_create_image(&ctx, {
 		label = "diffuse texture",
 		kind = .Image_2D,
 		usage = {.Texture, .Immutable},
@@ -126,13 +126,13 @@ main :: proc() {
 	})
 	defer gfx.destroy(&ctx, diffuse_texture)
 
-	diffuse_view := ape_sample.must_create_view(&ctx, {
+	diffuse_view := gfx_app.must_create_view(&ctx, {
 		label = "diffuse texture view",
 		texture = {image = diffuse_texture, format = .RGBA8},
 	})
 	defer gfx.destroy(&ctx, diffuse_view)
 
-	diffuse_sampler := ape_sample.must_create_sampler(&ctx, {
+	diffuse_sampler := gfx_app.must_create_sampler(&ctx, {
 		label = "diffuse sampler",
 		min_filter = .Linear,
 		mag_filter = .Linear,
@@ -143,7 +143,7 @@ main :: proc() {
 	})
 	defer gfx.destroy(&ctx, diffuse_sampler)
 
-	shadow_sampler := ape_sample.must_create_sampler(&ctx, {
+	shadow_sampler := gfx_app.must_create_sampler(&ctx, {
 		label = "shadow sampler",
 		min_filter = .Nearest,
 		mag_filter = .Nearest,
@@ -154,14 +154,14 @@ main :: proc() {
 	})
 	defer gfx.destroy(&ctx, shadow_sampler)
 
-	cube_buffer := ape_sample.must_create_buffer(&ctx, {
+	cube_buffer := gfx_app.must_create_buffer(&ctx, {
 		label = "cube vertices",
 		usage = {.Vertex, .Immutable},
 		data = gfx.range(scene.cube_vertices[:]),
 	})
 	defer gfx.destroy(&ctx, cube_buffer)
 
-	plane_buffer := ape_sample.must_create_buffer(&ctx, {
+	plane_buffer := gfx_app.must_create_buffer(&ctx, {
 		label = "plane vertices",
 		usage = {.Vertex, .Immutable},
 		data = gfx.range(scene.plane_vertices[:]),
@@ -170,7 +170,7 @@ main :: proc() {
 
 	depth_layout := shadow_depth_shader.layout_desc()
 	depth_layout.buffers[0].stride = u32(size_of(Scene_Vertex))
-	depth_program := ape_sample.must_load_shader_program(&ctx, {
+	depth_program := gfx_app.must_load_shader_program(&ctx, {
 		package_path = "build/shaders/shadow_depth.ashader",
 		shader_label = "shadow depth shader",
 		pipeline_desc = {
@@ -183,9 +183,9 @@ main :: proc() {
 		},
 		binding_group_layout_desc = shadow_depth_shader.binding_group_layout_desc,
 	})
-	defer ape_sample.shader_program_destroy(&ctx, &depth_program)
+	defer gfx_app.shader_program_destroy(&ctx, &depth_program)
 
-	shadows_program := ape_sample.must_load_shader_program(&ctx, {
+	shadows_program := gfx_app.must_load_shader_program(&ctx, {
 		package_path = "build/shaders/improved_shadows.ashader",
 		shader_label = "improved shadows shader",
 		pipeline_desc = {
@@ -198,10 +198,10 @@ main :: proc() {
 		},
 		binding_group_layout_desc = improved_shadows_shader.binding_group_layout_desc,
 	})
-	defer ape_sample.shader_program_destroy(&ctx, &shadows_program)
+	defer gfx_app.shader_program_destroy(&ctx, &shadows_program)
 
-	material_group_layout := ape_sample.shader_program_binding_group_layout(&shadows_program, improved_shadows_shader.GROUP_1)
-	shadow_resources_group_layout := ape_sample.shader_program_binding_group_layout(&shadows_program, improved_shadows_shader.GROUP_2)
+	material_group_layout := gfx_app.shader_program_binding_group_layout(&shadows_program, improved_shadows_shader.GROUP_1)
+	shadow_resources_group_layout := gfx_app.shader_program_binding_group_layout(&shadows_program, improved_shadows_shader.GROUP_2)
 
 	depth_cube_bindings: gfx.Bindings
 	depth_cube_bindings.vertex_buffers[0] = {buffer = cube_buffer}
@@ -216,7 +216,7 @@ main :: proc() {
 	improved_shadows_shader.set_group_view_material_diffuse_texture(&material_group_desc, diffuse_view)
 	improved_shadows_shader.set_group_sampler_material_diffuse_sampler(&material_group_desc, diffuse_sampler)
 	material_group, material_group_ok := gfx.create_binding_group(&ctx, material_group_desc)
-	ape_sample.must_gfx(&ctx, material_group_ok, "improved shadows material binding group creation failed")
+	gfx_app.must_gfx(&ctx, material_group_ok, "improved shadows material binding group creation failed")
 	defer gfx.destroy(&ctx, material_group)
 
 	shadow_resources_group_desc: gfx.Binding_Group_Desc
@@ -224,7 +224,7 @@ main :: proc() {
 	improved_shadows_shader.set_group_view_shadow_resources_shadow_map(&shadow_resources_group_desc, shadow_sample_view)
 	improved_shadows_shader.set_group_sampler_shadow_resources_shadow_sampler(&shadow_resources_group_desc, shadow_sampler)
 	shadow_resources_group, shadow_resources_group_ok := gfx.create_binding_group(&ctx, shadow_resources_group_desc)
-	ape_sample.must_gfx(&ctx, shadow_resources_group_ok, "improved shadows shadow-resource binding group creation failed")
+	gfx_app.must_gfx(&ctx, shadow_resources_group_ok, "improved shadows shadow-resource binding group creation failed")
 	defer gfx.destroy(&ctx, shadow_resources_group)
 
 	render_width := fb_width
@@ -239,17 +239,17 @@ main :: proc() {
 		delta_seconds = clamp_f32(delta_seconds, 0, 0.1)
 		update_camera(&camera, &window, delta_seconds)
 
-		resize := ape_sample.must_resize_swapchain(&ctx, &window, &render_width, &render_height)
+		resize := gfx_app.must_resize_swapchain(&ctx, &window, &render_width, &render_height)
 		if !resize.active {
 			continue
 		}
 
 		shadow_action := gfx.default_pass_action()
 		shadow_action.depth.clear_value = 1
-		ape_sample.begin_pass(&ctx, {label = "shadow map pass", depth_stencil_attachment = shadow_depth_view, action = shadow_action})
-		ape_sample.apply_pipeline(&ctx, depth_program.pipeline)
+		gfx_app.begin_pass(&ctx, {label = "shadow map pass", depth_stencil_attachment = shadow_depth_view, action = shadow_action})
+		gfx_app.apply_pipeline(&ctx, depth_program.pipeline)
 		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
-		ape_sample.end_pass(&ctx)
+		gfx_app.end_pass(&ctx)
 
 		camera_pos := camera_position(&camera)
 		view := camera_view(&camera)
@@ -264,8 +264,8 @@ main :: proc() {
 		pass_action := gfx.default_pass_action()
 		pass_action.colors[0].clear_value = gfx.Color{r = 0.1, g = 0.1, b = 0.1, a = 1}
 		pass_action.depth.clear_value = 1
-		ape_sample.begin_pass(&ctx, {label = "shadows pass", action = pass_action})
-		ape_sample.apply_pipeline(&ctx, shadows_program.pipeline)
+		gfx_app.begin_pass(&ctx, {label = "shadows pass", action = pass_action})
+		gfx_app.apply_pipeline(&ctx, shadows_program.pipeline)
 		apply_frame_uniforms(&ctx, &frame_uniforms)
 		draw_scene(
 			&ctx,
@@ -279,8 +279,8 @@ main :: proc() {
 			material_group,
 			shadow_resources_group,
 		)
-		ape_sample.end_pass(&ctx)
-		ape_sample.commit(&ctx)
+		gfx_app.end_pass(&ctx)
+		gfx_app.commit(&ctx)
 
 		frame += 1
 		when AUTO_EXIT_FRAMES > 0 {
@@ -305,12 +305,12 @@ draw_scene :: proc(
 ) {
 	apply_scene_bindings(ctx, scene_pass, plane_bindings, material_group, shadow_resources_group)
 	apply_object_uniforms(ctx, scene_pass, ape_math.identity(), light_view_proj)
-	ape_sample.draw(ctx, 0, plane_vertex_count)
+	gfx_app.draw(ctx, 0, plane_vertex_count)
 
 	apply_scene_bindings(ctx, scene_pass, cube_bindings, material_group, shadow_resources_group)
 	for model in cube_models {
 		apply_object_uniforms(ctx, scene_pass, model, light_view_proj)
-		ape_sample.draw(ctx, 0, cube_vertex_count)
+		gfx_app.draw(ctx, 0, cube_vertex_count)
 	}
 }
 
@@ -323,10 +323,10 @@ apply_scene_bindings :: proc(
 ) {
 	switch scene_pass {
 	case .Shadow:
-		ape_sample.apply_bindings(ctx, base_bindings)
+		gfx_app.apply_bindings(ctx, base_bindings)
 	case .Lit:
 		groups := [?]gfx.Binding_Group{material_group, shadow_resources_group}
-		ape_sample.must_gfx(ctx, gfx.apply_binding_groups(ctx, groups[:], base_bindings), "lit binding groups apply failed")
+		gfx_app.must_gfx(ctx, gfx.apply_binding_groups(ctx, groups[:], base_bindings), "lit binding groups apply failed")
 	}
 }
 
@@ -337,14 +337,14 @@ apply_object_uniforms :: proc(ctx: ^gfx.Context, scene_pass: Scene_Pass, model, 
 	}
 	switch scene_pass {
 	case .Shadow:
-		ape_sample.must_gfx(ctx, shadow_depth_shader.apply_uniform_ObjectUniforms(ctx, &uniforms), "shadow object uniform upload failed")
+		gfx_app.must_gfx(ctx, shadow_depth_shader.apply_uniform_ObjectUniforms(ctx, &uniforms), "shadow object uniform upload failed")
 	case .Lit:
-		ape_sample.must_gfx(ctx, improved_shadows_shader.apply_uniform_ObjectUniforms(ctx, &uniforms), "lit object uniform upload failed")
+		gfx_app.must_gfx(ctx, improved_shadows_shader.apply_uniform_ObjectUniforms(ctx, &uniforms), "lit object uniform upload failed")
 	}
 }
 
 apply_frame_uniforms :: proc(ctx: ^gfx.Context, uniforms: ^Frame_Uniforms) {
-	ape_sample.must_gfx(ctx, improved_shadows_shader.apply_uniform_FrameUniforms(ctx, uniforms), "frame uniform upload failed")
+	gfx_app.must_gfx(ctx, improved_shadows_shader.apply_uniform_FrameUniforms(ctx, uniforms), "frame uniform upload failed")
 }
 
 make_camera_controller :: proc(initial_position, target: ape_math.Vec3) -> Camera_Controller {
