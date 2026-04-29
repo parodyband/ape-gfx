@@ -59,7 +59,7 @@ The stable API surface is the low-level `gfx` package:
 - `query_features`, `query_limits`, `query_backend_limits`, and `query_*_state`
 - `last_error`, `last_error_code`, and `last_error_info`
 
-Sokol-style `make_*` procedures remain available as compatibility aliases, but new examples should prefer `create_*` so failures are explicit at the callsite.
+`create_*` is the only public resource creation spelling. Earlier handle-only `make_*` aliases were removed before `v0.1-alpha` because the API is still pre-1.0 and failures should be explicit at the callsite.
 
 ## Shader Pipeline
 
@@ -164,12 +164,12 @@ Current D3D11 samples:
 
 If you were using earlier prototype code:
 
-- Prefer `create_*` over `make_*` for new callsites.
+- Replace any old `make_*` callsites with `create_*` and handle the returned `ok` value.
 - Create `View` handles explicitly. Images and buffers do not bind directly as shader resources or attachments.
 - Use generated Slang `layout_desc()` helpers for simple packed vertex layouts.
 - Use generated binding setters/constants instead of handwritten view and sampler slot numbers.
 - Check `last_error_info` when a command returns `false`; the typed `Error_Code` is now the stable programmatic category.
-- Treat shader reload helpers as sample/dev utilities, not core `gfx` API.
+- Treat `samples/ape_sample` as the current provisional helper layer for shader-program setup, resize handling, binding layout ownership, and hot reload. The reusable pieces are planned to move into a supported companion package.
 
 ## Known Limits
 
@@ -201,21 +201,21 @@ These pieces exist, but should not be treated as long-term frozen yet:
 - Generated binding helper naming for less common shader shapes beyond the documented v0.1 contract.
 - Storage and compute ergonomics beyond the current D3D11 compute samples.
 - `app` as a sample-grade windowing layer.
-- `samples/ape_sample` hot reload helpers.
+- `samples/ape_sample` as the temporary home for app-facing helper code.
 - Generated Markdown API docs format.
 
 ## Deferred Work
 
-After v0.1, the next larger areas are:
+After v0.1-alpha, the next larger areas are:
 
+- promote the reusable `samples/ape_sample` helper pieces into a supported companion package
+- add a low-level render-target helper for common color/depth target setup
 - harden the immediate `gfx.Bindings` path against `Pipeline_Layout` metadata before backend checks
 - sketch resource-array and bindless reflection before freezing the group record shape further
 - improve storage and compute ergonomics beyond the current samples
-- add init-time required features and limits if the binding/layout design needs them
-- add structured shader diagnostics and scoped diagnostics
-- improve generated API docs if `.odin-doc` parsing becomes worthwhile
-- add Vulkan backend parity as an API pressure test
-- replace sample texture conversion with a real KTX2/Basis asset path
+- add platform-neutral wrappers for null-backend validation, shader compilation, docs, and contract tests
+- add Vulkan backend parity as an API pressure test after the D3D11 API feels boring
+- replace sample texture conversion with a real KTX2/Basis asset path later
 - revisit async shader hot reload after the shader dependency model is clearer
 
 ## Release Checklist

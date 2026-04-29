@@ -1,7 +1,6 @@
 package main
 
 import "core:fmt"
-import "core:os"
 import "core:time"
 import ape_math "ape:samples/ape_math"
 import ape_sample "ape:samples/ape_sample"
@@ -11,10 +10,6 @@ import textured_cube_shader "ape:assets/shaders/generated/textured_cube"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
 ROTATION_RADIANS_PER_SECOND :: f32(0.5)
-
-TEXTURE_MAGIC :: u32(0x58545041) // "APTX"
-TEXTURE_VERSION :: u32(1)
-TEXTURE_HEADER_SIZE :: 16
 
 Vertex :: struct {
 	position: [3]f32,
@@ -30,13 +25,6 @@ Frame_Uniforms :: struct {
 #assert(u32(size_of(Vertex)) == textured_cube_shader.VERTEX_STRIDE)
 #assert(offset_of(Vertex, position) == textured_cube_shader.ATTR_POSITION_OFFSET)
 #assert(offset_of(Vertex, uv) == textured_cube_shader.ATTR_TEXCOORD_OFFSET)
-
-Texture_Asset :: struct {
-	bytes: []u8,
-	pixels: []u8,
-	width: i32,
-	height: i32,
-}
 
 main :: proc() {
 	if !app.init() {
@@ -137,12 +125,12 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, index_buffer)
 
-	texture_asset, texture_asset_ok := load_texture_asset("build/textures/texture.aptex")
+	texture_asset, texture_asset_ok := ape_sample.load_texture_asset("build/textures/texture.aptex")
 	if !texture_asset_ok {
 		fmt.eprintln("failed to load build/textures/texture.aptex; run tools/convert_texture_rgba8.ps1 first")
 		return
 	}
-	defer unload_texture_asset(&texture_asset)
+	defer ape_sample.unload_texture_asset(&texture_asset)
 
 	texture, texture_ok := gfx.create_image(&ctx, {
 		label = "jpg converted texture",
@@ -303,60 +291,4 @@ main :: proc() {
 			}
 		}
 	}
-}
-
-load_texture_asset :: proc(path: string) -> (Texture_Asset, bool) {
-	bytes, ok := os.read_entire_file(path)
-	if !ok {
-		return {}, false
-	}
-
-	if len(bytes) < TEXTURE_HEADER_SIZE {
-		delete(bytes)
-		return {}, false
-	}
-
-	if read_u32(bytes, 0) != TEXTURE_MAGIC || read_u32(bytes, 4) != TEXTURE_VERSION {
-		delete(bytes)
-		return {}, false
-	}
-
-	width := read_u32(bytes, 8)
-	height := read_u32(bytes, 12)
-	if width == 0 || height == 0 {
-		delete(bytes)
-		return {}, false
-	}
-
-	data_size := int(width) * int(height) * 4
-	if len(bytes) < TEXTURE_HEADER_SIZE + data_size {
-		delete(bytes)
-		return {}, false
-	}
-
-	pixels := bytes[TEXTURE_HEADER_SIZE:TEXTURE_HEADER_SIZE + data_size]
-	return Texture_Asset {
-		bytes = bytes,
-		pixels = pixels,
-		width = i32(width),
-		height = i32(height),
-	}, true
-}
-
-unload_texture_asset :: proc(asset: ^Texture_Asset) {
-	if asset == nil {
-		return
-	}
-
-	if asset.bytes != nil {
-		delete(asset.bytes)
-	}
-	asset^ = {}
-}
-
-read_u32 :: proc(bytes: []u8, offset: int) -> u32 {
-	return u32(bytes[offset]) |
-	       (u32(bytes[offset + 1]) << 8) |
-	       (u32(bytes[offset + 2]) << 16) |
-	       (u32(bytes[offset + 3]) << 24)
 }

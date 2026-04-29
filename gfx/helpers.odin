@@ -37,54 +37,6 @@ apply_uniform :: proc(ctx: ^Context, group: u32, slot: int, value: ^$T) -> bool 
 	return apply_uniforms(ctx, group, slot, range_raw(rawptr(value), size_of(T)))
 }
 
-// make_buffer is the Sokol-style handle-only compatibility alias for create_buffer.
-make_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> Buffer {
-	handle, _ := create_buffer(ctx, desc)
-	return handle
-}
-
-// make_image is the Sokol-style handle-only compatibility alias for create_image.
-make_image :: proc(ctx: ^Context, desc: Image_Desc) -> Image {
-	handle, _ := create_image(ctx, desc)
-	return handle
-}
-
-// make_view is the Sokol-style handle-only compatibility alias for create_view.
-make_view :: proc(ctx: ^Context, desc: View_Desc) -> View {
-	handle, _ := create_view(ctx, desc)
-	return handle
-}
-
-// make_sampler is the Sokol-style handle-only compatibility alias for create_sampler.
-make_sampler :: proc(ctx: ^Context, desc: Sampler_Desc) -> Sampler {
-	handle, _ := create_sampler(ctx, desc)
-	return handle
-}
-
-// make_shader is the Sokol-style handle-only compatibility alias for create_shader.
-make_shader :: proc(ctx: ^Context, desc: Shader_Desc) -> Shader {
-	handle, _ := create_shader(ctx, desc)
-	return handle
-}
-
-// make_pipeline is the Sokol-style handle-only compatibility alias for create_pipeline.
-make_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> Pipeline {
-	handle, _ := create_pipeline(ctx, desc)
-	return handle
-}
-
-// make_pipeline_layout is the handle-only compatibility alias for create_pipeline_layout.
-make_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> Pipeline_Layout {
-	handle, _ := create_pipeline_layout(ctx, desc)
-	return handle
-}
-
-// make_compute_pipeline is the Sokol-style handle-only compatibility alias for create_compute_pipeline.
-make_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> Compute_Pipeline {
-	handle, _ := create_compute_pipeline(ctx, desc)
-	return handle
-}
-
 // destroy overloads the explicit destroy_* procedures for all public resource handles.
 destroy :: proc {
 	destroy_buffer,

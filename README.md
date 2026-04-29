@@ -105,10 +105,10 @@ defer gfx.destroy(&ctx, vertex_buffer)
 - `shader`: `.ashader` loading and conversion to `gfx.Shader_Desc`
 - `app`: small window/event layer used by samples
 - `tools/ape_shaderc`: Slang compiler/package tool
-- `samples/ape_sample`: shared sample helpers for resize handling and shader reload
+- `samples/ape_sample`: provisional app-facing helper layer used by samples for resize handling, shader-program setup, binding layout ownership, and shader reload
 - `samples/ape_math`: sample-only matrix helpers
 
-Only `gfx`, `shader`, and the sample-grade `app` package are part of the current framework boundary.
+`gfx`, `shader`, and the sample-grade `app` package are the stable current boundary. `samples/ape_sample` is the practical helper path used by samples today; the reusable parts are being promoted into a supported companion package instead of staying sample-only.
 
 ## Shaders
 

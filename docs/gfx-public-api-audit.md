@@ -8,7 +8,6 @@ This audit records the v0.1 public surface for `gfx`. It classifies every symbol
 ## Status Key
 
 - `keep`: intended to remain public for v0.1.
-- `compat`: keep public as a compatibility or low-level helper, but avoid in primary samples.
 - `hide`: should become private or disappear from public docs if Odin/package constraints allow it.
 - `defer`: public shape exists, but the feature should not be considered v0.1-stable yet.
 - `rename`: spelling should change before a stronger compatibility promise.
@@ -20,7 +19,7 @@ Composite statuses are comma-separated.
 ## First Decisions
 
 - `create_*` remains the primary creation spelling.
-- `make_*` remains as Sokol-style handle-only compatibility, but primary samples and docs should prefer `create_*`.
+- `make_*` handle-only aliases are removed before `v0.1-alpha`. The project is pre-1.0 and should not preserve older creation spellings.
 - `destroy` remains the primary ergonomic cleanup overload, while `destroy_*` stays public for explicit callsites.
 - `range` is the primary data-span helper. `range_slice` and `range_fixed_array` are private overload implementations. `range_raw` stays public as the explicit raw-pointer escape hatch.
 - `query_*` names are acceptable for v0.1.
@@ -114,14 +113,6 @@ Composite statuses are comma-separated.
 | `last_error` | keep | Human-readable diagnostics. |
 | `last_error_code` | keep, needs_test | Keep after Phase 3 makes codes explicit. |
 | `last_error_info` | keep, needs_test | Keep after Phase 3 makes codes explicit. |
-| `make_buffer` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_compute_pipeline` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_image` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_pipeline` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_pipeline_layout` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_sampler` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_shader` | compat | Compatibility alias. Avoid in primary samples. |
-| `make_view` | compat | Compatibility alias. Avoid in primary samples. |
 | `pipeline_valid` | keep, needs_test | Simple sentinel check. |
 | `pipeline_layout_valid` | keep, needs_test | Simple sentinel check. |
 | `query_backend_limits` | keep, needs_docs | Stable name. Document difference from `query_limits`. |
@@ -133,7 +124,7 @@ Composite statuses are comma-separated.
 | `query_view_compatible` | keep, needs_test | Useful validation helper. |
 | `query_view_image` | keep, needs_docs | Convenience helper over `query_view_state`. |
 | `query_view_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
-| `range_raw` | compat | Useful raw-pointer escape hatch. Primary docs should prefer typed `range` when possible. |
+| `range_raw` | keep | Useful raw-pointer escape hatch. Primary docs should prefer typed `range` when possible. |
 | `read_buffer` | keep, needs_test | Synchronous readback is v0.1-stable if documented as blocking. |
 | `resize` | keep, needs_test | Stable swapchain resize entry point. |
 | `resolve_image` | keep, needs_test | Stable MSAA color resolve command. |

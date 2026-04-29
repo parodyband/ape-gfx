@@ -1,6 +1,6 @@
 # Ape GFX v0.1 Contract
 
-Date: 2026-04-28
+Date: 2026-04-29
 
 This document defines the intended `v0.1` contract for `gfx`. It is the line between the low-level graphics framework we are hardening and the engine or renderer layers we are intentionally not building yet.
 
@@ -17,7 +17,7 @@ Stable means user code should be able to rely on the shape for normal `v0.1` use
 - Resource handles are opaque generational IDs. Zero is always invalid.
 - Resource lifetime is explicit: create with `create_*`, release with `destroy` or `destroy_*`.
 - Primary creation procedures return `(handle, ok)`.
-- Sokol-style `make_*` helpers remain compatibility aliases, but primary samples should use `create_*`.
+- `create_*` is the only public resource creation spelling. Pre-1.0 code does not keep older handle-only `make_*` aliases.
 - The render command flow is `begin_pass`, `apply_pipeline`, `apply_bindings`, `apply_uniforms`, `draw`, `end_pass`, `commit`.
 - The compute command flow is `begin_compute_pass`, `apply_compute_pipeline`, `apply_bindings`, `dispatch`, `end_compute_pass`.
 - Buffers, images, views, samplers, shaders, graphics pipelines, and compute pipelines are public resource types.
@@ -41,7 +41,7 @@ Provisional means the feature exists and is useful, but we expect to refine deta
 - Generated binding helper names for documented v0.1 shader shapes are listed in `docs/gfx-slang-reflection-contract.md`; less common future shapes may still refine helper naming.
 - D3D11 compute, storage image views, and storage buffer views are present, but the storage/compute surface should keep evolving only from real use cases.
 - `app` is a minimal sample/windowing facade. It is not the long-term platform contract.
-- `samples/ape_sample` shader reload helpers are dev/sample utilities, not core `gfx` API.
+- `samples/ape_sample` is the current canonical app-facing helper layer for samples: resize handling, shader-program loading, pipeline-layout setup, binding-group-layout ownership, must-style sample calls, and hot reload. Its current package path is provisional; reusable pieces should move into a supported companion package before a stronger v0.1 promise.
 - Generated API Markdown format under `docs/api` is a validation aid. The public API is the Odin package itself.
 - Vulkan SPIR-V output from `ape_shaderc` is useful for future backend work, but no Vulkan runtime contract exists yet.
 
@@ -71,13 +71,19 @@ Unsupported means user code should not depend on it. If a call path exists accid
 
 ## Public Package Boundary
 
-The supported package boundary is:
+The stable package boundary is:
 
 - `gfx`: public low-level graphics API.
 - `shader`: `.ashader` package loading and conversion to `gfx.Shader_Desc`.
 - `app`: sample-grade desktop window creation and native-window access.
 
-Backend implementation files, generated build outputs, and sample helper packages are not part of the stable framework API.
+The provisional app-facing helper boundary is:
+
+- `samples/ape_sample`: current home for the practical sample/application helpers that make generated Slang shader programs usable without repeating pipeline-layout and binding-group-layout setup by hand.
+
+This helper package is important, but the path is not stable yet. The active roadmap promotes the reusable parts into a supported companion package, working name `gfx_app`, while keeping core `gfx` as the explicit recoverable API.
+
+Backend implementation files and generated build outputs are not part of the stable framework API.
 
 Reference docs:
 
