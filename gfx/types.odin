@@ -526,6 +526,11 @@ Pass_Action :: struct {
 }
 
 // Desc configures a graphics Context.
+//
+// `backend` selects the native implementation. `Backend.Auto` resolves at
+// `init` time to a platform-appropriate backend: `D3D11` on Windows, and
+// `Null` on every other platform until Vulkan/Metal land. Naming a concrete
+// backend (e.g. `.D3D11`) bypasses resolution and is used as-is.
 Desc :: struct {
 	backend: Backend,
 	width: i32,

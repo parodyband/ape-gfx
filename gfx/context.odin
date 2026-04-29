@@ -221,7 +221,11 @@ last_error_info :: proc(ctx: ^Context) -> Error_Info {
 @(private)
 resolve_backend :: proc(requested: Backend) -> Backend {
 	if requested == .Auto {
-		return .Null
+		when ODIN_OS == .Windows {
+			return .D3D11
+		} else {
+			return .Null
+		}
 	}
 
 	return requested
