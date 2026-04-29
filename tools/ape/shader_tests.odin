@@ -430,6 +430,9 @@ test_shaderc_resource_arrays :: proc(ctx: ^Shader_Test_Context) -> bool {
 	if !expect_shaderc_failure(ctx, test_dir, "global_sampler_array", .Graphics, "resource arrays are not supported yet", GLOBAL_SAMPLER_ARRAY) {
 		return false
 	}
+	if !expect_shaderc_failure(ctx, test_dir, "global_storage_array", .Compute, "resource arrays are not supported yet", GLOBAL_STORAGE_ARRAY) {
+		return false
+	}
 
 	fmt.println("Shaderc resource-array rejection test passed")
 	return true
@@ -585,6 +588,9 @@ expect_shaderc_failure :: proc(ctx: ^Shader_Test_Context, test_dir: string, name
 	source_path := filepath.join({test_dir, fmt.tprintf("%s.slang", name)}, context.temp_allocator)
 	package_path := filepath.join({test_dir, fmt.tprintf("%s.ashader", name)}, context.temp_allocator)
 	generated_path := filepath.join({test_dir, fmt.tprintf("%s_bindings.odin", name)}, context.temp_allocator)
+	if !remove_shaderc_failure_outputs(test_dir, name, kind, package_path, generated_path) {
+		return false
+	}
 	if !write_text_file(source_path, source) {
 		return false
 	}
@@ -634,8 +640,89 @@ expect_shaderc_failure :: proc(ctx: ^Shader_Test_Context, test_dir: string, name
 		fmt.eprintln("ape: shaderc failed ", name, " for the wrong reason; expected: ", expected)
 		return false
 	}
+	if !assert_shaderc_failure_outputs_absent(test_dir, name, kind, package_path, generated_path) {
+		return false
+	}
 
 	return true
+}
+
+remove_shaderc_failure_outputs :: proc(test_dir: string, name: string, kind: Shader_Kind, package_path: string, generated_path: string) -> bool {
+	if !remove_file_if_exists(package_path) || !remove_file_if_exists(generated_path) {
+		return false
+	}
+
+	switch kind {
+	case .Compute:
+		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.spv", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.spv.json", name)}, context.temp_allocator)) {
+			return false
+		}
+	case .Graphics:
+		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.spv", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.spv.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.spv", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.spv.json", name)}, context.temp_allocator)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+remove_file_if_exists :: proc(path: string) -> bool {
+	if path == "" || !os.exists(path) {
+		return true
+	}
+	err := os.remove(path)
+	if err != nil && os.exists(path) {
+		fmt.eprintln("ape: failed to remove stale shaderc failure output: ", path)
+		return false
+	}
+	return true
+}
+
+assert_shaderc_failure_outputs_absent :: proc(test_dir: string, name: string, kind: Shader_Kind, package_path: string, generated_path: string) -> bool {
+	if !assert_file_absent(package_path, "package") || !assert_file_absent(generated_path, "generated bindings") {
+		return false
+	}
+
+	switch kind {
+	case .Compute:
+		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc", name)}, context.temp_allocator), "D3D11 compute bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc.json", name)}, context.temp_allocator), "D3D11 compute reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.spv", name)}, context.temp_allocator), "Vulkan compute bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.spv.json", name)}, context.temp_allocator), "Vulkan compute reflection") {
+			return false
+		}
+	case .Graphics:
+		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc", name)}, context.temp_allocator), "D3D11 vertex bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc.json", name)}, context.temp_allocator), "D3D11 vertex reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc", name)}, context.temp_allocator), "D3D11 fragment bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc.json", name)}, context.temp_allocator), "D3D11 fragment reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.spv", name)}, context.temp_allocator), "Vulkan vertex bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.spv.json", name)}, context.temp_allocator), "Vulkan vertex reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.spv", name)}, context.temp_allocator), "Vulkan fragment bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.spv.json", name)}, context.temp_allocator), "Vulkan fragment reflection") {
+			return false
+		}
+	}
+
+	return true
+}
+
+assert_file_absent :: proc(path: string, label: string) -> bool {
+	if !os.exists(path) {
+		return true
+	}
+	fmt.eprintln("ape: shaderc failure wrote ", label, " before rejecting the shader: ", path)
+	return false
 }
 
 assert_contains_all :: proc(text: string, snippets: []string, label: string) -> bool {
@@ -907,6 +994,25 @@ VS_Output vs_main(VS_Input input)
 float4 fs_main(VS_Output input) : SV_Target
 {
 	return texture.Sample(samplers[0], input.uv);
+}
+`
+
+GLOBAL_STORAGE_ARRAY :: `struct Item
+{
+	float4 value;
+	uint id;
+};
+
+RWStructuredBuffer<Item> output_items[2];
+
+[shader("compute")]
+[numthreads(8, 4, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
+{
+	Item item;
+	item.value = float4(1.0, 0.0, 0.0, 1.0);
+	item.id = dispatch_id.x;
+	output_items[0][dispatch_id.x] = item;
 }
 `
 

@@ -67,6 +67,8 @@ Compiled_Stage :: struct {
 	target: Target,
 	stage: Stage,
 	entry: string,
+	bytecode_path: string,
+	reflection_path: string,
 	bytecode: []byte,
 	reflection: []byte,
 }
@@ -187,6 +189,12 @@ Shader_Build_Result :: struct {
 Modern_Slang_Context :: struct {
 	global_session: ^ISlangGlobalSession,
 	session: ^ISlangSession,
+}
+
+Slang_Linked_Entry :: struct {
+	entry_point: ^ISlangEntryPoint,
+	composite: ^ISlangComponentType,
+	linked: ^ISlangComponentType,
 }
 
 Options :: struct {
@@ -456,6 +464,79 @@ destroy_modern_slang_context :: proc(ctx: ^Modern_Slang_Context) {
 	ctx^ = {}
 }
 
+create_slang_linked_entry :: proc(
+	session: ^ISlangSession,
+	module: ^ISlangModule,
+	entry_name: string,
+	stage: SlangStage,
+	label: string,
+) -> (Slang_Linked_Entry, bool) {
+	entry_name_c, entry_name_err := strings.clone_to_cstring(entry_name, context.temp_allocator)
+	if entry_name_err != nil {
+		fmt.eprintln("ape_shaderc: failed to prepare ", label, " entry name")
+		return {}, false
+	}
+
+	diagnostics: ^ISlangBlob
+	entry_point: ^ISlangEntryPoint
+	result := module.vtable.findAndCheckEntryPoint(module, entry_name_c, stage, &entry_point, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || entry_point == nil)
+	if slang_failed(result) || entry_point == nil {
+		fmt.eprintln("ape_shaderc: ", label, " failed to find entry point: ", entry_name)
+		return {}, false
+	}
+
+	component_types := [?]^ISlangComponentType {
+		cast(^ISlangComponentType)module,
+		cast(^ISlangComponentType)entry_point,
+	}
+
+	composite: ^ISlangComponentType
+	result = session.vtable.createCompositeComponentType(session, raw_data(component_types[:]), SlangInt(len(component_types)), &composite, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || composite == nil)
+	if slang_failed(result) || composite == nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry_point)
+		fmt.eprintln("ape_shaderc: ", label, " failed to create composite component for ", entry_name)
+		return {}, false
+	}
+
+	// Slang's linked component keeps internal ownership tied to the composite.
+	// Holding our own reference avoids release-order heap corruption on exit.
+	_ = (cast(^ISlangUnknown)composite).vtable.addRef(cast(^ISlangUnknown)composite)
+
+	linked: ^ISlangComponentType
+	result = composite.vtable.link(composite, &linked, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || linked == nil)
+	if slang_failed(result) || linked == nil {
+		release_slang_unknown(cast(^ISlangUnknown)composite)
+		release_slang_unknown(cast(^ISlangUnknown)entry_point)
+		fmt.eprintln("ape_shaderc: ", label, " failed to link component for ", entry_name)
+		return {}, false
+	}
+
+	return Slang_Linked_Entry {
+		entry_point = entry_point,
+		composite = composite,
+		linked = linked,
+	}, true
+}
+
+delete_slang_linked_entry :: proc(entry: ^Slang_Linked_Entry) {
+	if entry == nil {
+		return
+	}
+	if entry.linked != nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry.linked)
+	}
+	if entry.composite != nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry.composite)
+	}
+	if entry.entry_point != nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry.entry_point)
+	}
+	entry^ = {}
+}
+
 build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Options, result: ^Shader_Build_Result) -> bool {
 	stages: [dynamic]Stage_Desc
 	defer delete(stages)
@@ -488,13 +569,7 @@ build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Option
 
 	diagnostics: ^ISlangBlob
 	module := session.vtable.loadModuleFromSourceString(session, module_name_c, source_path_c, source_c, &diagnostics)
-	if diagnostics != nil {
-		if module == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
+	release_slang_diagnostics(&diagnostics, module == nil)
 	if module == nil {
 		fmt.eprintln("ape_shaderc: modern Slang failed to load module: ", options.source_path)
 		return false
@@ -524,6 +599,10 @@ build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Option
 		delete_shader_build_result(result)
 		return false
 	}
+	if !write_compiled_stage_artifacts(result.compiled[:]) {
+		delete_shader_build_result(result)
+		return false
+	}
 
 	return true
 }
@@ -545,67 +624,12 @@ compile_modern_component_stage :: proc(
 		return {}, false
 	}
 
-	entry_name_c, entry_name_err := strings.clone_to_cstring(stage.entry, context.temp_allocator)
-	if entry_name_err != nil {
-		fmt.eprintln("ape_shaderc: failed to prepare modern Slang entry name")
+	linked_entry, linked_entry_ok := create_slang_linked_entry(session, module, stage.entry, slang_stage, "modern Slang")
+	if !linked_entry_ok {
 		return {}, false
 	}
-
-	diagnostics: ^ISlangBlob
-	entry_point: ^ISlangEntryPoint
-	result := module.vtable.findAndCheckEntryPoint(module, entry_name_c, slang_stage, &entry_point, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || entry_point == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || entry_point == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to find entry point: ", stage.entry)
-		return {}, false
-	}
-	defer release_slang_unknown(cast(^ISlangUnknown)entry_point)
-
-	component_types := [?]^ISlangComponentType {
-		cast(^ISlangComponentType)module,
-		cast(^ISlangComponentType)entry_point,
-	}
-
-	composite: ^ISlangComponentType
-	diagnostics = nil
-	result = session.vtable.createCompositeComponentType(session, raw_data(component_types[:]), SlangInt(len(component_types)), &composite, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || composite == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || composite == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to create composite component for ", stage.entry)
-		return {}, false
-	}
-	// Slang's linked component keeps internal ownership tied to the composite.
-	// Holding our own reference avoids release-order heap corruption on exit.
-	_ = (cast(^ISlangUnknown)composite).vtable.addRef(cast(^ISlangUnknown)composite)
-	defer release_slang_unknown(cast(^ISlangUnknown)composite)
-
-	linked: ^ISlangComponentType
-	diagnostics = nil
-	result = composite.vtable.link(composite, &linked, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || linked == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || linked == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to link component for ", stage.entry)
-		return {}, false
-	}
-	defer release_slang_unknown(cast(^ISlangUnknown)linked)
+	defer delete_slang_linked_entry(&linked_entry)
+	linked := linked_entry.linked
 
 	target_index, target_index_ok := modern_target_index(stage.target)
 	if !target_index_ok {
@@ -613,53 +637,27 @@ compile_modern_component_stage :: proc(
 		return {}, false
 	}
 
-	code_blob: ^ISlangBlob
-	diagnostics = nil
-	result = linked.vtable.getEntryPointCode(linked, 0, target_index, &code_blob, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || code_blob == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || code_blob == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to compile bytecode for ", stage.entry)
-		return {}, false
-	}
-	defer release_slang_blob(cast(rawptr)code_blob)
-
-	bytecode := copy_blob_bytes(cast(rawptr)code_blob)
-	if bytecode == nil {
-		fmt.eprintln("ape_shaderc: failed to copy modern Slang bytecode for ", stage.entry)
-		return {}, false
-	}
-
-	if !write_stage_artifact(stage.bytecode_path, bytecode, "modern bytecode") {
-		delete(bytecode)
-		return {}, false
-	}
-
 	reflection_blob: rawptr
 	layout: rawptr
 	reflection, reflection_ok := get_modern_reflection_json(slang, linked, target_index, &layout, &reflection_blob)
 	if !reflection_ok {
-		delete(bytecode)
 		return {}, false
 	}
 	defer release_slang_blob(reflection_blob)
 
 	reflection_model, reflection_model_ok := parse_reflection_model(options, stage, reflection)
 	if !reflection_model_ok {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
 	defer delete_reflection_model(&reflection_model)
+	if !validate_no_top_level_resource_arrays(reflection_model) {
+		delete(reflection)
+		return {}, false
+	}
 
 	layout_info: Slang_Program_Layout_Info
 	if !collect_slang_program_layout_info(slang, layout, &layout_info) {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
@@ -668,21 +666,18 @@ compile_modern_component_stage :: proc(
 	entry_layout, entry_layout_ok := slang_entry_point_layout_by_name_stage(layout_info, stage.entry, slang_stage)
 	if !entry_layout_ok {
 		fmt.eprintln("ape_shaderc: Slang API reflection has no entry point named ", stage.entry, ": ", options.source_path)
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
 
 	metadata: ^ISlangMetadata
 	if !get_modern_entry_point_metadata(linked, target_index, &metadata) {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)metadata)
 
 	if !collect_bindings_from_reflection(slang, metadata, layout, stage, reflection_model, bindings, uniform_blocks) {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
@@ -690,13 +685,11 @@ compile_modern_component_stage :: proc(
 	if stage.stage == .Vertex && stage.entry == "vs_main" {
 		stage_vertex_layout: Generated_Vertex_Layout
 		if !collect_vertex_layout_from_slang_api(options, stage, entry_layout^, &stage_vertex_layout) {
-			delete(bytecode)
 			delete(reflection)
 			delete_vertex_layout(&stage_vertex_layout)
 			return {}, false
 		}
 		if !merge_vertex_layout(vertex_layout, &stage_vertex_layout) {
-			delete(bytecode)
 			delete(reflection)
 			delete_vertex_layout(&stage_vertex_layout)
 			return {}, false
@@ -707,19 +700,29 @@ compile_modern_component_stage :: proc(
 	if stage.stage == .Compute && stage.entry == "cs_main" {
 		stage_compute_thread_group: Compute_Thread_Group_Size
 		if !collect_compute_thread_group_from_slang_api(options, stage, entry_layout^, &stage_compute_thread_group) {
-			delete(bytecode)
 			delete(reflection)
 			return {}, false
 		}
 		if !merge_compute_thread_group(compute_thread_group, stage_compute_thread_group) {
-			delete(bytecode)
 			delete(reflection)
 			return {}, false
 		}
 	}
 
-	if !write_stage_artifact(stage.reflection_path, reflection, "reflection") {
-		delete(bytecode)
+	code_blob: ^ISlangBlob
+	diagnostics: ^ISlangBlob
+	result := linked.vtable.getEntryPointCode(linked, 0, target_index, &code_blob, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || code_blob == nil)
+	if slang_failed(result) || code_blob == nil {
+		fmt.eprintln("ape_shaderc: modern Slang failed to compile bytecode for ", stage.entry)
+		delete(reflection)
+		return {}, false
+	}
+	defer release_slang_blob(cast(rawptr)code_blob)
+
+	bytecode := copy_blob_bytes(cast(rawptr)code_blob)
+	if bytecode == nil {
+		fmt.eprintln("ape_shaderc: failed to copy modern Slang bytecode for ", stage.entry)
 		delete(reflection)
 		return {}, false
 	}
@@ -728,6 +731,8 @@ compile_modern_component_stage :: proc(
 		target = stage.target,
 		stage = stage.stage,
 		entry = stage.entry,
+		bytecode_path = stage.bytecode_path,
+		reflection_path = stage.reflection_path,
 		bytecode = bytecode,
 		reflection = reflection,
 	}, true
@@ -742,12 +747,7 @@ get_modern_reflection_json :: proc(
 ) -> ([]byte, bool) {
 	diagnostics: ^ISlangBlob
 	layout := linked.vtable.getLayout(linked, target_index, &diagnostics)
-	if diagnostics != nil {
-		if layout == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-	}
+	release_slang_diagnostics(&diagnostics, layout == nil)
 	if layout == nil {
 		fmt.eprintln("ape_shaderc: modern Slang returned no program layout")
 		return nil, false
@@ -776,12 +776,7 @@ get_modern_entry_point_metadata :: proc(
 ) -> bool {
 	diagnostics: ^ISlangBlob
 	result := linked.vtable.getEntryPointMetadata(linked, 0, target_index, out_metadata, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || out_metadata^ == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-	}
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || out_metadata^ == nil)
 	if slang_failed(result) || out_metadata^ == nil {
 		fmt.eprintln("ape_shaderc: modern Slang returned no entry-point metadata")
 		return false
@@ -1468,6 +1463,16 @@ parse_reflection_model :: proc(options: Options, stage: Stage_Desc, reflection_j
 	}
 
 	return model, true
+}
+
+validate_no_top_level_resource_arrays :: proc(model: Reflection_Model) -> bool {
+	for parameter in model.parameters {
+		if json_type_kind_is(parameter.type_value, "array") {
+			fmt.eprintln("ape_shaderc: resource arrays are not supported yet; descriptor arrays and bindless resources need a separate binding contract: ", parameter.name)
+			return false
+		}
+	}
+	return true
 }
 
 delete_reflection_model :: proc(model: ^Reflection_Model) {
@@ -2475,6 +2480,18 @@ write_stage_artifact :: proc(path: string, bytes: []byte, label: string) -> bool
 	return true
 }
 
+write_compiled_stage_artifacts :: proc(stages: []Compiled_Stage) -> bool {
+	for stage in stages {
+		if !write_stage_artifact(stage.bytecode_path, stage.bytecode, "modern bytecode") {
+			return false
+		}
+		if !write_stage_artifact(stage.reflection_path, stage.reflection, "reflection") {
+			return false
+		}
+	}
+	return true
+}
+
 copy_raw_bytes :: proc(ptr: rawptr, size: uint) -> []byte {
 	if ptr == nil || size == 0 {
 		return nil
@@ -2512,6 +2529,17 @@ print_slang_blob_diagnostics :: proc(blob: ^ISlangBlob) {
 	if message != "" {
 		fmt.eprintln(message)
 	}
+}
+
+release_slang_diagnostics :: proc(diagnostics: ^^ISlangBlob, should_print: bool) {
+	if diagnostics == nil || diagnostics^ == nil {
+		return
+	}
+	if should_print {
+		print_slang_blob_diagnostics(diagnostics^)
+	}
+	release_slang_unknown(cast(^ISlangUnknown)diagnostics^)
+	diagnostics^ = nil
 }
 
 release_slang_blob :: proc(blob: rawptr) {

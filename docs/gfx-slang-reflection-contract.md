@@ -290,7 +290,7 @@ Expected failure:
 ape_shaderc: resource arrays are not supported yet; descriptor arrays and bindless resources need a separate binding contract: <name>
 ```
 
-The future reflection model should preserve these facts before any generated Odin helper is emitted:
+The future reflection model must preserve these facts before any generated Odin helper is emitted:
 
 - `count`: finite descriptor count for fixed arrays.
 - `unsized`: whether the array is bindless or runtime-sized.
@@ -300,7 +300,79 @@ The future reflection model should preserve these facts before any generated Odi
 - `logical_group` and `logical_slot`: the first logical slot for the array binding.
 - backend native slot and space for each target.
 
-The likely public API shape is an explicit binding-array descriptor or object, not `N` generated single-resource setters. Fixed arrays and bindless sets should therefore wait until there is a sample that needs them and a deliberate `gfx` contract for limits, partial updates, validation, and D3D11 fallback behavior.
+The public API shape should be an explicit array binding, not `N` generated single-resource setters.
+
+Fixed-size arrays should appear as one logical binding entry:
+
+```odin
+Binding_Group_Layout_Entry_Desc :: struct {
+	// existing fields...
+	array_count: u32, // 1 for scalar bindings, N for fixed arrays
+	unsized: bool,
+}
+```
+
+Generated bindings should expose fixed arrays like this:
+
+```odin
+VIEW_material_textures :: 0
+VIEW_material_textures_COUNT :: 4
+
+set_group_view_array_material_textures :: proc(group: ^gfx.Binding_Group_Desc, views: []gfx.View) -> bool
+set_group_view_array_material_textures_range :: proc(group: ^gfx.Binding_Group_Desc, first_index: u32, views: []gfx.View) -> bool
+```
+
+The generated setters should validate the expected count for full-array setup, reject writes outside the reflected range, and preserve the logical slot as one binding. Backend native metadata can still map fixed arrays to contiguous D3D11 slots or to a single Vulkan descriptor with `descriptorCount = N`.
+
+Runtime `Binding_Group_Desc` should grow an explicit array payload instead of overloading the existing scalar `views` and `samplers` arrays. A fixed-array shape could be:
+
+```odin
+Binding_Group_Array_Desc :: struct {
+	active: bool,
+	kind: gfx.Shader_Binding_Kind,
+	slot: u32,
+	first_index: u32,
+	count: u32,
+	views: []gfx.View,
+	samplers: []gfx.Sampler,
+}
+```
+
+`create_binding_group` should copy array payloads into the immutable binding group state, then validate every element against the generated layout entry. Updating fixed arrays can wait until a real sample needs it; replacing the binding group is acceptable for the first fixed-array implementation.
+
+Unsized or bindless resource arrays should not be part of `Binding_Group_Desc`. They should use a separate table object with explicit capacity and update operations:
+
+```odin
+Binding_Table :: distinct u64
+
+Binding_Table_Desc :: struct {
+	label: string,
+	kind: gfx.Shader_Binding_Kind,
+	capacity: u32,
+	view_kind: gfx.View_Kind,
+	access: gfx.Shader_Resource_Access,
+	storage_image_format: gfx.Pixel_Format,
+	storage_buffer_stride: u32,
+}
+
+update_binding_table_views :: proc(ctx: ^gfx.Context, table: gfx.Binding_Table, first_index: u32, views: []gfx.View) -> bool
+update_binding_table_samplers :: proc(ctx: ^gfx.Context, table: gfx.Binding_Table, first_index: u32, samplers: []gfx.Sampler) -> bool
+```
+
+Generated bindings for an unsized declaration should publish the logical group, logical slot, element kind, and whether the binding requires a `Binding_Table`. Runtime validation should report the active backend limit before creating the table or pipeline layout.
+
+Feature and limit reporting needs new fields before unsized arrays are accepted:
+
+- `Features.fixed_descriptor_arrays`
+- `Features.bindless_resource_tables`
+- `Limits.max_fixed_descriptor_array_length`
+- `Limits.max_bindless_sampled_views`
+- `Limits.max_bindless_samplers`
+- `Limits.max_bindless_storage_views`
+
+D3D11 can support small fixed arrays by mapping array elements to contiguous native slots. D3D11 should report `bindless_resource_tables = false` and reject unsized arrays or bindless tables with a validation error. Vulkan should be the first backend pressure test for unsized arrays, descriptor indexing, partially bound arrays, and partial table updates.
+
+Until those runtime types, limits, and backend rules exist, `ape_shaderc` must continue rejecting descriptor arrays and bindless declarations before generating target bytecode, package files, or Odin bindings.
 
 ## Uniform Blocks
 
@@ -596,6 +668,9 @@ Planned order:
 - [x] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - [x] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
 - [x] Harden uniform host-layout reflection for unsupported arrays, nested structs, scalar widths, and implicit padding.
+- [x] Define the first descriptor-array and bindless public API direction without accepting array declarations yet.
+- [x] Reject unsupported descriptor-array and bindless-style shapes before bytecode, package, or binding generation.
+- [x] Centralize Slang diagnostics and linked-entry ownership behind a small internal wrapper path.
 
 Open questions:
 
@@ -603,7 +678,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Roadmap note: `gfx_app` owns the reusable shader-program and resize helpers. The transient `gfx.Bindings` path now validates supplied views and samplers against active `Pipeline_Layout` metadata before backend binding. The next shader-contract-specific task is the descriptor-array and bindless public API design.
+Roadmap note: `gfx_app` owns the reusable shader-program and resize helpers. The transient `gfx.Bindings` path now validates supplied views and samplers against active `Pipeline_Layout` metadata before backend binding. The focused Slang tooling checklist is complete; the next broader API work should return to storage and compute readiness.
 
 ## Validation
 
