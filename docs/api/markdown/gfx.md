@@ -189,6 +189,11 @@ apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {...}
 ```
 
 apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
+example:
+  bindings: gfx.Bindings
+  bindings.vertex_buffers[0] = {buffer = vertex_buffer}
+  bindings.index_buffer = {buffer = index_buffer}
+  gfx.apply_bindings(&ctx, bindings)
 
 ### `apply_compute_pipeline`
 
@@ -205,6 +210,8 @@ apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {...}
 ```
 
 apply_pipeline binds a graphics pipeline inside a render pass.
+example:
+  gfx.apply_pipeline(&ctx, pipeline)
 
 ### `apply_uniform`
 
@@ -221,6 +228,9 @@ apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> boo
 ```
 
 apply_uniforms uploads one reflected uniform block to the current pipeline.
+example:
+  frame := FrameUniforms{view_proj = view_proj}
+  gfx.apply_uniforms(&ctx, 0, 0, gfx.range_raw(&frame, size_of(frame)))
 
 ### `backend_name`
 
@@ -237,6 +247,11 @@ begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool 
 ```
 
 begin_compute_pass starts a compute-only pass.
+example:
+  gfx.begin_compute_pass(&ctx, {label = "simulate"})
+  gfx.apply_compute_pipeline(&ctx, compute_pipeline)
+  gfx.dispatch(&ctx, 64, 1, 1)
+  gfx.end_compute_pass(&ctx)
 
 ### `begin_pass`
 
@@ -245,6 +260,15 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {...}
 ```
 
 begin_pass starts a graphics render pass.
+A fully zero-init `Pass_Desc.action` defaults to the framework clear/store
+behavior; see `Pass_Action`. Set only the fields you want to override.
+example:
+  gfx.begin_pass(&ctx, {
+      label  = "main",
+      action = {colors = {0 = {clear_value = {r = 0.02, g = 0.02, b = 0.03, a = 1}}}},
+  })
+  // ...apply_pipeline / apply_bindings / draw...
+  gfx.end_pass(&ctx)
 
 ### `binding_group_layout_valid`
 
@@ -269,6 +293,134 @@ buffer_valid :: proc(buffer: Buffer) -> bool {...}
 ```
 
 buffer_valid reports whether a Buffer handle is nonzero.
+
+### `cmd_apply_bindings`
+
+```odin
+cmd_apply_bindings :: proc(encoder: ^Render_Pass_Encoder, bindings: Bindings) -> bool {...}
+```
+
+cmd_apply_bindings binds vertex/index buffers, resource views, and samplers
+on a render pass encoder.
+
+### `cmd_apply_compute_bindings`
+
+```odin
+cmd_apply_compute_bindings :: proc(encoder: ^Compute_Pass_Encoder, bindings: Bindings) -> bool {...}
+```
+
+cmd_apply_compute_bindings binds resource views and samplers on a compute
+pass encoder. Vertex/index buffer slots in `bindings` must be empty.
+
+### `cmd_apply_compute_pipeline`
+
+```odin
+cmd_apply_compute_pipeline :: proc(encoder: ^Compute_Pass_Encoder, pipeline: Compute_Pipeline) -> bool {...}
+```
+
+cmd_apply_compute_pipeline binds a compute pipeline on a compute pass
+encoder.
+
+### `cmd_apply_compute_uniforms`
+
+```odin
+cmd_apply_compute_uniforms :: proc(encoder: ^Compute_Pass_Encoder, group: u32, slot: int, data: Range) -> bool {...}
+```
+
+cmd_apply_compute_uniforms uploads one reflected uniform block on a compute
+pass encoder.
+
+### `cmd_apply_pipeline`
+
+```odin
+cmd_apply_pipeline :: proc(encoder: ^Render_Pass_Encoder, pipeline: Pipeline) -> bool {...}
+```
+
+cmd_apply_pipeline binds a graphics pipeline on a render pass encoder.
+
+### `cmd_apply_uniforms`
+
+```odin
+cmd_apply_uniforms :: proc(encoder: ^Render_Pass_Encoder, group: u32, slot: int, data: Range) -> bool {...}
+```
+
+cmd_apply_uniforms uploads one reflected uniform block on a render pass
+encoder.
+
+### `cmd_begin_compute_pass`
+
+```odin
+cmd_begin_compute_pass :: proc(list: ^Command_List, desc: Compute_Pass_Desc = {}) -> (: Compute_Pass_Encoder, : bool) {...}
+```
+
+cmd_begin_compute_pass opens a compute pass on a Command_List.
+Returns the encoder for subsequent `cmd_apply_compute_*` and `cmd_dispatch`
+calls. The list must be in state `Recording` with no other encoder open.
+
+### `cmd_begin_render_pass`
+
+```odin
+cmd_begin_render_pass :: proc(list: ^Command_List, desc: Pass_Desc) -> (: Render_Pass_Encoder, : bool) {...}
+```
+
+cmd_begin_render_pass opens a render pass on a Command_List.
+Returns the encoder that subsequent `cmd_apply_*` and `cmd_draw` calls
+take. The list must be in state `Recording` and have no other encoder open.
+
+### `cmd_dispatch`
+
+```odin
+cmd_dispatch :: proc(encoder: ^Compute_Pass_Encoder, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {...}
+```
+
+cmd_dispatch issues one compute dispatch with explicit thread-group counts.
+
+### `cmd_draw`
+
+```odin
+cmd_draw :: proc(encoder: ^Render_Pass_Encoder, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {...}
+```
+
+cmd_draw issues one indexed or non-indexed draw on a render pass encoder.
+Index vs vertex interpretation follows the active pipeline's `index_type`,
+matching the existing immediate-mode `gfx.draw`.
+
+### `cmd_end_compute_pass`
+
+```odin
+cmd_end_compute_pass :: proc(encoder: ^Compute_Pass_Encoder) -> bool {...}
+```
+
+cmd_end_compute_pass closes the compute pass owned by `encoder`.
+
+### `cmd_end_render_pass`
+
+```odin
+cmd_end_render_pass :: proc(encoder: ^Render_Pass_Encoder) -> bool {...}
+```
+
+cmd_end_render_pass closes the render pass owned by `encoder`.
+After this returns true the encoder is no longer usable; the parent list
+may open a new encoder or be finished.
+
+### `command_list_last_error`
+
+```odin
+command_list_last_error :: proc(list: ^Command_List) -> string {...}
+```
+
+command_list_last_error returns the most recent record-time error.
+Use this from the worker thread before `finish_command_list` to surface
+validation failures detected during recording.
+
+### `command_list_last_error_code`
+
+```odin
+command_list_last_error_code :: proc(list: ^Command_List) -> Error_Code {...}
+```
+
+command_list_last_error_code returns the machine-readable code that pairs
+with `command_list_last_error`.
 
 ### `commit`
 
@@ -310,6 +462,23 @@ create_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> (: Buffer, : bool) {.
 
 create_buffer creates a GPU buffer and reports whether creation succeeded.
 On failure, the returned handle is Buffer_Invalid and last_error explains why.
+example:
+  vertices := [?]Vertex{ ... }
+  vbuf, ok := gfx.create_buffer(&ctx, {
+      label = "triangle vertices",
+      usage = {.Vertex, .Immutable},
+      data  = gfx.range(vertices[:]),
+  })
+
+### `create_command_list`
+
+```odin
+create_command_list :: proc(ctx: ^Context) -> (: Command_List, : bool) {...}
+```
+
+create_command_list allocates a new Command_List bound to `ctx`.
+Must be called on the Context thread; the returned list's initial owner is
+the caller and may be moved to a worker before recording begins.
 
 ### `create_compute_pipeline`
 
@@ -319,6 +488,12 @@ create_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> (
 
 create_compute_pipeline creates an immutable compute pipeline state object.
 On failure, the returned handle is Compute_Pipeline_Invalid and last_error explains why.
+example:
+  pipeline, ok := gfx.create_compute_pipeline(&ctx, {
+      label           = "simulate",
+      shader          = compute_shader,
+      pipeline_layout = pipeline_layout,
+  })
 
 ### `create_image`
 
@@ -328,6 +503,15 @@ create_image :: proc(ctx: ^Context, desc: Image_Desc) -> (: Image, : bool) {...}
 
 create_image creates a texture, storage image, or attachment image.
 On failure, the returned handle is Image_Invalid and last_error explains why.
+example:
+  image, ok := gfx.create_image(&ctx, {
+      label  = "diffuse",
+      kind   = .Image_2D,
+      usage  = {.Texture, .Immutable},
+      width  = 256, height = 256,
+      format = .RGBA8,
+      mips   = {0 = {data = gfx.range(pixels[:])}},
+  })
 
 ### `create_pipeline`
 
@@ -337,6 +521,14 @@ create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (: Pipeline, : bo
 
 create_pipeline creates an immutable graphics pipeline state object.
 On failure, the returned handle is Pipeline_Invalid and last_error explains why.
+example:
+  pipeline, ok := gfx.create_pipeline(&ctx, {
+      label           = "triangle",
+      shader          = shader,
+      pipeline_layout = pipeline_layout,
+      primitive_type  = .Triangles,
+      layout          = triangle_shader.layout_desc(),
+  })
 
 ### `create_pipeline_layout`
 
@@ -372,6 +564,10 @@ create_shader :: proc(ctx: ^Context, desc: Shader_Desc) -> (: Shader, : bool) {.
 
 create_shader creates backend shader objects from compiled shader bytecode.
 On failure, the returned handle is Shader_Invalid and last_error explains why.
+example:
+  pkg, _ := shader_assets.load("build/shaders/triangle.ashader")
+  desc, _ := shader_assets.shader_desc(&pkg, .D3D11_DXBC, "triangle")
+  shader, ok := gfx.create_shader(&ctx, desc)
 
 ### `create_view`
 
@@ -389,6 +585,8 @@ default_pass_action :: proc() -> Pass_Action {...}
 ```
 
 default_pass_action returns clear/store defaults for color, depth, and stencil attachments.
+Equivalent to `pass_action_with_defaults({})`. A zero-init `Pass_Action` passed
+to `begin_pass` produces the same rendering — see the `Pass_Action` doc.
 
 ### `destroy_binding_group`
 
@@ -413,6 +611,16 @@ destroy_buffer :: proc(ctx: ^Context, buffer: Buffer) {...}
 ```
 
 destroy_buffer releases a live buffer handle.
+
+### `destroy_command_list`
+
+```odin
+destroy_command_list :: proc(list: ^Command_List) {...}
+```
+
+destroy_command_list releases backend resources held by a list.
+Safe to call on a `Recording`, `Finished`, or `Submitted` list. Lists must
+be destroyed before their owning Context shuts down.
 
 ### `destroy_compute_pipeline`
 
@@ -485,6 +693,10 @@ dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, 
 ```
 
 dispatch issues a compute dispatch with explicit thread-group counts.
+example:
+  gfx.apply_compute_pipeline(&ctx, simulate_pipeline)
+  gfx.apply_bindings(&ctx, sim_bindings)
+  gfx.dispatch(&ctx, (count + 63) / 64, 1, 1)
 
 ### `draw`
 
@@ -493,6 +705,11 @@ draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances:
 ```
 
 draw issues a non-indexed or indexed draw depending on the active pipeline.
+When the active pipeline declares an index_type, base_element and num_elements
+are indices; otherwise they are vertices.
+example:
+  gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
+  gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
 
 ### `end_compute_pass`
 
@@ -509,6 +726,17 @@ end_pass :: proc(ctx: ^Context) -> bool {...}
 ```
 
 end_pass finishes the active render pass.
+
+### `finish_command_list`
+
+```odin
+finish_command_list :: proc(list: ^Command_List) -> bool {...}
+```
+
+finish_command_list seals a Command_List for submission.
+Called on the recording thread after the last `cmd_end_*_pass`. After this
+returns true the list is in state `Finished` and may transfer to another
+thread for submission.
 
 ### `image_valid`
 
@@ -549,6 +777,17 @@ last_error_info :: proc(ctx: ^Context) -> Error_Info {...}
 ```
 
 last_error_info returns the most recent context error code and message together.
+
+### `pass_action_with_defaults`
+
+```odin
+pass_action_with_defaults :: proc(action: Pass_Action) -> Pass_Action {...}
+```
+
+pass_action_with_defaults applies the zero-init defaulting rule to a Pass_Action.
+`begin_pass` calls this internally before validation and dispatch; it is
+exposed so that callers and tests can inspect the resolved action without
+reaching into private helpers. See the `Pass_Action` doc for the contract.
 
 ### `pipeline_layout_valid`
 
@@ -701,6 +940,17 @@ shutdown :: proc(ctx: ^Context) {...}
 ```
 
 shutdown releases backend state and reports leaked resources through last_error.
+
+### `submit_command_list`
+
+```odin
+submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Queue = .Graphics) -> bool {...}
+```
+
+submit_command_list hands a finished list to the named queue.
+Called on the Context thread. Drains `list.last_error` onto `ctx` and
+transitions the list to state `Submitted`. Today only `.Graphics` is
+honored by the D3D11 backend; other queues are reserved for future work.
 
 ### `update_buffer`
 
@@ -937,6 +1187,10 @@ Color_Attachment_Action :: struct {load_action: Load_Action, store_action: Store
 ```
 
 Color_Attachment_Action controls load/store behavior for one color attachment.
+A fully zero-init Color_Attachment_Action means "use the framework default":
+clear to opaque black `{0, 0, 0, 1}`, store the result. Setting any field
+(including `clear_value`) opts the slot out of defaulting and uses the
+supplied values verbatim. See `pass_action_with_defaults`.
 
 ### `Color_Attachment_View_Desc`
 
@@ -954,6 +1208,45 @@ Color_State :: struct {write_mask: u8, blend: Blend_State}
 
 Color_State configures write mask and blending for one color attachment slot.
 
+### `Command_List`
+
+```odin
+Command_List :: struct {ctx: ^Context, frame_index: u64, state: Command_List_State, open_pass_kind: Pass_Kind, queue: Command_Queue, last_error: string, last_error_code: Error_Code, last_error_storage: [256]u8, backend_data: rawptr}
+```
+
+Command_List is the unit of recorded GPU work.
+Owned by exactly one thread at a time (see command-recording-note §6.1).
+The owning thread records passes into the list, calls `finish_command_list`,
+and may then transfer ownership to the Context thread for `submit_command_list`.
+Per command-recording-note §7, the list carries the per-recorder error slot
+(drained onto Context at submit) and the backend-private recording state
+(a D3D11 deferred context, a Vulkan VkCommandBuffer + VkCommandPool checkout,
+or a D3D12 ID3D12GraphicsCommandList + allocator checkout).
+
+### `Command_List_State`
+
+```odin
+Command_List_State :: enum {Recording, Finished, Submitted}
+```
+
+Command_List_State tracks the recording -> finished -> submitted lifecycle.
+`Recording`  — accepts begin_*_pass and per-encoder calls.
+`Finished`   — sealed by `finish_command_list`; may be moved across threads
+               and handed to the submission thread.
+`Submitted`  — consumed by `submit_command_list`; further use is invalid
+               until the list is destroyed.
+
+### `Command_Queue`
+
+```odin
+Command_Queue :: enum {Graphics, Compute, Transfer}
+```
+
+Command_Queue selects the queue submit_command_list targets.
+Today only `Graphics` is honored by the D3D11 backend. The enum exists so
+async compute and explicit transfer (items 21, 22 of the AAA roadmap) do
+not require a parallel API later.
+
 ### `Compare_Func`
 
 ```odin
@@ -969,6 +1262,17 @@ Compute_Pass_Desc :: struct {label: string}
 ```
 
 Compute_Pass_Desc begins a compute-only pass.
+
+### `Compute_Pass_Encoder`
+
+```odin
+Compute_Pass_Encoder :: struct {list: ^Command_List, open: bool, current_pipeline: Compute_Pipeline, current_bindings: Bindings, resource_writes: [MAX_COMPUTE_PASS_RESOURCE_WRITES]View_State, resource_write_count: int}
+```
+
+Compute_Pass_Encoder records dispatch work inside one compute pass.
+Opened by `cmd_begin_compute_pass`, closed by `cmd_end_compute_pass`.
+Same thread-affinity rule as `Render_Pass_Encoder`. Carries the per-pass
+resource-write tracking that lives on `^Context` today.
 
 ### `Compute_Pipeline`
 
@@ -1007,6 +1311,9 @@ Depth_Attachment_Action :: struct {load_action: Load_Action, store_action: Store
 ```
 
 Depth_Attachment_Action controls load/store behavior for a depth attachment.
+A fully zero-init Depth_Attachment_Action means "use the framework default":
+clear to `1.0`, store the result. Setting any field (including a
+`clear_value` of 0) opts out of defaulting and uses the supplied values.
 
 ### `Depth_State`
 
@@ -1093,6 +1400,11 @@ Image_Desc :: struct {label: string, kind: Image_Kind, usage: Image_Usage, width
 ```
 
 Image_Desc creates an Image resource and optional immutable initial contents.
+Zero-count default (AAA roadmap item 34): leave `mip_count`, `array_count`,
+`sample_count`, and `depth` at zero to mean "1". A descriptor that omits all
+counts produces a single-mip, single-layer, single-sample image — the most
+common shape — without forcing every call site to spell out the ones.
+Negative values are rejected.
 
 ### `Image_Kind`
 
@@ -1187,6 +1499,16 @@ Pass_Action :: struct {colors: [MAX_COLOR_ATTACHMENTS]Color_Attachment_Action, d
 ```
 
 Pass_Action groups all attachment load/store actions for begin_pass.
+Zero-init contract (AAA roadmap item 35): a fully zero-init `Pass_Action`
+produces the same rendering as `default_pass_action()` — clear color to
+opaque black, clear depth to 1.0, clear stencil to 0, store every
+attachment. Defaults apply per attachment slot: any color slot whose
+`Color_Attachment_Action` is fully zero is filled in with the color
+default; the depth slot is filled in when its `Depth_Attachment_Action`
+is fully zero. Slots with any field set (e.g. only `clear_value`) keep
+the user-supplied values verbatim. Resolution happens at the descriptor
+boundary in `begin_pass`; see `pass_action_with_defaults` for the same
+transform exposed for inspection.
 
 ### `Pass_Desc`
 
@@ -1256,6 +1578,18 @@ Raster_State :: struct {fill_mode: Fill_Mode, cull_mode: Cull_Mode, winding: Fac
 
 Raster_State configures rasterization for a graphics pipeline.
 
+### `Render_Pass_Encoder`
+
+```odin
+Render_Pass_Encoder :: struct {list: ^Command_List, open: bool, current_pipeline: Pipeline, current_bindings: Bindings, color_attachments: [MAX_COLOR_ATTACHMENTS]View, depth_stencil_attachment: View}
+```
+
+Render_Pass_Encoder records draw work inside one render pass.
+Opened by `cmd_begin_render_pass`, closed by `cmd_end_render_pass`. Single-
+thread-affine for the life of the pass: never transfer an open encoder
+(command-recording-note §6.3). All per-pass mutable state that the current
+`^Context` carries today lives here once APE-6 lands.
+
 ### `Render_Target`
 
 ```odin
@@ -1271,6 +1605,7 @@ Render_Target_Desc :: struct {label: string, width: i32, height: i32, sample_cou
 ```
 
 Render_Target_Desc creates the common image/view bundle for one offscreen render target.
+`sample_count` follows the Image_Desc zero-count convention: 0 means 1.
 
 ### `Sampler`
 
@@ -1363,6 +1698,9 @@ Stencil_Attachment_Action :: struct {load_action: Load_Action, store_action: Sto
 ```
 
 Stencil_Attachment_Action controls load/store behavior for a stencil attachment.
+The framework default is clear-to-zero, store. Because every default field
+is the enum/integer zero value, the zero-init form already matches the
+default; no explicit defaulting is needed.
 
 ### `Storage_Buffer_View_Desc`
 

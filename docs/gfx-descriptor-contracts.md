@@ -578,7 +578,7 @@ Fields:
 | `label` | Optional diagnostic label. |
 | `color_attachments` | Optional. A contiguous set of color attachment views starting at slot 0. Empty means the implicit swapchain color target. |
 | `depth_stencil_attachment` | Optional. A depth-stencil attachment view. |
-| `action` | Optional load/store and clear behavior. Zeroed actions are valid, but `default_pass_action()` is the recommended starting point because it gives explicit clear/store defaults. |
+| `action` | Optional load/store and clear behavior. A fully zero-init `Pass_Action` produces the framework default (clear color to opaque black, clear depth to `1.0`, clear stencil to `0`, store every attachment) — identical to `default_pass_action()`. Defaulting is per attachment slot: any color slot with a fully zero `Color_Attachment_Action` is filled in; any slot with a field set (e.g. only `clear_value`) is kept verbatim. The same rule applies to `depth`. See `pass_action_with_defaults` for the resolved transform. |
 
 Targeting rules:
 
@@ -591,14 +591,17 @@ Targeting rules:
 Representative swapchain pass:
 
 ```odin
-action := gfx.default_pass_action()
-action.colors[0].clear_value = gfx.Color{r = 0.02, g = 0.02, b = 0.025, a = 1}
-
 ok := gfx.begin_pass(&ctx, {
 	label = "main swapchain pass",
-	action = action,
+	action = {colors = {0 = {clear_value = {r = 0.02, g = 0.02, b = 0.025, a = 1}}}},
 })
 ```
+
+The zero-init form above relies on the per-slot defaulting rule: every untouched
+field falls back to clear/store with the framework default clear value, while
+the explicit `clear_value` opts slot 0 out of defaulting and keeps the supplied
+color verbatim. To get all defaults (e.g. for a clear-to-black pass), omit
+`action` entirely or pass `{}`.
 
 ## Compute_Pass_Desc
 

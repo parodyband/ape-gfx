@@ -193,10 +193,10 @@ main :: proc() {
 
 		gfx_app.reloadable_shader_program_poll(&ctx, &program)
 
-		action := gfx.default_pass_action()
-		action.colors[0].clear_value = gfx.Color{r = 0.020, g = 0.020, b = 0.026, a = 1}
-
-		if !gfx.begin_pass(&ctx, {label = "main dynamic texture", action = action}) {
+		if !gfx.begin_pass(&ctx, {
+			label = "main dynamic texture",
+			action = {colors = {0 = {clear_value = {r = 0.020, g = 0.020, b = 0.026, a = 1}}}},
+		}) {
 			fmt.eprintln("begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}

@@ -192,10 +192,10 @@ main :: proc() {
 
 		gfx_app.reloadable_shader_program_poll(&ctx, &program)
 
-		action := gfx.default_pass_action()
-		action.colors[0].clear_value = gfx.Color{r = 0.025, g = 0.028, b = 0.035, a = 1}
-
-		if !gfx.begin_pass(&ctx, {label = "main textured quad", action = action}) {
+		if !gfx.begin_pass(&ctx, {
+			label = "main textured quad",
+			action = {colors = {0 = {clear_value = {r = 0.025, g = 0.028, b = 0.035, a = 1}}}},
+		}) {
 			fmt.eprintln("begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}

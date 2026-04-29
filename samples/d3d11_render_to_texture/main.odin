@@ -247,13 +247,10 @@ main :: proc() {
 		gfx_app.reloadable_shader_program_poll(&ctx, &color_program)
 		gfx_app.reloadable_shader_program_poll(&ctx, &texture_program)
 
-		offscreen_action := gfx.default_pass_action()
-		offscreen_action.colors[0].clear_value = gfx.Color{r = 0.04, g = 0.045, b = 0.06, a = 1}
-
 		if !gfx.begin_pass(&ctx, {
 			label = "offscreen color pass",
 			color_attachments = {0 = offscreen_color_view},
-			action = offscreen_action,
+			action = {colors = {0 = {clear_value = {r = 0.04, g = 0.045, b = 0.06, a = 1}}}},
 		}) {
 			fmt.eprintln("offscreen begin_pass failed: ", gfx.last_error(&ctx))
 			return
@@ -280,10 +277,10 @@ main :: proc() {
 			return
 		}
 
-		swapchain_action := gfx.default_pass_action()
-		swapchain_action.colors[0].clear_value = gfx.Color{r = 0.015, g = 0.018, b = 0.024, a = 1}
-
-		if !gfx.begin_pass(&ctx, {label = "main resolve pass", action = swapchain_action}) {
+		if !gfx.begin_pass(&ctx, {
+			label = "main resolve pass",
+			action = {colors = {0 = {clear_value = {r = 0.015, g = 0.018, b = 0.024, a = 1}}}},
+		}) {
 			fmt.eprintln("swapchain begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}

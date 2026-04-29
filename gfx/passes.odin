@@ -2,10 +2,14 @@ package gfx
 
 // begin_pass starts a graphics render pass.
 //
+// A fully zero-init `Pass_Desc.action` defaults to the framework clear/store
+// behavior; see `Pass_Action`. Set only the fields you want to override.
+//
 // example:
-//   action := gfx.default_pass_action()
-//   action.colors[0].clear_value = {r = 0, g = 0, b = 0, a = 1}
-//   gfx.begin_pass(&ctx, {label = "main", action = action})
+//   gfx.begin_pass(&ctx, {
+//       label  = "main",
+//       action = {colors = {0 = {clear_value = {r = 0.02, g = 0.02, b = 0.03, a = 1}}}},
+//   })
 //   // ...apply_pipeline / apply_bindings / draw...
 //   gfx.end_pass(&ctx)
 begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
@@ -18,15 +22,18 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 		return false
 	}
 
-	if !validate_pass_desc(ctx, desc) {
+	resolved := desc
+	resolved.action = pass_action_with_defaults(desc.action)
+
+	if !validate_pass_desc(ctx, resolved) {
 		return false
 	}
 
-	if !backend_begin_pass(ctx, desc) {
+	if !backend_begin_pass(ctx, resolved) {
 		return false
 	}
 
-	capture_pass_attachments(ctx, desc)
+	capture_pass_attachments(ctx, resolved)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 	ctx.current_bindings = {}
@@ -433,6 +440,38 @@ validate_pass_desc :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	}
 
 	return true
+}
+
+// pass_action_with_defaults applies the zero-init defaulting rule to a Pass_Action.
+//
+// `begin_pass` calls this internally before validation and dispatch; it is
+// exposed so that callers and tests can inspect the resolved action without
+// reaching into private helpers. See the `Pass_Action` doc for the contract.
+pass_action_with_defaults :: proc(action: Pass_Action) -> Pass_Action {
+	resolved := action
+
+	color_default := Color_Attachment_Action {
+		load_action  = .Clear,
+		store_action = .Store,
+		clear_value  = Color{r = 0, g = 0, b = 0, a = 1},
+	}
+	for i in 0..<MAX_COLOR_ATTACHMENTS {
+		if resolved.colors[i] == (Color_Attachment_Action{}) {
+			resolved.colors[i] = color_default
+		}
+	}
+
+	if resolved.depth == (Depth_Attachment_Action{}) {
+		resolved.depth = Depth_Attachment_Action {
+			load_action  = .Clear,
+			store_action = .Store,
+			clear_value  = 1,
+		}
+	}
+
+	// Stencil's framework default (Clear/Store/0) is bytewise zero, so the
+	// zero-init form already matches it; no explicit fill-in is required.
+	return resolved
 }
 
 @(private)

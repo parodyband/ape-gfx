@@ -24,15 +24,17 @@ main :: proc() {
 
 clear_frame :: proc(ctx: ^gfx.Context, window: ^app.Window, info: gfx_app.Frame_Info, user_data: rawptr) -> bool {
 	t := f32(info.index % 240) / 239.0
-	action := gfx.default_pass_action()
-	action.colors[0].clear_value = gfx.Color {
+	clear_color := gfx.Color {
 		r = 0.04 + 0.18 * t,
 		g = 0.08,
 		b = 0.13 + 0.18 * (1.0 - t),
 		a = 1,
 	}
 
-	if !gfx.begin_pass(ctx, {label = "main clear", action = action}) {
+	if !gfx.begin_pass(ctx, {
+		label = "main clear",
+		action = {colors = {0 = {clear_value = clear_color}}},
+	}) {
 		fmt.eprintln("begin_pass failed:", gfx.last_error(ctx))
 		return false
 	}

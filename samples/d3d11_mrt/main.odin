@@ -236,14 +236,13 @@ main :: proc() {
 		gfx_app.reloadable_shader_program_poll(&ctx, &mrt_program)
 		gfx_app.reloadable_shader_program_poll(&ctx, &texture_program)
 
-		mrt_action := gfx.default_pass_action()
-		mrt_action.colors[0].clear_value = gfx.Color{r = 0.08, g = 0.035, b = 0.025, a = 1}
-		mrt_action.colors[1].clear_value = gfx.Color{r = 0.02, g = 0.035, b = 0.08, a = 1}
-
 		if !gfx.begin_pass(&ctx, {
 			label = "mrt offscreen pass",
 			color_attachments = {0 = target_warm.color_attachment, 1 = target_cool.color_attachment},
-			action = mrt_action,
+			action = {colors = {
+				0 = {clear_value = {r = 0.08, g = 0.035, b = 0.025, a = 1}},
+				1 = {clear_value = {r = 0.02, g = 0.035, b = 0.08, a = 1}},
+			}},
 		}) {
 			fmt.eprintln("mrt begin_pass failed: ", gfx.last_error(&ctx))
 			return
@@ -271,9 +270,10 @@ main :: proc() {
 			return
 		}
 
-		swapchain_action := gfx.default_pass_action()
-		swapchain_action.colors[0].clear_value = gfx.Color{r = 0.012, g = 0.014, b = 0.018, a = 1}
-		if !gfx.begin_pass(&ctx, {label = "mrt display pass", action = swapchain_action}) {
+		if !gfx.begin_pass(&ctx, {
+			label = "mrt display pass",
+			action = {colors = {0 = {clear_value = {r = 0.012, g = 0.014, b = 0.018, a = 1}}}},
+		}) {
 			fmt.eprintln("display begin_pass failed: ", gfx.last_error(&ctx))
 			return
 		}

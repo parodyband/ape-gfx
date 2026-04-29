@@ -354,6 +354,75 @@ main :: proc() {
 		fail("render_target_pass_desc did not target expected attachment views")
 	}
 
+	// AAA roadmap item 35: a zero-init Pass_Action must resolve to the same
+	// load/store/clear values as default_pass_action(); a Pass_Action with any
+	// field set on a slot opts that slot out of defaulting; a fully-specified
+	// action passes through unchanged.
+	zero_resolved := gfx.pass_action_with_defaults(gfx.Pass_Action{})
+	expected_default := gfx.default_pass_action()
+	if zero_resolved != expected_default {
+		fail("pass_action_with_defaults({}) did not match default_pass_action()")
+	}
+
+	partial_action: gfx.Pass_Action
+	partial_action.colors[0].clear_value = gfx.Color{r = 0.25, g = 0.5, b = 0.75, a = 0.25}
+	partial_action.depth.clear_value = 0.5
+	partial_resolved := gfx.pass_action_with_defaults(partial_action)
+	if partial_resolved.colors[0].load_action != .Clear ||
+	   partial_resolved.colors[0].store_action != .Store ||
+	   partial_resolved.colors[0].clear_value != (gfx.Color{r = 0.25, g = 0.5, b = 0.75, a = 0.25}) {
+		fail("pass_action_with_defaults preserved partial color slot incorrectly")
+	}
+	if partial_resolved.depth.load_action != .Clear ||
+	   partial_resolved.depth.store_action != .Store ||
+	   partial_resolved.depth.clear_value != 0.5 {
+		fail("pass_action_with_defaults preserved partial depth slot incorrectly")
+	}
+	if partial_resolved.colors[1] != expected_default.colors[1] {
+		fail("pass_action_with_defaults did not default an untouched color slot")
+	}
+
+	full_action: gfx.Pass_Action
+	for i in 0..<gfx.MAX_COLOR_ATTACHMENTS {
+		full_action.colors[i] = gfx.Color_Attachment_Action {
+			load_action  = .Load,
+			store_action = .Dont_Care,
+			clear_value  = gfx.Color{r = 0.1, g = 0.2, b = 0.3, a = 0.4},
+		}
+	}
+	full_action.depth = gfx.Depth_Attachment_Action {
+		load_action  = .Dont_Care,
+		store_action = .Dont_Care,
+		clear_value  = 0.25,
+	}
+	full_action.stencil = gfx.Stencil_Attachment_Action {
+		load_action  = .Load,
+		store_action = .Dont_Care,
+		clear_value  = 7,
+	}
+	full_resolved := gfx.pass_action_with_defaults(full_action)
+	if full_resolved != full_action {
+		fail("pass_action_with_defaults mutated a fully-specified action")
+	}
+
+	// Drive begin_pass on the swapchain with each shape on the null backend.
+	// The null backend accepts any valid action, so success here proves the
+	// resolution + validation path agrees on each shape.
+	if !gfx.begin_pass(&ctx, gfx.Pass_Desc{label = "zero pass action"}) {
+		fail(fmt.tprintf("begin_pass with zero action failed: %s", gfx.last_error(&ctx)))
+	}
+	if !gfx.end_pass(&ctx) { fail("end_pass after zero action failed") }
+
+	if !gfx.begin_pass(&ctx, gfx.Pass_Desc{label = "partial pass action", action = partial_action}) {
+		fail(fmt.tprintf("begin_pass with partial action failed: %s", gfx.last_error(&ctx)))
+	}
+	if !gfx.end_pass(&ctx) { fail("end_pass after partial action failed") }
+
+	if !gfx.begin_pass(&ctx, gfx.Pass_Desc{label = "full pass action", action = full_action}) {
+		fail(fmt.tprintf("begin_pass with full action failed: %s", gfx.last_error(&ctx)))
+	}
+	if !gfx.end_pass(&ctx) { fail("end_pass after full action failed") }
+
 	gfx.destroy_render_target(&ctx, &render_target)
 	if gfx.image_valid(render_target.color_image) ||
 	   gfx.view_valid(render_target.color_attachment) ||

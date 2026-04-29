@@ -98,10 +98,10 @@ main :: proc() {
 			render_height = fb_height
 		}
 
-		action := gfx.default_pass_action()
-		action.colors[0].clear_value = {r = 0.025, g = 0.03, b = 0.045, a = 1}
-
-		_ = gfx.begin_pass(&ctx, {label = "main triangle", action = action})
+		_ = gfx.begin_pass(&ctx, {
+			label = "main triangle",
+			action = {colors = {0 = {clear_value = {r = 0.025, g = 0.03, b = 0.045, a = 1}}}},
+		})
 		_ = gfx.apply_pipeline(&ctx, pipeline)
 		_ = gfx.apply_bindings(&ctx, bindings)
 		_ = triangle_shader.apply_uniform_FrameUniforms(&ctx, &triangle_shader.FrameUniforms{ape_frame = {0, 0, 1, 0}})

@@ -360,6 +360,11 @@ Color :: struct {
 }
 
 // Color_Attachment_Action controls load/store behavior for one color attachment.
+//
+// A fully zero-init Color_Attachment_Action means "use the framework default":
+// clear to opaque black `{0, 0, 0, 1}`, store the result. Setting any field
+// (including `clear_value`) opts the slot out of defaulting and uses the
+// supplied values verbatim. See `pass_action_with_defaults`.
 Color_Attachment_Action :: struct {
 	load_action: Load_Action,
 	store_action: Store_Action,
@@ -367,6 +372,10 @@ Color_Attachment_Action :: struct {
 }
 
 // Depth_Attachment_Action controls load/store behavior for a depth attachment.
+//
+// A fully zero-init Depth_Attachment_Action means "use the framework default":
+// clear to `1.0`, store the result. Setting any field (including a
+// `clear_value` of 0) opts out of defaulting and uses the supplied values.
 Depth_Attachment_Action :: struct {
 	load_action: Load_Action,
 	store_action: Store_Action,
@@ -374,6 +383,10 @@ Depth_Attachment_Action :: struct {
 }
 
 // Stencil_Attachment_Action controls load/store behavior for a stencil attachment.
+//
+// The framework default is clear-to-zero, store. Because every default field
+// is the enum/integer zero value, the zero-init form already matches the
+// default; no explicit defaulting is needed.
 Stencil_Attachment_Action :: struct {
 	load_action: Load_Action,
 	store_action: Store_Action,
@@ -381,6 +394,17 @@ Stencil_Attachment_Action :: struct {
 }
 
 // Pass_Action groups all attachment load/store actions for begin_pass.
+//
+// Zero-init contract (AAA roadmap item 35): a fully zero-init `Pass_Action`
+// produces the same rendering as `default_pass_action()` — clear color to
+// opaque black, clear depth to 1.0, clear stencil to 0, store every
+// attachment. Defaults apply per attachment slot: any color slot whose
+// `Color_Attachment_Action` is fully zero is filled in with the color
+// default; the depth slot is filled in when its `Depth_Attachment_Action`
+// is fully zero. Slots with any field set (e.g. only `clear_value`) keep
+// the user-supplied values verbatim. Resolution happens at the descriptor
+// boundary in `begin_pass`; see `pass_action_with_defaults` for the same
+// transform exposed for inspection.
 Pass_Action :: struct {
 	colors: [MAX_COLOR_ATTACHMENTS]Color_Attachment_Action,
 	depth: Depth_Attachment_Action,
@@ -859,30 +883,11 @@ Context :: struct {
 }
 
 // default_pass_action returns clear/store defaults for color, depth, and stencil attachments.
+//
+// Equivalent to `pass_action_with_defaults({})`. A zero-init `Pass_Action` passed
+// to `begin_pass` produces the same rendering — see the `Pass_Action` doc.
 default_pass_action :: proc() -> Pass_Action {
-	action: Pass_Action
-
-	for i in 0..<MAX_COLOR_ATTACHMENTS {
-		action.colors[i] = Color_Attachment_Action {
-			load_action = .Clear,
-			store_action = .Store,
-			clear_value = Color{r = 0, g = 0, b = 0, a = 1},
-		}
-	}
-
-	action.depth = Depth_Attachment_Action {
-		load_action = .Clear,
-		store_action = .Store,
-		clear_value = 1,
-	}
-
-	action.stencil = Stencil_Attachment_Action {
-		load_action = .Clear,
-		store_action = .Store,
-		clear_value = 0,
-	}
-
-	return action
+	return pass_action_with_defaults({})
 }
 
 // backend_name returns a stable lowercase display name for a Backend.

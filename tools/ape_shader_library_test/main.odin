@@ -182,10 +182,8 @@ main :: proc() {
 
 	// Drive an actual frame: apply both pipelines back-to-back. This is the
 	// "switch a permutation at runtime within one frame" requirement.
-	action := gfx.default_pass_action()
 	pass := gfx.Pass_Desc {
 		label = "permutation switch",
-		action = action,
 	}
 	if !gfx.begin_pass(&ctx, pass) {
 		fail(fmt.tprintf("begin_pass failed: %s", gfx.last_error(&ctx)))

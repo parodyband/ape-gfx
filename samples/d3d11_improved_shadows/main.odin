@@ -228,9 +228,7 @@ main :: proc() {
 			continue
 		}
 
-		shadow_action := gfx.default_pass_action()
-		shadow_action.depth.clear_value = 1
-		gfx_app.begin_pass(&ctx, gfx.render_target_pass_desc(shadow_target, "shadow map pass", shadow_action))
+		gfx_app.begin_pass(&ctx, gfx.render_target_pass_desc(shadow_target, "shadow map pass", {}))
 		gfx_app.apply_pipeline(&ctx, depth_program.pipeline)
 		draw_scene(&ctx, .Shadow, depth_plane_bindings, depth_cube_bindings, scene.light_view_proj, scene.cube_models[:], i32(len(scene.plane_vertices)), i32(len(scene.cube_vertices)))
 		gfx_app.end_pass(&ctx)
@@ -245,10 +243,10 @@ main :: proc() {
 			ape_shadow_map_size = {SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, 0},
 		}
 
-		pass_action := gfx.default_pass_action()
-		pass_action.colors[0].clear_value = gfx.Color{r = 0.1, g = 0.1, b = 0.1, a = 1}
-		pass_action.depth.clear_value = 1
-		gfx_app.begin_pass(&ctx, {label = "shadows pass", action = pass_action})
+		gfx_app.begin_pass(&ctx, {
+			label = "shadows pass",
+			action = {colors = {0 = {clear_value = {r = 0.1, g = 0.1, b = 0.1, a = 1}}}},
+		})
 		gfx_app.apply_pipeline(&ctx, shadows_program.pipeline)
 		apply_frame_uniforms(&ctx, &frame_uniforms)
 		draw_scene(
