@@ -252,6 +252,9 @@ d3d11_validate_buffer_usage :: proc(ctx: ^Context, usage: Buffer_Usage) -> bool 
 	if .Storage in usage {
 		role_count += 1
 	}
+	if .Indirect in usage {
+		role_count += 1
+	}
 	if role_count == 0 {
 		set_validation_error(ctx, "gfx.d3d11: buffer usage must include at least one role flag")
 		return false
@@ -306,14 +309,19 @@ d3d11_buffer_cpu_access :: proc(usage: Buffer_Usage) -> d3d11.CPU_ACCESS_FLAGS {
 }
 
 d3d11_buffer_misc_flags :: proc(usage: Buffer_Usage, storage_stride: int) -> d3d11.RESOURCE_MISC_FLAGS {
+	flags: d3d11.RESOURCE_MISC_FLAGS
 	if .Storage in usage {
 		if storage_stride > 0 {
-			return {.BUFFER_STRUCTURED}
+			flags += {.BUFFER_STRUCTURED}
+		} else {
+			flags += {.BUFFER_ALLOW_RAW_VIEWS}
 		}
-		return {.BUFFER_ALLOW_RAW_VIEWS}
+	}
+	if .Indirect in usage {
+		flags += {.DRAWINDIRECT_ARGS}
 	}
 
-	return {}
+	return flags
 }
 
 d3d11_buffer_bind_flags :: proc(usage: Buffer_Usage) -> d3d11.BIND_FLAGS {

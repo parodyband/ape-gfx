@@ -145,6 +145,10 @@ validate_buffer_desc :: proc(ctx: ^Context, desc: ^Buffer_Desc) -> bool {
 			set_validation_error(ctx, "gfx.create_buffer: structured storage buffer size must be a multiple of storage_stride")
 			return false
 		}
+		if .Indirect in desc.usage {
+			set_validation_error(ctx, "gfx.create_buffer: Indirect cannot combine with structured Storage; use a raw storage buffer (storage_stride = 0)")
+			return false
+		}
 	} else if .Storage in desc.usage && desc.size % 4 != 0 {
 		set_validation_error(ctx, "gfx.create_buffer: raw storage buffer size must be 4-byte aligned")
 		return false
@@ -166,6 +170,9 @@ buffer_usage_role_count :: proc(usage: Buffer_Usage) -> int {
 		count += 1
 	}
 	if .Storage in usage {
+		count += 1
+	}
+	if .Indirect in usage {
 		count += 1
 	}
 	return count

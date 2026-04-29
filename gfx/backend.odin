@@ -477,6 +477,48 @@ backend_dispatch :: proc(ctx: ^Context, group_count_x, group_count_y, group_coun
 	return false
 }
 
+backend_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_draw_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .D3D11:
+		return d3d11_draw_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .Vulkan:
+		return vulkan_draw_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .Auto:
+	}
+
+	return false
+}
+
+backend_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .D3D11:
+		return d3d11_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .Vulkan:
+		return vulkan_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .Auto:
+	}
+
+	return false
+}
+
+backend_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_dispatch_indirect(ctx, indirect_buffer, offset)
+	case .D3D11:
+		return d3d11_dispatch_indirect(ctx, indirect_buffer, offset)
+	case .Vulkan:
+		return vulkan_dispatch_indirect(ctx, indirect_buffer, offset)
+	case .Auto:
+	}
+
+	return false
+}
+
 backend_end_pass :: proc(ctx: ^Context) -> bool {
 	switch ctx.backend {
 	case .Null:

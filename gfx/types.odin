@@ -51,11 +51,21 @@ Pipeline_Layout_Invalid :: Pipeline_Layout(0)
 Binding_Group_Invalid :: Binding_Group(0)
 
 // Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
+//
+// `Indirect` tags a buffer as legal source storage for `draw_indirect`,
+// `draw_indexed_indirect`, and `dispatch_indirect` (AAA roadmap item 11).
+// It composes with another role flag — typically `.Storage` for compute
+// passes that produce indirect args, or `.Immutable` / `.Dynamic_Update` /
+// `.Stream_Update` for CPU-prepared indirect buffers. D3D11 maps this to
+// `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS`, which precludes structured
+// storage views; combine `.Indirect` with `.Storage` only for raw buffers
+// (`storage_stride == 0`).
 Buffer_Usage_Flag :: enum {
 	Vertex,
 	Index,
 	Uniform,
 	Storage,
+	Indirect,
 	Immutable,
 	Dynamic_Update,
 	Stream_Update,
@@ -549,6 +559,62 @@ Buffer_Read_Desc :: struct {
 	offset: int,
 	data: Range,
 }
+
+// Draw_Indirect_Args is the canonical layout one non-indexed indirect draw
+// command consumes from an indirect-capable buffer (AAA roadmap item 11).
+//
+// Field order and types match `D3D12_DRAW_ARGUMENTS`,
+// `VkDrawIndirectCommand`, and `MTLDrawPrimitivesIndirectArguments` so the
+// same byte image dispatches across all three backends. D3D11
+// `DrawInstancedIndirect` consumes the same five `u32` words via
+// `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS` buffers.
+Draw_Indirect_Args :: struct {
+	vertex_count:   u32,
+	instance_count: u32,
+	first_vertex:   u32,
+	first_instance: u32,
+}
+
+// Draw_Indexed_Indirect_Args is the canonical layout one indexed indirect
+// draw command consumes from an indirect-capable buffer (AAA roadmap item
+// 11).
+//
+// Field order matches `D3D12_DRAW_INDEXED_ARGUMENTS`,
+// `VkDrawIndexedIndirectCommand`, and
+// `MTLDrawIndexedPrimitivesIndirectArguments`. `base_vertex` is the signed
+// per-draw vertex offset added to each fetched index.
+Draw_Indexed_Indirect_Args :: struct {
+	index_count:    u32,
+	instance_count: u32,
+	first_index:    u32,
+	base_vertex:    i32,
+	first_instance: u32,
+}
+
+// Dispatch_Indirect_Args is the canonical layout one indirect dispatch
+// consumes from an indirect-capable buffer (AAA roadmap item 11).
+//
+// Field order matches `D3D12_DISPATCH_ARGUMENTS`,
+// `VkDispatchIndirectCommand`, and
+// `MTLDispatchThreadgroupsIndirectArguments`. D3D11
+// `DispatchIndirect` consumes the same three `u32` words.
+Dispatch_Indirect_Args :: struct {
+	thread_group_count_x: u32,
+	thread_group_count_y: u32,
+	thread_group_count_z: u32,
+}
+
+// DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Draw_Indirect_Args` records in an indirect buffer.
+DRAW_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indirect_Args)
+
+// DRAW_INDEXED_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Draw_Indexed_Indirect_Args` records in an indirect buffer.
+DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indexed_Indirect_Args)
+
+// DISPATCH_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Dispatch_Indirect_Args` records in an indirect buffer.
+DISPATCH_INDIRECT_ARGS_STRIDE :: size_of(Dispatch_Indirect_Args)
 
 // Image_Desc creates an Image resource and optional immutable initial contents.
 //

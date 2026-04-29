@@ -1051,6 +1051,18 @@ d3d11_dispatch :: proc(ctx: ^Context, group_count_x, group_count_y, group_count_
 	return true
 }
 
+d3d11_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	panic("gfx.d3d11: draw_indirect is unimplemented (APE-7 declaration only; backend lands in APE-8)")
+}
+
+d3d11_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	panic("gfx.d3d11: draw_indexed_indirect is unimplemented (APE-7 declaration only; backend lands in APE-8)")
+}
+
+d3d11_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
+	panic("gfx.d3d11: dispatch_indirect is unimplemented (APE-7 declaration only; backend lands in APE-9)")
+}
+
 d3d11_end_pass :: proc(ctx: ^Context) -> bool {
 	state := d3d11_state(ctx)
 	if state != nil {

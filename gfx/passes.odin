@@ -297,6 +297,116 @@ dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, 
 	return true
 }
 
+// draw_indirect issues one or more non-indexed draws sourced from an
+// indirect-capable buffer (AAA roadmap item 11).
+//
+// `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
+// `offset` is the byte offset of the first `Draw_Indirect_Args` record;
+// `draw_count` records are read at `stride` bytes apart. `stride == 0`
+// uses `DRAW_INDIRECT_ARGS_STRIDE`.
+//
+// Bodies are wired through the backend dispatch table; backends panic
+// with `unimplemented` until APE-8 lands the D3D11 implementation.
+draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDIRECT_ARGS_STRIDE) -> bool {
+	if !require_render_pass(ctx, "gfx.draw_indirect") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.draw_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDIRECT_ARGS_STRIDE) {
+		return false
+	}
+
+	return backend_draw_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+}
+
+// draw_indexed_indirect issues one or more indexed draws sourced from an
+// indirect-capable buffer (AAA roadmap item 11).
+//
+// `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
+// `offset` is the byte offset of the first `Draw_Indexed_Indirect_Args`
+// record; `draw_count` records are read at `stride` bytes apart.
+// `stride == 0` uses `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`. The active
+// pipeline must declare an `index_type` and a valid index buffer must be
+// bound through `apply_bindings`.
+//
+// Bodies are wired through the backend dispatch table; backends panic
+// with `unimplemented` until APE-8 lands the D3D11 implementation.
+draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE) -> bool {
+	if !require_render_pass(ctx, "gfx.draw_indexed_indirect") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.draw_indexed_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDEXED_INDIRECT_ARGS_STRIDE) {
+		return false
+	}
+
+	return backend_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+}
+
+// dispatch_indirect issues one compute dispatch with thread-group counts
+// sourced from an indirect-capable buffer (AAA roadmap item 11).
+//
+// `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
+// `offset` is the byte offset of the `Dispatch_Indirect_Args` record.
+//
+// Bodies are wired through the backend dispatch table; backends panic
+// with `unimplemented` until APE-9 lands the D3D11 implementation.
+dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0) -> bool {
+	if !require_compute_pass(ctx, "gfx.dispatch_indirect") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.dispatch_indirect", indirect_buffer, offset, 1, DISPATCH_INDIRECT_ARGS_STRIDE, DISPATCH_INDIRECT_ARGS_STRIDE) {
+		return false
+	}
+
+	return backend_dispatch_indirect(ctx, indirect_buffer, offset)
+}
+
+@(private)
+validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: int, default_stride: int) -> bool {
+	if !buffer_valid(indirect_buffer) {
+		set_validation_errorf(ctx, "%s: indirect buffer handle is invalid", op)
+		return false
+	}
+	if !require_resource(ctx, &ctx.buffer_pool, u64(indirect_buffer), op, "indirect buffer") {
+		return false
+	}
+	if offset < 0 {
+		set_validation_errorf(ctx, "%s: offset must be non-negative", op)
+		return false
+	}
+	if draw_count == 0 {
+		set_validation_errorf(ctx, "%s: draw_count must be positive", op)
+		return false
+	}
+	effective_stride := stride
+	if effective_stride == 0 {
+		effective_stride = default_stride
+	}
+	if effective_stride < default_stride || effective_stride % 4 != 0 {
+		set_validation_errorf(ctx, "%s: stride must be 4-byte aligned and at least %d bytes", op, default_stride)
+		return false
+	}
+
+	buffer_state := query_buffer_state(ctx, indirect_buffer)
+	if !buffer_state.valid {
+		set_invalid_handle_errorf(ctx, "%s: indirect buffer handle is invalid", op)
+		return false
+	}
+	if !(.Indirect in buffer_state.usage) {
+		set_validation_errorf(ctx, "%s: indirect buffer requires Buffer_Usage_Flag.Indirect", op)
+		return false
+	}
+	required := offset + default_stride
+	if draw_count > 1 {
+		required = offset + effective_stride * int(draw_count - 1) + default_stride
+	}
+	if required > buffer_state.size {
+		set_validation_errorf(ctx, "%s: offset + stride * draw_count exceeds buffer size", op)
+		return false
+	}
+
+	return true
+}
+
 // end_pass finishes the active render pass.
 end_pass :: proc(ctx: ^Context) -> bool {
 	if !require_initialized(ctx, "gfx.end_pass") {

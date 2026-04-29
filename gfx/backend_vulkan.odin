@@ -147,6 +147,18 @@ vulkan_dispatch :: proc(ctx: ^Context, group_count_x, group_count_y, group_count
 	return false
 }
 
+vulkan_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	panic("gfx.vulkan: draw_indirect is unimplemented (APE-7 declaration only)")
+}
+
+vulkan_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	panic("gfx.vulkan: draw_indexed_indirect is unimplemented (APE-7 declaration only)")
+}
+
+vulkan_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
+	panic("gfx.vulkan: dispatch_indirect is unimplemented (APE-7 declaration only)")
+}
+
 vulkan_end_pass :: proc(ctx: ^Context) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: end_pass is not implemented yet")
 	return false

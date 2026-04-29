@@ -192,6 +192,20 @@ cmd_draw :: proc(encoder: ^Render_Pass_Encoder, base_element: i32, num_elements:
 	panic("gfx.cmd_draw: unimplemented (APE-5 sketch only)")
 }
 
+// cmd_draw_indirect issues one or more non-indexed indirect draws on a
+// render pass encoder (AAA roadmap item 11). See `gfx.draw_indirect` for
+// the parameter contract; bodies land with APE-8.
+cmd_draw_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDIRECT_ARGS_STRIDE) -> bool {
+	panic("gfx.cmd_draw_indirect: unimplemented (APE-7 declaration only; backend lands in APE-8)")
+}
+
+// cmd_draw_indexed_indirect issues one or more indexed indirect draws on a
+// render pass encoder (AAA roadmap item 11). See `gfx.draw_indexed_indirect`
+// for the parameter contract; bodies land with APE-8.
+cmd_draw_indexed_indirect :: proc(encoder: ^Render_Pass_Encoder, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE) -> bool {
+	panic("gfx.cmd_draw_indexed_indirect: unimplemented (APE-7 declaration only; backend lands in APE-8)")
+}
+
 // cmd_begin_compute_pass opens a compute pass on a Command_List.
 //
 // Returns the encoder for subsequent `cmd_apply_compute_*` and `cmd_dispatch`
@@ -226,4 +240,11 @@ cmd_apply_compute_uniforms :: proc(encoder: ^Compute_Pass_Encoder, group: u32, s
 // cmd_dispatch issues one compute dispatch with explicit thread-group counts.
 cmd_dispatch :: proc(encoder: ^Compute_Pass_Encoder, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {
 	panic("gfx.cmd_dispatch: unimplemented (APE-5 sketch only)")
+}
+
+// cmd_dispatch_indirect issues one indirect compute dispatch on a compute
+// pass encoder (AAA roadmap item 11). See `gfx.dispatch_indirect` for the
+// parameter contract; bodies land with APE-9.
+cmd_dispatch_indirect :: proc(encoder: ^Compute_Pass_Encoder, indirect_buffer: Buffer, offset: int = 0) -> bool {
+	panic("gfx.cmd_dispatch_indirect: unimplemented (APE-7 declaration only; backend lands in APE-9)")
 }
