@@ -165,9 +165,29 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, shader)
 
+	group_layout, group_layout_ok := gfx.create_binding_group_layout(&ctx, compute_storage_shader.binding_group_layout_desc(compute_storage_shader.GROUP_0, label = "compute storage bindings"))
+	if !group_layout_ok {
+		fmt.eprintln("binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, group_layout)
+
+	pipeline_layout, pipeline_layout_ok := gfx.create_pipeline_layout(&ctx, {
+		label = "compute storage pipeline layout",
+		group_layouts = {
+			compute_storage_shader.GROUP_0 = group_layout,
+		},
+	})
+	if !pipeline_layout_ok {
+		fmt.eprintln("pipeline layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, pipeline_layout)
+
 	pipeline, pipeline_ok := gfx.create_compute_pipeline(&ctx, {
 		label = "compute storage pipeline",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 	})
 	if !pipeline_ok {
 		fmt.eprintln("compute pipeline creation failed: ", gfx.last_error(&ctx))

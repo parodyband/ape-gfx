@@ -140,6 +140,12 @@ MAX_VERTEX_BUFFERS :: 8
 Pipeline_Invalid :: Pipeline(0)
 ```
 
+### `Pipeline_Layout_Invalid`
+
+```odin
+Pipeline_Layout_Invalid :: Pipeline_Layout(0)
+```
+
 ### `Sampler_Invalid`
 
 ```odin
@@ -332,6 +338,14 @@ create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (: Pipeline, : bo
 create_pipeline creates an immutable graphics pipeline state object.
 On failure, the returned handle is Pipeline_Invalid and last_error explains why.
 
+### `create_pipeline_layout`
+
+```odin
+create_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> (: Pipeline_Layout, : bool) {...}
+```
+
+create_pipeline_layout creates an immutable layout composed from generated binding group layouts.
+
 ### `create_sampler`
 
 ```odin
@@ -414,6 +428,14 @@ destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {...}
 ```
 
 destroy_pipeline releases a live graphics pipeline handle.
+
+### `destroy_pipeline_layout`
+
+```odin
+destroy_pipeline_layout :: proc(ctx: ^Context, layout: Pipeline_Layout) {...}
+```
+
+destroy_pipeline_layout releases a live pipeline layout handle.
 
 ### `destroy_sampler`
 
@@ -543,6 +565,14 @@ make_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> Pipeline {...}
 
 make_pipeline is the Sokol-style handle-only compatibility alias for create_pipeline.
 
+### `make_pipeline_layout`
+
+```odin
+make_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> Pipeline_Layout {...}
+```
+
+make_pipeline_layout is the handle-only compatibility alias for create_pipeline_layout.
+
 ### `make_sampler`
 
 ```odin
@@ -566,6 +596,14 @@ make_view :: proc(ctx: ^Context, desc: View_Desc) -> View {...}
 ```
 
 make_view is the Sokol-style handle-only compatibility alias for create_view.
+
+### `pipeline_layout_valid`
+
+```odin
+pipeline_layout_valid :: proc(layout: Pipeline_Layout) -> bool {...}
+```
+
+pipeline_layout_valid reports whether a Pipeline_Layout handle is nonzero.
 
 ### `pipeline_valid`
 
@@ -727,6 +765,14 @@ validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_La
 
 validate_binding_group_layout_desc validates generated binding-group layout data.
 
+### `validate_pipeline_layout_desc`
+
+```odin
+validate_pipeline_layout_desc :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> bool {...}
+```
+
+validate_pipeline_layout_desc validates a pipeline layout before creation.
+
 ### `view_valid`
 
 ```odin
@@ -738,7 +784,7 @@ view_valid reports whether a View handle is nonzero.
 ### `destroy`
 
 ```odin
-destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_binding_group}
+destroy :: proc{destroy_buffer, destroy_image, destroy_view, destroy_sampler, destroy_shader, destroy_pipeline, destroy_compute_pipeline, destroy_binding_group_layout, destroy_pipeline_layout, destroy_binding_group}
 ```
 
 destroy overloads the explicit destroy_* procedures for all public resource handles.
@@ -972,7 +1018,7 @@ Compute_Pipeline :: distinct u64
 ### `Compute_Pipeline_Desc`
 
 ```odin
-Compute_Pipeline_Desc :: struct {label: string, shader: Shader}
+Compute_Pipeline_Desc :: struct {label: string, shader: Shader, pipeline_layout: Pipeline_Layout}
 ```
 
 Compute_Pipeline_Desc creates an immutable compute pipeline.
@@ -1198,10 +1244,24 @@ Pipeline :: distinct u64
 ### `Pipeline_Desc`
 
 ```odin
-Pipeline_Desc :: struct {label: string, shader: Shader, primitive_type: Primitive_Type, index_type: Index_Type, layout: Layout_Desc, color_formats: [MAX_COLOR_ATTACHMENTS]Pixel_Format, depth_only: bool, colors: [MAX_COLOR_ATTACHMENTS]Color_State, depth: Depth_State, raster: Raster_State}
+Pipeline_Desc :: struct {label: string, shader: Shader, pipeline_layout: Pipeline_Layout, primitive_type: Primitive_Type, index_type: Index_Type, layout: Layout_Desc, color_formats: [MAX_COLOR_ATTACHMENTS]Pixel_Format, depth_only: bool, colors: [MAX_COLOR_ATTACHMENTS]Color_State, depth: Depth_State, raster: Raster_State}
 ```
 
 Pipeline_Desc creates an immutable graphics pipeline.
+
+### `Pipeline_Layout`
+
+```odin
+Pipeline_Layout :: distinct u64
+```
+
+### `Pipeline_Layout_Desc`
+
+```odin
+Pipeline_Layout_Desc :: struct {label: string, group_layouts: [MAX_BINDING_GROUPS]Binding_Group_Layout}
+```
+
+Pipeline_Layout_Desc composes generated binding group layouts for one pipeline family.
 
 ### `Pixel_Format`
 

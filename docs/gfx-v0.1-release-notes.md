@@ -80,6 +80,7 @@ Generated bindings currently cover:
 - D3D11 native resource slots
 - sampled texture and sampler bindings
 - generated binding group layout helpers and resource setters
+- generated pipeline layout helpers and explicit `gfx.Pipeline_Layout` handles
 - uniform block structs and `apply_uniform_*` helpers
 - simple packed vertex layout helpers
 - storage image and storage buffer metadata
@@ -207,7 +208,7 @@ These pieces exist, but should not be treated as long-term frozen yet:
 
 After v0.1, the next larger areas are:
 
-- decide whether `Pipeline_Layout` is needed now that generated logical groups are real
+- harden the immediate `gfx.Bindings` path against `Pipeline_Layout` metadata before backend checks
 - sketch resource-array and bindless reflection before freezing the group record shape further
 - improve storage and compute ergonomics beyond the current samples
 - add init-time required features and limits if the binding/layout design needs them

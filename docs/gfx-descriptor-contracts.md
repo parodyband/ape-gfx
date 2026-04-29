@@ -322,6 +322,7 @@ Fields:
 | --- | --- |
 | `label` | Optional diagnostic label. |
 | `shader` | Required. Must be a live shader from the same context containing vertex and fragment stages. Compute-only shaders are rejected. |
+| `pipeline_layout` | Required when the shader has reflected binding metadata. Must be a live `Pipeline_Layout` from the same context. |
 | `primitive_type` | Optional; zero defaults to `.Triangles`. Must be valid. |
 | `index_type` | Optional; zero defaults to `.None`. Must be valid. Non-`.None` pipelines require an index buffer before indexed draw. |
 | `layout` | Required when the vertex shader has reflected vertex inputs. Attributes must have non-empty semantics, valid formats, valid buffer slots, offsets inside stride, and no duplicate semantic/index pairs. |
@@ -337,6 +338,7 @@ Rules:
 - Extra layout attributes are rejected when shader vertex input metadata is present.
 - Per-vertex buffers require `step_rate = 0`; per-instance buffers require nonzero `step_rate`.
 - Manual `Pipeline_Desc.layout` overrides remain supported; they must still match reflected shader inputs when metadata exists.
+- Reflected resource and uniform bindings are checked against `pipeline_layout` before backend pipeline creation.
 
 Representative callsite:
 
@@ -344,6 +346,7 @@ Representative callsite:
 pipeline, ok := gfx.create_pipeline(&ctx, {
 	label = "triangle pipeline",
 	shader = shader,
+	pipeline_layout = pipeline_layout,
 	primitive_type = .Triangles,
 	layout = triangle_shader.layout_desc(),
 })
@@ -359,11 +362,55 @@ Fields:
 | --- | --- |
 | `label` | Optional diagnostic label. |
 | `shader` | Required. Must be a live shader from the same context containing a compute stage and no graphics stages. |
+| `pipeline_layout` | Required when the shader has reflected binding metadata. Must be a live `Pipeline_Layout` from the same context. |
 
 Rules:
 
 - The active backend must report compute support.
 - Graphics shaders are rejected before backend creation.
+- Reflected compute resources are checked against `pipeline_layout` before backend pipeline creation.
+
+## Pipeline Layouts
+
+`Pipeline_Layout_Desc` composes generated binding group layouts into the binding contract for a graphics or compute pipeline. It makes reflected shader resources explicit pipeline state instead of an apply-time guess.
+
+Fields:
+
+| Field | Contract |
+| --- | --- |
+| `Pipeline_Layout_Desc.label` | Optional diagnostic label. |
+| `Pipeline_Layout_Desc.group_layouts` | Sparse array of live `Binding_Group_Layout` handles indexed by logical group. |
+
+Rules:
+
+- Each group layout must come from the same context.
+- Each group layout handle must be stored at the index declared by its `Binding_Group_Layout_Desc.group`.
+- `create_pipeline` and `create_compute_pipeline` reject shaders with binding metadata unless `pipeline_layout` is set.
+- Pipeline creation validates logical group, slot, stage, reflected name, payload metadata, and native slot/space for the active backend.
+- `destroy_pipeline_layout` rejects layouts still used by live graphics or compute pipelines.
+- `destroy_binding_group_layout` rejects group layouts still used by live pipeline layouts.
+
+Representative callsite:
+
+```odin
+group_layout, ok := gfx.create_binding_group_layout(
+	&ctx,
+	textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "material bindings"),
+)
+if !ok {
+	fmt.eprintln("binding group layout failed: ", gfx.last_error(&ctx))
+	return
+}
+
+pipeline_layout, ok := gfx.create_pipeline_layout(
+	&ctx,
+	textured_quad_shader.pipeline_layout_desc(group_0 = group_layout, label = "textured pipeline layout"),
+)
+if !ok {
+	fmt.eprintln("pipeline layout failed: ", gfx.last_error(&ctx))
+	return
+}
+```
 
 ## Binding Groups
 
@@ -394,13 +441,13 @@ Rules:
 - Native mappings are allowed only for concrete generated backend targets such as `.D3D11` and `.Vulkan`.
 - `apply_binding_group` requires an applied graphics or compute pipeline.
 - `apply_binding_groups` applies several object-backed groups in one call. This is the intended path when one shader uses separate Slang `ParameterBlock<>` groups.
-- The layout must match the current pipeline's reflected binding metadata: logical group, logical slot, stage, reflected name, kind payload, and native slot/space for the active backend.
-- A single layout is not required to cover every shader resource. Missing required resources are caught by the backend before `draw` or `dispatch`.
+- The binding group's layout handle must match the active pipeline's `Pipeline_Layout` at the same logical group.
+- Missing required resources are caught before `draw` or `dispatch`.
 - `create_binding_group` requires every resource-view and sampler entry in the layout to have a matching handle in `Binding_Group_Desc`.
 - Extra active views or samplers that are not declared by the layout are rejected during `create_binding_group`.
 - `base_bindings` passed to `apply_binding_group` may contain vertex and index buffers. It must not already contain views or samplers.
 - `base_bindings` passed to `apply_binding_groups` follows the same rule.
-- `destroy_binding_group_layout` rejects layouts that are still used by live binding groups.
+- `destroy_binding_group_layout` rejects layouts that are still used by live binding groups or pipeline layouts.
 
 Representative callsite:
 
@@ -531,4 +578,4 @@ Run:
 .\tools\test_gfx_state_descriptor_contracts.ps1
 ```
 
-These tests cover representative valid defaults and invalid shapes for `Desc`, `Buffer_Desc`, `Image_Desc`, `Image_Update_Desc`, `Image_Resolve_Desc`, `View_Desc`, `Sampler_Desc`, `Shader_Desc`, `Pipeline_Desc`, `Compute_Pipeline_Desc`, `Bindings`, and `Pass_Desc` on the null backend where possible, so most contract checks run without depending on D3D11 device setup.
+These tests cover representative valid defaults and invalid shapes for `Desc`, `Buffer_Desc`, `Image_Desc`, `Image_Update_Desc`, `Image_Resolve_Desc`, `View_Desc`, `Sampler_Desc`, `Shader_Desc`, `Pipeline_Layout_Desc`, `Pipeline_Desc`, `Compute_Pipeline_Desc`, `Bindings`, and `Pass_Desc` on the null backend where possible, so most contract checks run without depending on D3D11 device setup.

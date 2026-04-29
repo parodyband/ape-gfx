@@ -57,9 +57,21 @@ main :: proc() {
 	shader, _ := gfx.create_shader(&ctx, shader_desc)
 	defer gfx.destroy(&ctx, shader)
 
+	group_layout, _ := gfx.create_binding_group_layout(&ctx, triangle_shader.binding_group_layout_desc(triangle_shader.GROUP_0, label = "triangle bindings"))
+	defer gfx.destroy(&ctx, group_layout)
+
+	pipeline_layout, _ := gfx.create_pipeline_layout(&ctx, {
+		label = "triangle pipeline layout",
+		group_layouts = {
+			triangle_shader.GROUP_0 = group_layout,
+		},
+	})
+	defer gfx.destroy(&ctx, pipeline_layout)
+
 	pipeline, _ := gfx.create_pipeline(&ctx, {
 		label          = "triangle pipeline",
 		shader         = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type     = .None,
 		layout         = triangle_shader.layout_desc(),

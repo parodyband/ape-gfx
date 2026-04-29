@@ -241,6 +241,7 @@ main :: proc() {
 				winding = .Clockwise,
 			},
 		},
+		binding_group_layout_desc = cube_shader_bindings.binding_group_layout_desc,
 	}
 	cube_program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &cube_program, cube_program_desc, {
@@ -263,6 +264,7 @@ main :: proc() {
 			index_type = .Uint16,
 			layout = texture_layout,
 		},
+		binding_group_layout_desc = depth_visualize_shader.binding_group_layout_desc,
 	}
 	texture_program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &texture_program, texture_program_desc, {

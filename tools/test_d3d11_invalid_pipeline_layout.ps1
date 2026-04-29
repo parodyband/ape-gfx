@@ -79,12 +79,32 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, shader)
 
+	group_layout, group_layout_ok := gfx.create_binding_group_layout(&ctx, triangle_shader.binding_group_layout_desc(triangle_shader.GROUP_0, label = "triangle bindings"))
+	if !group_layout_ok {
+		fmt.eprintln("binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, group_layout)
+
+	pipeline_layout, pipeline_layout_ok := gfx.create_pipeline_layout(&ctx, {
+		label = "triangle pipeline layout",
+		group_layouts = {
+			triangle_shader.GROUP_0 = group_layout,
+		},
+	})
+	if !pipeline_layout_ok {
+		fmt.eprintln("pipeline layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, pipeline_layout)
+
 	layout := triangle_shader.layout_desc()
 	layout.attrs[1].format = .Float32x2
 
 	pipeline, pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "invalid pipeline",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = layout,

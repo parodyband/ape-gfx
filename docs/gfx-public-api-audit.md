@@ -60,6 +60,7 @@ Composite statuses are comma-separated.
 | `MAX_VERTEX_ATTRIBUTES` | keep | Public fixed array limit. |
 | `MAX_VERTEX_BUFFERS` | keep | Public fixed array limit. |
 | `Pipeline_Invalid` | keep | Stable invalid sentinel. |
+| `Pipeline_Layout_Invalid` | keep | Stable invalid sentinel for explicit pipeline layouts. |
 | `Sampler_Invalid` | keep | Stable invalid sentinel. |
 | `Shader_Invalid` | keep | Stable invalid sentinel. |
 | `View_Invalid` | keep | Stable invalid sentinel. |
@@ -89,6 +90,7 @@ Composite statuses are comma-separated.
 | `create_compute_pipeline` | keep, needs_test | Primary compute pipeline creation spelling. |
 | `create_image` | keep, needs_test | Primary image creation spelling. |
 | `create_pipeline` | keep, needs_test | Primary graphics pipeline creation spelling. |
+| `create_pipeline_layout` | keep, needs_test | Primary pipeline layout creation spelling for reflected shader bindings. |
 | `create_sampler` | keep, needs_test | Primary sampler creation spelling. |
 | `create_shader` | keep, needs_docs | Primary low-level shader creation spelling. Most users should arrive through `.ashader`. |
 | `create_view` | keep, needs_test | Primary view creation spelling. |
@@ -99,6 +101,7 @@ Composite statuses are comma-separated.
 | `destroy_compute_pipeline` | keep | Explicit destroy remains available. |
 | `destroy_image` | keep | Explicit destroy remains available. |
 | `destroy_pipeline` | keep | Explicit destroy remains available. |
+| `destroy_pipeline_layout` | keep | Explicit destroy remains available. |
 | `destroy_sampler` | keep | Explicit destroy remains available. |
 | `destroy_shader` | keep | Explicit destroy remains available. |
 | `destroy_view` | keep | Explicit destroy remains available. |
@@ -115,10 +118,12 @@ Composite statuses are comma-separated.
 | `make_compute_pipeline` | compat | Compatibility alias. Avoid in primary samples. |
 | `make_image` | compat | Compatibility alias. Avoid in primary samples. |
 | `make_pipeline` | compat | Compatibility alias. Avoid in primary samples. |
+| `make_pipeline_layout` | compat | Compatibility alias. Avoid in primary samples. |
 | `make_sampler` | compat | Compatibility alias. Avoid in primary samples. |
 | `make_shader` | compat | Compatibility alias. Avoid in primary samples. |
 | `make_view` | compat | Compatibility alias. Avoid in primary samples. |
 | `pipeline_valid` | keep, needs_test | Simple sentinel check. |
+| `pipeline_layout_valid` | keep, needs_test | Simple sentinel check. |
 | `query_backend_limits` | keep, needs_docs | Stable name. Document difference from `query_limits`. |
 | `query_buffer_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
 | `query_features` | keep, needs_docs | Stable name. |
@@ -138,6 +143,7 @@ Composite statuses are comma-separated.
 | `update_buffer` | keep, needs_test | Stable dynamic/stream buffer update. |
 | `update_image` | keep, needs_test | Stable dynamic image update. |
 | `validate_binding_group_layout_desc` | keep | Validates generated binding group layout descriptors before object creation. |
+| `validate_pipeline_layout_desc` | keep | Validates generated pipeline layout descriptors before object creation. |
 | `view_valid` | keep, needs_test | Simple sentinel check. |
 | `destroy` | keep | Primary ergonomic destroy overload. |
 | `range` | keep | Primary data-span overload. |
@@ -204,6 +210,8 @@ Composite statuses are comma-separated.
 | `Pass_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. No explicit attachments means the implicit context swapchain. |
 | `Pipeline` | keep | Stable handle. |
 | `Pipeline_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
+| `Pipeline_Layout` | keep | Stable pipeline layout handle for reflected shader bindings. |
+| `Pipeline_Layout_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Pixel_Format` | keep, needs_docs | Public format enum. Document backend support matrix. |
 | `Primitive_Type` | keep | Pipeline topology enum. |
 | `Range` | keep | Raw byte span for uploads/readback/bytecode. |

@@ -278,6 +278,7 @@ Stable generated helpers:
 - Uniform structs and `apply_uniform_*` helpers when reflection is representable.
 - Simple packed vertex layout helpers such as `VERTEX_STRIDE`, `ATTR_*_OFFSET`, and `layout_desc`.
 - Binding group layout descriptors such as `binding_group_layout_desc`, used with `gfx.create_binding_group_layout`.
+- Pipeline layout descriptors such as `pipeline_layout_desc`, used with `gfx.create_pipeline_layout`.
 - Binding group resource setters such as `set_group_view_*` and `set_group_sampler_*`.
 - `ParameterBlock<>` resource groups mapped to generated logical groups.
 - Compute thread-group constants and dispatch helpers.
@@ -292,6 +293,8 @@ Generated vertex layout support is intentionally narrow:
 - `float4` maps to `.Float32x4`.
 
 Manual `Pipeline_Desc.layout` overrides remain supported for compact formats, multiple streams, instancing, and custom vertex layouts. They still must match reflected shader inputs when metadata exists.
+
+Shaders with reflected binding metadata require an explicit `Pipeline_Layout`. Generated group-layout descriptors are created as handles, composed into a `Pipeline_Layout`, and supplied to graphics or compute pipeline descriptors before pipeline creation.
 
 ## Error Contract
 

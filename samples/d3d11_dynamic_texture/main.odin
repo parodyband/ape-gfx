@@ -148,6 +148,7 @@ main :: proc() {
 			index_type = .Uint16,
 			layout = layout,
 		},
+		binding_group_layout_desc = textured_quad_shader.binding_group_layout_desc,
 	}
 	program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &program, program_desc, {

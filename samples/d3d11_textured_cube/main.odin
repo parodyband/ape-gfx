@@ -212,6 +212,7 @@ main :: proc() {
 				winding = .Clockwise,
 			},
 		},
+		binding_group_layout_desc = textured_cube_shader.binding_group_layout_desc,
 	}
 	program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &program, program_desc, {

@@ -210,6 +210,30 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	return desc
 }
 
+pipeline_layout_desc :: proc(
+	group_0: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_1: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_2: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_3: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_4: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_5: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_6: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_7: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	label: string = ""
+) -> gfx.Pipeline_Layout_Desc {
+	desc: gfx.Pipeline_Layout_Desc
+	desc.label = label
+	desc.group_layouts[0] = group_0
+	desc.group_layouts[1] = group_1
+	desc.group_layouts[2] = group_2
+	desc.group_layouts[3] = group_3
+	desc.group_layouts[4] = group_4
+	desc.group_layouts[5] = group_5
+	desc.group_layouts[6] = group_6
+	desc.group_layouts[7] = group_7
+	return desc
+}
+
 
 set_view_material_ape_texture :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
 	if bindings == nil {

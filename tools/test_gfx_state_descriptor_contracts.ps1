@@ -241,6 +241,36 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, shader)
 
+	group_layout_handle, group_layout_handle_ok := gfx.create_binding_group_layout(&ctx, group_layout)
+	if !group_layout_handle_ok || !gfx.binding_group_layout_valid(group_layout_handle) {
+		fmt.eprintln("binding group layout handle creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, group_layout_handle)
+
+	pipeline_layout, pipeline_layout_ok := gfx.create_pipeline_layout(&ctx, {
+		label = "valid generated-style pipeline layout",
+		group_layouts = {
+			0 = group_layout_handle,
+		},
+	})
+	if !pipeline_layout_ok || !gfx.pipeline_layout_valid(pipeline_layout) {
+		fmt.eprintln("pipeline layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, pipeline_layout)
+
+	wrong_group_pipeline_layout, wrong_group_pipeline_layout_ok := gfx.create_pipeline_layout(&ctx, {
+		label = "wrong group pipeline layout",
+		group_layouts = {
+			1 = group_layout_handle,
+		},
+	})
+	if wrong_group_pipeline_layout_ok || gfx.pipeline_layout_valid(wrong_group_pipeline_layout) {
+		fail("pipeline layout with mismatched group slot unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.validate_pipeline_layout_desc: group layout at slot 1 declares group 0")
+
 	layout: gfx.Layout_Desc
 	layout.buffers[0] = {stride = 12}
 	layout.attrs[0] = {
@@ -251,9 +281,22 @@ main :: proc() {
 		offset = 0,
 	}
 
+	missing_pipeline_layout, missing_pipeline_layout_ok := gfx.create_pipeline(&ctx, {
+		label = "missing pipeline layout",
+		shader = shader,
+		primitive_type = .Triangles,
+		index_type = .None,
+		layout = layout,
+	})
+	if missing_pipeline_layout_ok || gfx.pipeline_valid(missing_pipeline_layout) {
+		fail("pipeline with reflected bindings and no pipeline_layout unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_pipeline: shader binding metadata requires pipeline_layout")
+
 	pipeline, pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "valid reflected pipeline",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = layout,
@@ -276,6 +319,7 @@ main :: proc() {
 	sparse_layout_pipeline, sparse_layout_pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "valid sparse reflected layout",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = sparse_layout,
@@ -291,6 +335,7 @@ main :: proc() {
 	missing_stride_pipeline, missing_stride_pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "sparse layout missing stride",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = missing_stride_layout,
@@ -304,6 +349,7 @@ main :: proc() {
 	gapped_color_pipeline, gapped_color_pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "gapped color formats",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = gapped_color_layout,
@@ -321,6 +367,7 @@ main :: proc() {
 	bad_pipeline, bad_pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "bad reflected layout",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = bad_layout,
@@ -333,6 +380,7 @@ main :: proc() {
 	bad_primitive, bad_primitive_ok := gfx.create_pipeline(&ctx, {
 		label = "bad primitive",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = gfx.Primitive_Type(99),
 		index_type = .None,
 		layout = layout,
@@ -432,13 +480,6 @@ main :: proc() {
 	group_base_bindings: gfx.Bindings
 	group_base_bindings.vertex_buffers[0] = {buffer = vertex_buffer}
 
-	group_layout_handle, group_layout_handle_ok := gfx.create_binding_group_layout(&ctx, group_layout)
-	if !group_layout_handle_ok || !gfx.binding_group_layout_valid(group_layout_handle) {
-		fmt.eprintln("binding group layout handle creation failed: ", gfx.last_error(&ctx))
-		os.exit(1)
-	}
-	defer gfx.destroy(&ctx, group_layout_handle)
-
 	valid_group_desc: gfx.Binding_Group_Desc
 	valid_group_desc.layout = group_layout_handle
 	valid_group_desc.views[0] = sampled_view
@@ -490,7 +531,7 @@ main :: proc() {
 	if gfx.apply_binding_group(&ctx, wrong_slot_group, group_base_bindings) {
 		fail("binding group layout for unused pipeline slot unexpectedly succeeded")
 	}
-	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: layout resource view group 0 slot 1 for fragment is not used by current pipeline")
+	expect_error_info(&ctx, .Validation, "gfx.apply_binding_group: binding group 0 layout does not match current pipeline_layout")
 
 	duplicate_apply_groups := [?]gfx.Binding_Group{valid_group, valid_group}
 	if gfx.apply_binding_groups(&ctx, duplicate_apply_groups[:], group_base_bindings) {

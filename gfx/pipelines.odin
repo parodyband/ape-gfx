@@ -109,6 +109,7 @@ track_pipeline_state :: proc(ctx: ^Context, pipeline: Pipeline, desc: Pipeline_D
 	ctx.pipeline_states[pipeline] = {
 		valid = true,
 		shader = desc.shader,
+		pipeline_layout = desc.pipeline_layout,
 	}
 }
 
@@ -147,6 +148,7 @@ track_compute_pipeline_state :: proc(ctx: ^Context, pipeline: Compute_Pipeline, 
 	ctx.compute_pipeline_states[pipeline] = {
 		valid = true,
 		shader = desc.shader,
+		pipeline_layout = desc.pipeline_layout,
 	}
 }
 
@@ -313,6 +315,10 @@ validate_graphics_pipeline_shader :: proc(ctx: ^Context, desc: Pipeline_Desc) ->
 		return false
 	}
 
+	if !validate_pipeline_layout_for_shader(ctx, desc.pipeline_layout, shader_state, "gfx.create_pipeline") {
+		return false
+	}
+
 	return validate_pipeline_vertex_inputs(ctx, shader_state, desc.layout)
 }
 
@@ -332,7 +338,7 @@ validate_compute_pipeline_desc :: proc(ctx: ^Context, desc: Compute_Pipeline_Des
 		return false
 	}
 
-	return true
+	return validate_pipeline_layout_for_shader(ctx, desc.pipeline_layout, shader_state, "gfx.create_compute_pipeline")
 }
 
 @(private)

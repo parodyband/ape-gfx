@@ -80,6 +80,8 @@ $ExpectedSnippets = @(
 	"GROUP_0 :: 0",
 	"group: u32,",
 	'binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc',
+	"pipeline_layout_desc :: proc(",
+	"desc.group_layouts[0] = group_0",
 	"desc.entries[0] = {",
 	"stages = {.Fragment}",
 	"desc.native_bindings[0] = {",

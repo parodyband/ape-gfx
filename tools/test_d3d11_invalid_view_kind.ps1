@@ -79,9 +79,71 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, shader)
 
+	valid_group_layout, valid_group_layout_ok := gfx.create_binding_group_layout(
+		&ctx,
+		textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "textured quad bindings"),
+	)
+	if !valid_group_layout_ok {
+		fmt.eprintln("binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, valid_group_layout)
+
+	pipeline_layout, pipeline_layout_ok := gfx.create_pipeline_layout(&ctx, {
+		label = "textured quad pipeline layout",
+		group_layouts = {
+			textured_quad_shader.GROUP_0 = valid_group_layout,
+		},
+	})
+	if !pipeline_layout_ok {
+		fmt.eprintln("pipeline layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, pipeline_layout)
+
+	wrong_group_layout_desc := textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "wrong native binding group layout")
+	wrong_group_layout_desc.native_bindings[0].native_slot = 2
+	wrong_group_layout, wrong_group_layout_ok := gfx.create_binding_group_layout(&ctx, wrong_group_layout_desc)
+	if !wrong_group_layout_ok {
+		fmt.eprintln("wrong binding group layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, wrong_group_layout)
+
+	wrong_pipeline_layout, wrong_pipeline_layout_ok := gfx.create_pipeline_layout(&ctx, {
+		label = "wrong native pipeline layout",
+		group_layouts = {
+			textured_quad_shader.GROUP_0 = wrong_group_layout,
+		},
+	})
+	if !wrong_pipeline_layout_ok {
+		fmt.eprintln("wrong pipeline layout creation failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, wrong_pipeline_layout)
+
+	wrong_pipeline, wrong_pipeline_ok := gfx.create_pipeline(&ctx, {
+		label = "wrong native pipeline",
+		shader = shader,
+		pipeline_layout = wrong_pipeline_layout,
+		primitive_type = .Triangles,
+		index_type = .None,
+		layout = textured_quad_shader.layout_desc(),
+	})
+	if wrong_pipeline_ok || gfx.pipeline_valid(wrong_pipeline) {
+		fmt.eprintln("pipeline with mismatched native binding layout unexpectedly succeeded")
+		os.exit(1)
+	}
+	expected_group_error := "gfx.create_pipeline: pipeline_layout is missing native d3d11 resource view group 0 slot 0"
+	if gfx.last_error(&ctx) != expected_group_error {
+		fmt.eprintln("invalid pipeline binding layout failed with unexpected error: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
 	pipeline, pipeline_ok := gfx.create_pipeline(&ctx, {
 		label = "invalid view kind pipeline",
 		shader = shader,
+		pipeline_layout = pipeline_layout,
 		primitive_type = .Triangles,
 		index_type = .None,
 		layout = textured_quad_shader.layout_desc(),
@@ -152,17 +214,8 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	group_layout := textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "wrong native binding group layout")
-	group_layout.native_bindings[0].native_slot = 2
-	group_layout_handle, group_layout_ok := gfx.create_binding_group_layout(&ctx, group_layout)
-	if !group_layout_ok {
-		fmt.eprintln("binding group layout creation failed: ", gfx.last_error(&ctx))
-		os.exit(1)
-	}
-	defer gfx.destroy(&ctx, group_layout_handle)
-
 	group_desc: gfx.Binding_Group_Desc
-	group_desc.layout = group_layout_handle
+	group_desc.layout = valid_group_layout
 	textured_quad_shader.set_group_view_material_ape_texture(&group_desc, sampled_view)
 	textured_quad_shader.set_group_sampler_material_ape_sampler(&group_desc, sampler)
 	group, group_ok := gfx.create_binding_group(&ctx, group_desc)
@@ -172,14 +225,8 @@ main :: proc() {
 	}
 	defer gfx.destroy(&ctx, group)
 
-	if gfx.apply_binding_group(&ctx, group) {
-		fmt.eprintln("binding group with mismatched native slot unexpectedly succeeded")
-		os.exit(1)
-	}
-
-	expected_group_error := "gfx.apply_binding_group: native fragment resource view group 0 slot 0 does not match current pipeline"
-	if gfx.last_error(&ctx) != expected_group_error {
-		fmt.eprintln("invalid binding group failed with unexpected error: ", gfx.last_error(&ctx))
+	if !gfx.apply_binding_group(&ctx, group) {
+		fmt.eprintln("valid binding group failed: ", gfx.last_error(&ctx))
 		os.exit(1)
 	}
 

@@ -181,6 +181,7 @@ main :: proc() {
 			layout = color_layout,
 			color_formats = {0 = .RGBA8},
 		},
+		binding_group_layout_desc = triangle_shader.binding_group_layout_desc,
 	}
 	color_program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &color_program, color_program_desc, {
@@ -203,6 +204,7 @@ main :: proc() {
 			index_type = .Uint16,
 			layout = texture_layout,
 		},
+		binding_group_layout_desc = textured_quad_shader.binding_group_layout_desc,
 	}
 	texture_program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &texture_program, texture_program_desc, {

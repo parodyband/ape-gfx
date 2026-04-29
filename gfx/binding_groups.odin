@@ -129,6 +129,19 @@ apply_binding_groups_internal :: proc(ctx: ^Context, groups: []Binding_Group, ba
 		set_validation_errorf(ctx, "%s: current pipeline shader has no binding metadata", op)
 		return false
 	}
+	pipeline_layout, pipeline_layout_ok := current_pipeline_layout(ctx, op)
+	if !pipeline_layout_ok {
+		return false
+	}
+	if !pipeline_layout_valid(pipeline_layout) {
+		set_validation_errorf(ctx, "%s: current pipeline has no pipeline_layout", op)
+		return false
+	}
+	pipeline_layout_state, pipeline_layout_state_ok := query_pipeline_layout_state(ctx, pipeline_layout)
+	if !pipeline_layout_state_ok {
+		set_validation_errorf(ctx, "%s: current pipeline_layout state is unavailable", op)
+		return false
+	}
 
 	seen_groups: [MAX_BINDING_GROUPS]bool
 	bindings := base_bindings
@@ -151,6 +164,10 @@ apply_binding_groups_internal :: proc(ctx: ^Context, groups: []Binding_Group, ba
 		}
 
 		logical_group := layout_state.desc.group
+		if pipeline_layout_state.desc.group_layouts[logical_group] != group_state.layout {
+			set_validation_errorf(ctx, "%s: binding group %d layout does not match current pipeline_layout", op, logical_group)
+			return false
+		}
 		if seen_groups[logical_group] {
 			set_validation_errorf(ctx, "%s: duplicate binding group %d", op, logical_group)
 			return false
@@ -261,7 +278,7 @@ query_binding_group_state :: proc(ctx: ^Context, group: Binding_Group) -> (Bindi
 @(private)
 binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout) -> bool {
 	if ctx == nil || ctx.binding_group_states == nil {
-		return false
+		return binding_group_layout_used_by_pipeline_layout(ctx, layout)
 	}
 
 	for _, group_state in ctx.binding_group_states {
@@ -270,7 +287,7 @@ binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout)
 		}
 	}
 
-	return false
+	return binding_group_layout_used_by_pipeline_layout(ctx, layout)
 }
 
 @(private)
@@ -455,6 +472,21 @@ shader_state_find_binding :: proc(
 	for binding in shader_state.bindings {
 		if binding.active && binding.stage == stage && binding.kind == kind && binding.group == group && binding.slot == slot {
 			return binding, true
+		}
+	}
+
+	return {}, false
+}
+
+@(private)
+binding_group_layout_find_entry :: proc(
+	layout: Binding_Group_Layout_Desc,
+	kind: Shader_Binding_Kind,
+	slot: u32,
+) -> (Binding_Group_Layout_Entry_Desc, bool) {
+	for entry in layout.entries {
+		if entry.active && entry.kind == kind && entry.slot == slot {
+			return entry, true
 		}
 	}
 

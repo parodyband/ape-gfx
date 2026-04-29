@@ -83,7 +83,7 @@ shutdown :: proc(ctx: ^Context) {
 		set_errorf_code(
 			ctx,
 			.Resource_Leak,
-			"gfx.shutdown: leaked resources: buffers=%d images=%d views=%d samplers=%d shaders=%d pipelines=%d compute_pipelines=%d binding_group_layouts=%d binding_groups=%d",
+			"gfx.shutdown: leaked resources: buffers=%d images=%d views=%d samplers=%d shaders=%d pipelines=%d compute_pipelines=%d binding_group_layouts=%d pipeline_layouts=%d binding_groups=%d",
 			ctx.buffer_pool.live_count,
 			ctx.image_pool.live_count,
 			ctx.view_pool.live_count,
@@ -92,6 +92,7 @@ shutdown :: proc(ctx: ^Context) {
 			ctx.pipeline_pool.live_count,
 			ctx.compute_pipeline_pool.live_count,
 			ctx.binding_group_layout_pool.live_count,
+			ctx.pipeline_layout_pool.live_count,
 			ctx.binding_group_pool.live_count,
 		)
 	}
@@ -390,6 +391,7 @@ resource_pool_live_total :: proc(ctx: ^Context) -> int {
 	       ctx.pipeline_pool.live_count +
 	       ctx.compute_pipeline_pool.live_count +
 	       ctx.binding_group_layout_pool.live_count +
+	       ctx.pipeline_layout_pool.live_count +
 	       ctx.binding_group_pool.live_count
 }
 
@@ -403,6 +405,7 @@ delete_resource_pools :: proc(ctx: ^Context) {
 	delete_resource_pool(&ctx.pipeline_pool)
 	delete_resource_pool(&ctx.compute_pipeline_pool)
 	delete_resource_pool(&ctx.binding_group_layout_pool)
+	delete_resource_pool(&ctx.pipeline_layout_pool)
 	delete_resource_pool(&ctx.binding_group_pool)
 	if ctx.shader_states != nil {
 		delete(ctx.shader_states)
@@ -419,6 +422,10 @@ delete_resource_pools :: proc(ctx: ^Context) {
 	if ctx.binding_group_layout_states != nil {
 		delete(ctx.binding_group_layout_states)
 		ctx.binding_group_layout_states = nil
+	}
+	if ctx.pipeline_layout_states != nil {
+		delete(ctx.pipeline_layout_states)
+		ctx.pipeline_layout_states = nil
 	}
 	if ctx.binding_group_states != nil {
 		delete(ctx.binding_group_states)

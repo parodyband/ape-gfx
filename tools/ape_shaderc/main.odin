@@ -2890,6 +2890,20 @@ append_binding_group_layout_odin :: proc(out: ^[dynamic]byte, bindings: []Bindin
 	append_string(out, "\treturn desc\n")
 	append_string(out, "}\n\n")
 
+	append_string(out, "pipeline_layout_desc :: proc(\n")
+	for group in 0..<8 {
+		append_string(out, fmt.tprintf("\tgroup_%d: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,\n", group))
+	}
+	append_string(out, "\tlabel: string = \"\"\n")
+	append_string(out, ") -> gfx.Pipeline_Layout_Desc {\n")
+	append_string(out, "\tdesc: gfx.Pipeline_Layout_Desc\n")
+	append_string(out, "\tdesc.label = label\n")
+	for group in 0..<8 {
+		append_string(out, fmt.tprintf("\tdesc.group_layouts[%d] = group_%d\n", group, group))
+	}
+	append_string(out, "\treturn desc\n")
+	append_string(out, "}\n\n")
+
 	return true
 }
 

@@ -269,6 +269,7 @@ main :: proc() {
 				winding = .Clockwise,
 			},
 		},
+		binding_group_layout_desc = cube_shader.binding_group_layout_desc,
 	}
 	cube_program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &cube_program, cube_program_desc, {
@@ -289,6 +290,7 @@ main :: proc() {
 			index_type = .Uint16,
 			layout = textured_quad_shader.layout_desc(),
 		},
+		binding_group_layout_desc = textured_quad_shader.binding_group_layout_desc,
 	}
 	texture_program: ape_sample.Reloadable_Shader_Program
 	if !ape_sample.reloadable_shader_program_init(&ctx, &texture_program, texture_program_desc, {
@@ -300,12 +302,7 @@ main :: proc() {
 	}
 	defer ape_sample.reloadable_shader_program_destroy(&ctx, &texture_program)
 
-	texture_group_layout, texture_group_layout_ok := gfx.create_binding_group_layout(&ctx, textured_quad_shader.binding_group_layout_desc(textured_quad_shader.GROUP_0, label = "lab display bindings"))
-	if !texture_group_layout_ok {
-		fmt.eprintln("texture binding group layout creation failed: ", gfx.last_error(&ctx))
-		return
-	}
-	defer gfx.destroy(&ctx, texture_group_layout)
+	texture_group_layout := ape_sample.reloadable_shader_program_binding_group_layout(&texture_program, textured_quad_shader.GROUP_0)
 
 	cube_bindings: gfx.Bindings
 	cube_bindings.vertex_buffers[0] = {buffer = cube_vertex_buffer, offset = 0}

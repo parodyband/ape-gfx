@@ -35,6 +35,7 @@ Shader :: distinct u64
 Pipeline :: distinct u64
 Compute_Pipeline :: distinct u64
 Binding_Group_Layout :: distinct u64
+Pipeline_Layout :: distinct u64
 Binding_Group :: distinct u64
 
 // Invalid handle sentinels returned when resource creation fails.
@@ -46,6 +47,7 @@ Shader_Invalid :: Shader(0)
 Pipeline_Invalid :: Pipeline(0)
 Compute_Pipeline_Invalid :: Compute_Pipeline(0)
 Binding_Group_Layout_Invalid :: Binding_Group_Layout(0)
+Pipeline_Layout_Invalid :: Pipeline_Layout(0)
 Binding_Group_Invalid :: Binding_Group(0)
 
 // Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
@@ -592,6 +594,12 @@ Binding_Group_Layout_Desc :: struct {
 	native_bindings: [MAX_SHADER_BINDINGS]Binding_Group_Native_Binding_Desc,
 }
 
+// Pipeline_Layout_Desc composes generated binding group layouts for one pipeline family.
+Pipeline_Layout_Desc :: struct {
+	label: string,
+	group_layouts: [MAX_BINDING_GROUPS]Binding_Group_Layout,
+}
+
 // Binding_Group_Desc creates an object-backed binding group from a generated layout handle.
 Binding_Group_Desc :: struct {
 	label: string,
@@ -676,6 +684,7 @@ Layout_Desc :: struct {
 Pipeline_Desc :: struct {
 	label: string,
 	shader: Shader,
+	pipeline_layout: Pipeline_Layout,
 	primitive_type: Primitive_Type,
 	index_type: Index_Type,
 	layout: Layout_Desc,
@@ -690,6 +699,7 @@ Pipeline_Desc :: struct {
 Compute_Pipeline_Desc :: struct {
 	label: string,
 	shader: Shader,
+	pipeline_layout: Pipeline_Layout,
 }
 
 // Buffer_Binding binds a buffer handle with a byte offset.
@@ -743,18 +753,26 @@ Shader_State :: struct {
 Pipeline_State :: struct {
 	valid: bool,
 	shader: Shader,
+	pipeline_layout: Pipeline_Layout,
 }
 
 @(private)
 Compute_Pipeline_State :: struct {
 	valid: bool,
 	shader: Shader,
+	pipeline_layout: Pipeline_Layout,
 }
 
 @(private)
 Binding_Group_Layout_State :: struct {
 	valid: bool,
 	desc: Binding_Group_Layout_Desc,
+}
+
+@(private)
+Pipeline_Layout_State :: struct {
+	valid: bool,
+	desc: Pipeline_Layout_Desc,
 }
 
 @(private)
@@ -781,11 +799,13 @@ Context :: struct {
 	pipeline_pool: Resource_Pool,
 	compute_pipeline_pool: Resource_Pool,
 	binding_group_layout_pool: Resource_Pool,
+	pipeline_layout_pool: Resource_Pool,
 	binding_group_pool: Resource_Pool,
 	shader_states: map[Shader]Shader_State,
 	pipeline_states: map[Pipeline]Pipeline_State,
 	compute_pipeline_states: map[Compute_Pipeline]Compute_Pipeline_State,
 	binding_group_layout_states: map[Binding_Group_Layout]Binding_Group_Layout_State,
+	pipeline_layout_states: map[Pipeline_Layout]Pipeline_Layout_State,
 	binding_group_states: map[Binding_Group]Binding_Group_State,
 	current_pipeline: Pipeline,
 	current_compute_pipeline: Compute_Pipeline,
@@ -877,6 +897,11 @@ compute_pipeline_valid :: proc(pipeline: Compute_Pipeline) -> bool {
 
 // binding_group_layout_valid reports whether a Binding_Group_Layout handle is nonzero.
 binding_group_layout_valid :: proc(layout: Binding_Group_Layout) -> bool {
+	return u64(layout) != 0
+}
+
+// pipeline_layout_valid reports whether a Pipeline_Layout handle is nonzero.
+pipeline_layout_valid :: proc(layout: Pipeline_Layout) -> bool {
 	return u64(layout) != 0
 }
 

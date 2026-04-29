@@ -194,9 +194,20 @@ Binding_Record_Desc :: struct {
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc
 
 binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Binding_Group_Layout_Desc
+pipeline_layout_desc :: proc(
+	group_0: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_1: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_2: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_3: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_4: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_5: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_6: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	group_7: gfx.Binding_Group_Layout = gfx.Binding_Group_Layout_Invalid,
+	label: string = "",
+) -> gfx.Pipeline_Layout_Desc
 ```
 
-This is the explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical groups, logical slots, native slots, and native spaces available for binding groups and later pipeline-layout work.
+This is the explicit Slang-generated binding layout contract. It keeps the simple `gfx.Bindings` call path intact while making reflected names, logical groups, logical slots, native slots, and native spaces available for binding groups and pipeline layouts.
 
 `Binding_Record_Desc` uses explicit payload structs for kind-specific metadata:
 
@@ -211,9 +222,11 @@ The outer record stays common so tools can sort or match by backend, stage, refl
 - `group` selects which logical group to emit.
 - `entries` describe logical binding entries by kind, logical slot, reflected name, stage set, and kind-specific payload.
 - `native_bindings` preserve backend/stage native slot and space mappings.
-- `gfx.validate_binding_group_layout_desc` can validate the generated descriptor today; future binding-group objects can consume the same shape or a narrowed version of it.
+- `gfx.validate_binding_group_layout_desc` can validate the generated descriptor before handle creation.
 
-Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for `gfx.Binding_Group_Desc`. The intended path is to create a `gfx.Binding_Group_Layout` from `binding_group_layout_desc(GROUP_N)`, fill a `Binding_Group_Desc` with generated setters, create a `gfx.Binding_Group`, and apply one or more groups with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
+`pipeline_layout_desc` composes live `gfx.Binding_Group_Layout` handles into a `gfx.Pipeline_Layout_Desc`. Shaders with binding metadata now require a pipeline layout when creating graphics or compute pipelines.
+
+Generated packages also emit `set_group_view_*` and `set_group_sampler_*` helpers for `gfx.Binding_Group_Desc`. The intended path is to create `gfx.Binding_Group_Layout` handles from `binding_group_layout_desc(GROUP_N)`, compose them into a `gfx.Pipeline_Layout`, fill `Binding_Group_Desc` values with generated setters, create `gfx.Binding_Group` handles, and apply one or more groups with optional base geometry bindings. Uniform blocks stay on `apply_uniform_*` until a real buffer-backed uniform binding model exists.
 
 Logical slots are assigned per binding kind:
 
@@ -538,19 +551,19 @@ Planned order:
 - [x] Generate group-aware Odin helpers and package binding records.
 - [x] Validate and apply multiple object-backed binding groups through `gfx.apply_binding_groups`.
 - [x] Add negative shaderc coverage for unsupported `ParameterBlock<>` shapes: ordinary data, `ConstantBuffer<T>`, nested parameter blocks, resource arrays, and unsupported texture shapes.
+- [x] Add public `Pipeline_Layout` handles and require them for shaders with reflected binding metadata.
+- [x] Generate `pipeline_layout_desc` helpers and migrate samples to compose generated binding group layouts into pipeline layouts.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
 - [ ] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
-- [ ] Decide whether a public `Pipeline_Layout` object is needed once multiple groups are common.
 
 Open questions:
 
-- Whether a `Pipeline_Layout` object should exist only when it enables reuse across multiple generated shader packages.
 - How to represent uniform data inside `ParameterBlock<>` without losing the current low-friction per-draw uniform path.
 - How to expose resource arrays or bindless-style layouts without weakening the simple generated helper path.
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: evaluate whether the current group-aware binding records are strong enough to design `Pipeline_Layout` without adding another compatibility layer. Only add `Pipeline_Layout` if it removes real validation ambiguity or enables cross-shader reuse that generated `Binding_Group_Layout` cannot cover.
+Next implementation breadcrumb: harden the remaining immediate `gfx.Bindings` path against `Pipeline_Layout` metadata so transient resource bindings get the same public validation coverage as object-backed binding groups before backend-specific D3D11 checks run.
 
 ## Validation
 
@@ -611,6 +624,7 @@ These generated names are intended to stay stable through v0.1:
 | `Binding_Record_Desc` | Generated binding contract record type. |
 | `binding_records` | Helper returning the generated binding contract records. |
 | `binding_group_layout_desc` | Helper returning descriptor-only generated binding group layout data. |
+| `pipeline_layout_desc` | Helper returning descriptor-only generated pipeline layout data from live group-layout handles. |
 | `set_group_view_<name>` | Helper for `gfx.Binding_Group_Desc.views`. |
 | `set_group_sampler_<name>` | Helper for `gfx.Binding_Group_Desc.samplers`. |
 | `VIEW_KIND_<name>` | Reflected `gfx.View_Kind`. |

@@ -73,6 +73,12 @@ make_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> Pipeline {
 	return handle
 }
 
+// make_pipeline_layout is the handle-only compatibility alias for create_pipeline_layout.
+make_pipeline_layout :: proc(ctx: ^Context, desc: Pipeline_Layout_Desc) -> Pipeline_Layout {
+	handle, _ := create_pipeline_layout(ctx, desc)
+	return handle
+}
+
 // make_compute_pipeline is the Sokol-style handle-only compatibility alias for create_compute_pipeline.
 make_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> Compute_Pipeline {
 	handle, _ := create_compute_pipeline(ctx, desc)
@@ -89,5 +95,6 @@ destroy :: proc {
 	destroy_pipeline,
 	destroy_compute_pipeline,
 	destroy_binding_group_layout,
+	destroy_pipeline_layout,
 	destroy_binding_group,
 }

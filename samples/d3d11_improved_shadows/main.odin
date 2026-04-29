@@ -181,6 +181,7 @@ main :: proc() {
 			depth = {format = .D32F, enabled = true, write_enabled = true, compare = .Less_Equal},
 			raster = {fill_mode = .Solid, cull_mode = .None, winding = .Clockwise},
 		},
+		binding_group_layout_desc = shadow_depth_shader.binding_group_layout_desc,
 	})
 	defer ape_sample.shader_program_destroy(&ctx, &depth_program)
 
@@ -195,22 +196,12 @@ main :: proc() {
 			depth = {format = .D32F, enabled = true, write_enabled = true, compare = .Less_Equal},
 			raster = {fill_mode = .Solid, cull_mode = .None, winding = .Clockwise},
 		},
+		binding_group_layout_desc = improved_shadows_shader.binding_group_layout_desc,
 	})
 	defer ape_sample.shader_program_destroy(&ctx, &shadows_program)
 
-	material_group_layout, material_group_layout_ok := gfx.create_binding_group_layout(
-		&ctx,
-		improved_shadows_shader.binding_group_layout_desc(improved_shadows_shader.GROUP_1, label = "improved shadows material bindings"),
-	)
-	ape_sample.must_gfx(&ctx, material_group_layout_ok, "improved shadows material binding group layout creation failed")
-	defer gfx.destroy(&ctx, material_group_layout)
-
-	shadow_resources_group_layout, shadow_resources_group_layout_ok := gfx.create_binding_group_layout(
-		&ctx,
-		improved_shadows_shader.binding_group_layout_desc(improved_shadows_shader.GROUP_2, label = "improved shadows shadow-resource bindings"),
-	)
-	ape_sample.must_gfx(&ctx, shadow_resources_group_layout_ok, "improved shadows shadow-resource binding group layout creation failed")
-	defer gfx.destroy(&ctx, shadow_resources_group_layout)
+	material_group_layout := ape_sample.shader_program_binding_group_layout(&shadows_program, improved_shadows_shader.GROUP_1)
+	shadow_resources_group_layout := ape_sample.shader_program_binding_group_layout(&shadows_program, improved_shadows_shader.GROUP_2)
 
 	depth_cube_bindings: gfx.Bindings
 	depth_cube_bindings.vertex_buffers[0] = {buffer = cube_buffer}
