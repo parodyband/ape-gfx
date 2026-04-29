@@ -212,6 +212,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"test_d3d11_invalid_view_kind.ps1",
 		"test_d3d11_resource_hazards.ps1",
 		"test_d3d11_storage_views.ps1",
+		"test_d3d11_bindless_reject.ps1",
 		"test_shader_hot_reload.ps1",
 	}
 	for script in public_scripts {

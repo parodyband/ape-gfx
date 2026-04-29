@@ -19,9 +19,13 @@ package gfx
 //   gfx-bindless-note.md §7    — lifetime: descriptor writes are visible at
 //                                the next `submit` boundary; per-entry reuse
 //                                is fence-gated via Timeline_Semaphore.
-//   gfx-bindless-note.md §9    — D3D11 fallback: feature-gated fixed-array
-//                                expansion; runtime / bindless rejected.
-//                                Item 29 picks formally.
+//   gfx-bindless-note.md §9    — D3D11 fallback (item 29 / APE-25):
+//                                fixed arrays use Policy C (feature-gated
+//                                expansion into contiguous native slots,
+//                                lands with item 28); runtime / bindless
+//                                heap is Policy A — `create_binding_heap`
+//                                permanently rejects on Backend.D3D11 with
+//                                a D3D11-specific Unsupported message.
 //   gfx-slang-reflection-contract.md "Descriptor Arrays And Bindless
 //                                Direction" — generated-binding shapes that
 //                                target this runtime API. The runtime type
@@ -143,8 +147,12 @@ Binding_Heap_Slot_Range :: struct {
 //
 // Backends:
 //
-//   D3D11   — rejected with `Features.bindless_resource_tables = false`.
-//             See §9 of the bindless note.
+//   D3D11   — permanently rejected with `Features.bindless_resource_tables
+//             = false` (item 29 / APE-25). The error code is
+//             `Error_Code.Unsupported`; the message names D3D11 explicitly
+//             so the rejection is not confused with the implementation-
+//             pending Unsupported on other backends. See §9 of the
+//             bindless note.
 //   D3D12   — allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
 //             matching `D3D12_DESCRIPTOR_HEAP_TYPE`.
 //   Vulkan  — allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
@@ -164,6 +172,9 @@ create_binding_heap :: proc(ctx: ^Context, desc: Binding_Heap_Desc) -> (Binding_
         return Binding_Heap_Invalid, false
     }
     if !validate_binding_heap_desc(ctx, desc, "gfx.create_binding_heap") {
+        return Binding_Heap_Invalid, false
+    }
+    if reject_binding_heap_for_backend(ctx, "gfx.create_binding_heap") {
         return Binding_Heap_Invalid, false
     }
     set_unsupported_error(ctx, "gfx.create_binding_heap: backend support is not implemented yet (item 28 ships fixed arrays only; runtime / bindless heap is gated on the runtime-array sample)")
@@ -297,6 +308,30 @@ cmd_apply_binding_heap :: proc(encoder: ^Render_Pass_Encoder, group: u32, heap: 
 // cmd_apply_compute_binding_heap mirrors `cmd_apply_binding_heap` for
 // compute encoders.
 cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u32, heap: Binding_Heap) -> bool {
+    return false
+}
+
+// reject_binding_heap_for_backend implements the §9 / item 29 D3D11 fallback
+// decision: the D3D11 backend permanently rejects the runtime / bindless
+// heap path with `Features.bindless_resource_tables = false`. Other backends
+// fall through to the implementation-pending Unsupported error so the
+// distinction between "this backend cannot do this, ever" and "we have not
+// wired it up yet" stays in the error vocabulary.
+//
+// Returns true if the call has been rejected (the caller's error is set);
+// false if the backend has no permanent objection and the caller should
+// proceed to its implementation-pending fallback.
+@(private)
+reject_binding_heap_for_backend :: proc(ctx: ^Context, op: string) -> bool {
+    switch ctx.backend {
+    case .D3D11:
+        set_unsupported_errorf(ctx,
+            "%s: D3D11 does not support bindless or runtime descriptor arrays (Features.bindless_resource_tables = false); use Binding_Group fixed arrays or pick the Vulkan / D3D12 backend",
+            op)
+        return true
+    case .Null, .Vulkan, .Auto:
+        return false
+    }
     return false
 }
 
