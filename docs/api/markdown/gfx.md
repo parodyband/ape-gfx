@@ -146,6 +146,12 @@ Pipeline_Invalid :: Pipeline(0)
 Pipeline_Layout_Invalid :: Pipeline_Layout(0)
 ```
 
+### `Queue_Invalid`
+
+```odin
+Queue_Invalid :: Queue(0)
+```
+
 ### `Sampler_Invalid`
 
 ```odin
@@ -158,6 +164,12 @@ Sampler_Invalid :: Sampler(0)
 Shader_Invalid :: Shader(0)
 ```
 
+### `Timeline_Semaphore_Invalid`
+
+```odin
+Timeline_Semaphore_Invalid :: Timeline_Semaphore(0)
+```
+
 ### `View_Invalid`
 
 ```odin
@@ -165,6 +177,36 @@ View_Invalid :: View(0)
 ```
 
 ## Procedures
+
+### `acquire_compute_queue`
+
+```odin
+acquire_compute_queue :: proc(ctx: ^Context) -> Queue {...}
+```
+
+acquire_compute_queue returns the Queue handle for the async-compute family.
+On D3D11 this returns the same Queue as `acquire_graphics_queue` and the
+runtime serializes; on D3D12/Vulkan this is a distinct queue when the
+adapter exposes one.
+
+### `acquire_graphics_queue`
+
+```odin
+acquire_graphics_queue :: proc(ctx: ^Context) -> Queue {...}
+```
+
+acquire_graphics_queue returns the Queue handle for the graphics family.
+Stable for the life of the Context. Returns `Queue_Invalid` if the backend
+does not expose a graphics queue (shouldn't happen for a valid Context).
+
+### `acquire_transfer_queue`
+
+```odin
+acquire_transfer_queue :: proc(ctx: ^Context) -> Queue {...}
+```
+
+acquire_transfer_queue returns the Queue handle for the copy-only family.
+Same fold-to-graphics rule as `acquire_compute_queue` on D3D11.
 
 ### `apply_binding_group`
 
@@ -569,6 +611,15 @@ example:
   desc, _ := shader_assets.shader_desc(&pkg, .D3D11_DXBC, "triangle")
   shader, ok := gfx.create_shader(&ctx, desc)
 
+### `create_timeline_semaphore`
+
+```odin
+create_timeline_semaphore :: proc(ctx: ^Context, initial_value: u64 = 0) -> Timeline_Semaphore {...}
+```
+
+create_timeline_semaphore allocates a Timeline_Semaphore with `initial_value`.
+Returns `Timeline_Semaphore_Invalid` on failure; check `last_error(ctx)`.
+
 ### `create_view`
 
 ```odin
@@ -677,6 +728,16 @@ destroy_shader :: proc(ctx: ^Context, shader: Shader) {...}
 ```
 
 destroy_shader releases a live shader handle.
+
+### `destroy_timeline_semaphore`
+
+```odin
+destroy_timeline_semaphore :: proc(ctx: ^Context, semaphore: Timeline_Semaphore) {...}
+```
+
+destroy_timeline_semaphore releases a Timeline_Semaphore.
+All in-flight submits that wait on or signal the semaphore must have
+completed (or be cancelled by Context shutdown) before destruction.
 
 ### `destroy_view`
 
@@ -805,6 +866,22 @@ pipeline_valid :: proc(pipeline: Pipeline) -> bool {...}
 
 pipeline_valid reports whether a Pipeline handle is nonzero.
 
+### `present`
+
+```odin
+present :: proc(ctx: ^Context, info: Present_Info = {}) -> bool {...}
+```
+
+present queues the current swapchain image for display.
+Always targets the graphics queue acquired from `ctx`; there is no
+`Queue` parameter because cross-queue present is not on the roadmap.
+Advances `ctx.frame_index` after the swapchain returns. The
+acquire-next-image binary semaphore for the *following* frame is
+scheduled internally.
+Per barrier-note §9.4 the `Color_Target -> Present` transition has already
+been emitted by the render pass that wrote the swapchain image; `present`
+only consumes the timeline waits in `info` and forwards to the swapchain.
+
 ### `query_backend_limits`
 
 ```odin
@@ -877,6 +954,14 @@ query_view_state :: proc(ctx: ^Context, view: View) -> View_State {...}
 
 query_view_state returns read-only state for a live view, or zero if invalid.
 
+### `queue_kind`
+
+```odin
+queue_kind :: proc(queue: Queue) -> Queue_Kind {...}
+```
+
+queue_kind reports the family a Queue belongs to.
+
 ### `range_raw`
 
 ```odin
@@ -941,16 +1026,65 @@ shutdown :: proc(ctx: ^Context) {...}
 
 shutdown releases backend state and reports leaked resources through last_error.
 
+### `submit`
+
+```odin
+submit :: proc(ctx: ^Context, queue: Queue, info: Submit_Info) -> bool {...}
+```
+
+submit hands an ordered batch of finished command lists to a Queue.
+Must be called on the Context thread. Drains per-list error slots onto
+`ctx` (recording-note §7.3) and transitions each list to `Submitted`.
+Returns false on validation/backend failure; check `last_error(ctx)`.
+Validation rules (sketch — refined as items 18-20 land):
+  - every list is in state `Finished`
+  - every list's recorded `queue` matches `queue_kind(queue)`
+  - every signal value is strictly greater than its semaphore's current
+    pending-max (no out-of-order signals on one semaphore)
+  - lists already submitted are rejected (`.Stale_Handle`-equivalent)
+The single-queue / single-list shape is `submit(queue, { command_lists = {&list} })`.
+
 ### `submit_command_list`
 
 ```odin
 submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Queue = .Graphics) -> bool {...}
 ```
 
-submit_command_list hands a finished list to the named queue.
-Called on the Context thread. Drains `list.last_error` onto `ctx` and
+submit_command_list hands a single finished list to the named queue family.
+Convenience wrapper over `submit` (queue.odin) for the no-semaphore single-
+list case. Acquires the appropriate Queue from `ctx`, builds a one-element
+`Submit_Info`, and forwards. Drains `list.last_error` onto `ctx` and
 transitions the list to state `Submitted`. Today only `.Graphics` is
 honored by the D3D11 backend; other queues are reserved for future work.
+Use `gfx.submit` directly when the submit needs timeline waits, signals,
+or more than one list.
+
+### `timeline_semaphore_signal`
+
+```odin
+timeline_semaphore_signal :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, value: u64) -> bool {...}
+```
+
+timeline_semaphore_signal advances the semaphore from the CPU side.
+`value` must be strictly greater than the current value.
+
+### `timeline_semaphore_value`
+
+```odin
+timeline_semaphore_value :: proc(ctx: ^Context, semaphore: Timeline_Semaphore) -> u64 {...}
+```
+
+timeline_semaphore_value reads the current GPU-visible value.
+
+### `timeline_semaphore_wait`
+
+```odin
+timeline_semaphore_wait :: proc(ctx: ^Context, semaphore: Timeline_Semaphore, value: u64, timeout_ns: u64) -> bool {...}
+```
+
+timeline_semaphore_wait blocks the calling thread until `value` is reached.
+`timeout_ns` of 0 polls; ~max u64 is "wait forever". Returns false on
+timeout or backend error; check `last_error(ctx)` to disambiguate.
 
 ### `update_buffer`
 
@@ -1554,6 +1688,21 @@ Pixel_Format :: enum {Invalid, RGBA8, BGRA8, RGBA16F, RGBA32F, R32F, D24S8, D32F
 
 Pixel_Format describes image, view, attachment, and storage image formats.
 
+### `Present_Info`
+
+```odin
+Present_Info :: struct {waits: []Semaphore_Wait}
+```
+
+Present_Info is the description for a single `present` call.
+`waits` is the set of timeline values that must be reached before the
+swapchain image is handed to the display engine. The typical caller puts
+the per-frame "render done" signal here; `present` already waits internally
+on the swapchain's acquire-binary semaphore.
+Per barrier-note §9.4 the swapchain image's `Color_Target -> Present`
+transition is emitted inside the render pass that targets it; `present`
+itself does not transition resources.
+
 ### `Primitive_Type`
 
 ```odin
@@ -1561,6 +1710,31 @@ Primitive_Type :: enum {Triangles, Lines, Points}
 ```
 
 Primitive_Type selects the topology used by a graphics pipeline.
+
+### `Queue`
+
+```odin
+Queue :: distinct u64
+```
+
+Queue is the opaque handle for a GPU work submission target.
+`Context` exposes one Queue per Queue_Kind it supports (see
+`acquire_graphics_queue` / `acquire_compute_queue` / `acquire_transfer_queue`).
+Multiple queues of the same kind are not on the public roadmap; if a backend
+presents several (e.g. Vulkan transfer-only families), it picks one and hides
+the rest.
+
+### `Queue_Kind`
+
+```odin
+Queue_Kind :: enum {Graphics, Compute, Transfer}
+```
+
+Queue_Kind classifies what work a Queue accepts.
+Mirrors `Command_Queue` from command_list.odin and is used at queue
+acquisition time. The two enums are kept distinct so `Command_List`'s
+recorded affinity (which family it was *built for*) is not conflated with
+the runtime Queue handle (which family it is *submitted to*).
 
 ### `Range`
 
@@ -1620,6 +1794,27 @@ Sampler_Desc :: struct {label: string, min_filter: Filter, mag_filter: Filter, m
 ```
 
 Sampler_Desc creates a texture sampler state.
+
+### `Semaphore_Signal`
+
+```odin
+Semaphore_Signal :: struct {semaphore: Timeline_Semaphore, value: u64}
+```
+
+Semaphore_Signal names a signal-after-execute edge for a submission.
+`value` must be strictly greater than the semaphore's current value. The
+signal happens after every command list in the submit completes.
+
+### `Semaphore_Wait`
+
+```odin
+Semaphore_Wait :: struct {semaphore: Timeline_Semaphore, value: u64}
+```
+
+Semaphore_Wait names a wait-before-execute edge for a submission.
+`value` is the timeline value the semaphore must reach before the submitted
+command lists may begin executing. Multiple waits on the same submit are
+AND-ed: every named value must be reached.
 
 ### `Shader`
 
@@ -1726,6 +1921,21 @@ Store_Action :: enum {Store, Dont_Care}
 
 Store_Action selects whether an attachment value is preserved when a pass ends.
 
+### `Submit_Info`
+
+```odin
+Submit_Info :: struct {command_lists: []^Command_List, waits: []Semaphore_Wait, signals: []Semaphore_Signal}
+```
+
+Submit_Info is the description for a single `submit` call.
+`command_lists` are submitted in array order on `queue`. Every list must be
+in state `Finished` (see command_list.odin) and built for a Queue_Kind that
+matches the target queue. Empty `command_lists` is allowed when the submit
+only signals — useful for CPU-driven timeline progress.
+Per-list error slots are drained onto `Context.last_error` during `submit`
+(see command-recording-note §7.3); a non-empty slot does not by itself
+fail the submit.
+
 ### `Texture_View_Desc`
 
 ```odin
@@ -1733,6 +1943,22 @@ Texture_View_Desc :: struct {image: Image, format: Pixel_Format, base_mip: i32, 
 ```
 
 Texture_View_Desc creates a sampled texture view.
+
+### `Timeline_Semaphore`
+
+```odin
+Timeline_Semaphore :: distinct u64
+```
+
+Timeline_Semaphore is a monotonically increasing u64 visible to GPU and CPU.
+Modelled after Vulkan's VK_KHR_timeline_semaphore and D3D12's ID3D12Fence:
+any submit may *wait* until the semaphore reaches a value, and any submit
+*signals* a (typically larger) value when its work completes. CPU code may
+read or block on a value via `timeline_semaphore_value` and
+`timeline_semaphore_wait`.
+Binary semaphores (the swapchain acquire/present pair) are not exposed
+publicly. They live inside the swapchain wrapper and are managed by
+`present`; see §6 of the queue-submission note.
 
 ### `Vertex_Attribute_Desc`
 

@@ -60,14 +60,19 @@ Composite statuses are comma-separated.
 | `MAX_VERTEX_BUFFERS` | keep | Public fixed array limit. |
 | `Pipeline_Invalid` | keep | Stable invalid sentinel. |
 | `Pipeline_Layout_Invalid` | keep | Stable invalid sentinel for explicit pipeline layouts. |
+| `Queue_Invalid` | defer | APE-17 queue/timeline sketch sentinel. Stays public when the submission API lands. |
 | `Sampler_Invalid` | keep | Stable invalid sentinel. |
 | `Shader_Invalid` | keep | Stable invalid sentinel. |
+| `Timeline_Semaphore_Invalid` | defer | APE-17 queue/timeline sketch sentinel. Stays public when the submission API lands. |
 | `View_Invalid` | keep | Stable invalid sentinel. |
 
 ## Procedures
 
 | Symbol | Status | v0.1 Decision |
 | --- | --- | --- |
+| `acquire_compute_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `acquire_graphics_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `acquire_transfer_queue` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `apply_binding_group` | keep, needs_test | Applies an object-backed binding group with optional geometry bindings. |
 | `apply_binding_groups` | keep, needs_test | Applies multiple object-backed binding groups with optional geometry bindings. |
 | `apply_bindings` | keep, needs_test | Core command. Expand validation tests around buffer/view/sampler slots. |
@@ -79,11 +84,26 @@ Composite statuses are comma-separated.
 | `begin_compute_pass` | keep, needs_test | Core compute command. |
 | `begin_pass` | keep, needs_test | Core render command. |
 | `binding_group_layout_valid` | keep, needs_test | Simple sentinel check. |
+| `cmd_apply_bindings` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_compute_bindings` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_compute_pipeline` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_compute_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_pipeline` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_apply_uniforms` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_begin_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_begin_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_dispatch` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_draw` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_end_compute_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `cmd_end_render_pass` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `command_list_last_error` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `command_list_last_error_code` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `binding_group_valid` | keep, needs_test | Simple sentinel check. |
 | `buffer_valid` | keep, needs_test | Simple sentinel check. Revisit overload group only if callsites need it. |
 | `commit` | keep, needs_test | Core frame command. |
 | `compute_pipeline_valid` | keep, needs_test | Simple sentinel check. |
 | `create_buffer` | keep, needs_test | Primary buffer creation spelling. |
+| `create_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `create_binding_group` | keep, needs_test | Primary binding group creation spelling. |
 | `create_binding_group_layout` | keep, needs_test | Primary binding group layout creation spelling. |
 | `create_compute_pipeline` | keep, needs_test | Primary compute pipeline creation spelling. |
@@ -93,8 +113,11 @@ Composite statuses are comma-separated.
 | `create_render_target` | keep | Low-level helper for common offscreen color/depth target setup. Covered by descriptor contract tests. |
 | `create_sampler` | keep, needs_test | Primary sampler creation spelling. |
 | `create_shader` | keep, needs_docs | Primary low-level shader creation spelling. Most users should arrive through `.ashader`. |
+| `create_timeline_semaphore` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `create_view` | keep, needs_test | Primary view creation spelling. |
 | `default_pass_action` | keep, needs_docs | Stable default helper. Document clear/store defaults. |
+| `destroy_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
+| `destroy_timeline_semaphore` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `destroy_buffer` | keep | Explicit destroy remains available. |
 | `destroy_binding_group` | keep | Explicit destroy remains available. |
 | `destroy_binding_group_layout` | keep | Explicit destroy remains available. |
@@ -110,13 +133,16 @@ Composite statuses are comma-separated.
 | `draw` | keep, needs_test | Core render command. |
 | `end_compute_pass` | keep, needs_test | Core compute command. |
 | `end_pass` | keep, needs_test | Core render command. |
+| `finish_command_list` | defer | APE-5 recording sketch. Body panics; backend lands with the explicit recording path. |
 | `image_valid` | keep, needs_test | Simple sentinel check. |
 | `init` | keep | Context creation is covered by `tools/test_gfx_descriptor_contracts.ps1`. |
 | `last_error` | keep | Human-readable diagnostics. |
 | `last_error_code` | keep, needs_test | Keep after Phase 3 makes codes explicit. |
 | `last_error_info` | keep, needs_test | Keep after Phase 3 makes codes explicit. |
+| `pass_action_with_defaults` | keep, needs_docs | APE-31 zero-`Pass_Action` defaulting helper applied at the `begin_pass` boundary. |
 | `pipeline_valid` | keep, needs_test | Simple sentinel check. |
 | `pipeline_layout_valid` | keep, needs_test | Simple sentinel check. |
+| `present` | defer | APE-17 swapchain present sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `query_backend_limits` | keep, needs_docs | Stable name. Document difference from `query_limits`. |
 | `query_buffer_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
 | `query_features` | keep, needs_docs | Stable name. |
@@ -126,6 +152,7 @@ Composite statuses are comma-separated.
 | `query_view_compatible` | keep, needs_test | Useful validation helper. |
 | `query_view_image` | keep, needs_docs | Convenience helper over `query_view_state`. |
 | `query_view_state` | keep, needs_test | Public read-only validation/diagnostic helper. |
+| `queue_kind` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `range_raw` | keep | Useful raw-pointer escape hatch. Primary docs should prefer typed `range` when possible. |
 | `read_buffer` | keep, needs_test | Synchronous readback is v0.1-stable if documented as blocking. |
 | `render_target_pass_desc` | keep | Small helper for beginning a pass against a `Render_Target` aggregate. |
@@ -134,6 +161,11 @@ Composite statuses are comma-separated.
 | `sampler_valid` | keep, needs_test | Simple sentinel check. |
 | `shader_valid` | keep, needs_test | Simple sentinel check. |
 | `shutdown` | keep, needs_test | Context teardown and leak reporting. |
+| `submit` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `submit_command_list` | defer | APE-5 recording sketch. Convenience wrapper over `submit`; body panics. |
+| `timeline_semaphore_signal` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `timeline_semaphore_value` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
+| `timeline_semaphore_wait` | defer | APE-17 queue/timeline sketch. Body panics; backend lands with D3D12/Vulkan. |
 | `update_buffer` | keep, needs_test | Stable dynamic/stream buffer update. |
 | `update_image` | keep, needs_test | Stable dynamic image update. |
 | `validate_binding_group_layout_desc` | keep | Validates generated binding group layout descriptors before object creation. |
@@ -171,8 +203,12 @@ Composite statuses are comma-separated.
 | `Color_Attachment_Action` | keep, needs_docs | Pass action descriptor. |
 | `Color_Attachment_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Color_State` | keep, needs_docs | Pipeline color target state. |
+| `Command_List` | defer | APE-5 recording sketch type. Body and backend land with the explicit recording path. |
+| `Command_List_State` | defer | APE-5 recording sketch enum. |
+| `Command_Queue` | defer | APE-5 recording-affinity enum. Companion to APE-17 `Queue_Kind`. |
 | `Compare_Func` | keep, needs_docs | Depth state enum. |
 | `Compute_Pass_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md`; D3D11 compute behavior is covered by `tools/test_d3d11_compute_pass.ps1`. |
+| `Compute_Pass_Encoder` | defer | APE-5 recording sketch type. Body and backend land with the explicit recording path. |
 | `Compute_Pipeline` | keep | Stable handle if compute remains v0.1-stable. |
 | `Compute_Pipeline_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Context` | keep, needs_docs | Public context value. Intent is opaque even though Odin exposes the type. |
@@ -207,12 +243,18 @@ Composite statuses are comma-separated.
 | `Pipeline_Layout` | keep | Stable pipeline layout handle for reflected shader bindings. |
 | `Pipeline_Layout_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Pixel_Format` | keep, needs_docs | Public format enum. Document backend support matrix. |
+| `Present_Info` | defer | APE-17 swapchain present sketch descriptor. |
 | `Primitive_Type` | keep | Pipeline topology enum. |
+| `Queue` | defer | APE-17 queue handle sketch. |
+| `Queue_Kind` | defer | APE-17 queue family enum. |
 | `Range` | keep | Raw byte span for uploads/readback/bytecode. |
 | `Raster_State` | keep, needs_docs | Pipeline raster state. |
+| `Render_Pass_Encoder` | defer | APE-5 recording sketch type. Body and backend land with the explicit recording path. |
 | `Render_Target` | keep | Explicit aggregate of image/view handles created from `Render_Target_Desc`. |
 | `Render_Target_Desc` | keep | Low-level color/depth target helper descriptor covered by `tools/test_gfx_descriptor_contracts.ps1`. |
 | `Sampler` | keep | Stable handle. |
+| `Semaphore_Signal` | defer | APE-17 timeline-signal edge sketch. |
+| `Semaphore_Wait` | defer | APE-17 timeline-wait edge sketch. |
 | `Sampler_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |
 | `Shader` | keep | Stable handle. |
 | `Shader_Binding_Desc` | keep, needs_docs | Reflection metadata in `Shader_Desc`. Most users should not handwrite it. |
@@ -227,7 +269,9 @@ Composite statuses are comma-separated.
 | `Storage_Buffer_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Storage_Image_View_Desc` | keep | Covered as part of `View_Desc` contract. |
 | `Store_Action` | keep, needs_docs | Pass action enum. |
+| `Submit_Info` | defer | APE-17 submission descriptor sketch. |
 | `Texture_View_Desc` | keep | Covered as part of `View_Desc` contract. |
+| `Timeline_Semaphore` | defer | APE-17 timeline semaphore handle sketch. |
 | `Vertex_Attribute_Desc` | keep, needs_docs, needs_test | Manual vertex layout override. |
 | `Vertex_Buffer_Layout` | keep, needs_docs, needs_test | Manual vertex layout override. |
 | `Vertex_Format` | keep, needs_docs | Public vertex attribute format enum. |

@@ -115,11 +115,16 @@ finish_command_list :: proc(list: ^Command_List) -> bool {
 	panic("gfx.finish_command_list: unimplemented (APE-5 sketch only)")
 }
 
-// submit_command_list hands a finished list to the named queue.
+// submit_command_list hands a single finished list to the named queue family.
 //
-// Called on the Context thread. Drains `list.last_error` onto `ctx` and
+// Convenience wrapper over `submit` (queue.odin) for the no-semaphore single-
+// list case. Acquires the appropriate Queue from `ctx`, builds a one-element
+// `Submit_Info`, and forwards. Drains `list.last_error` onto `ctx` and
 // transitions the list to state `Submitted`. Today only `.Graphics` is
 // honored by the D3D11 backend; other queues are reserved for future work.
+//
+// Use `gfx.submit` directly when the submit needs timeline waits, signals,
+// or more than one list.
 submit_command_list :: proc(ctx: ^Context, list: ^Command_List, queue: Command_Queue = .Graphics) -> bool {
 	panic("gfx.submit_command_list: unimplemented (APE-5 sketch only)")
 }
