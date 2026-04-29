@@ -548,6 +548,7 @@ Rules:
 - `apply_bindings` requires an active render or compute pass.
 - Resource views bound in a render pass cannot alias active pass attachments.
 - Resource views in one binding set cannot create read/write or write/write hazards over the same image or overlapping buffer range.
+- In a compute pass, `dispatch` records reflected write and read-write resource views. Later reflected read or read-write bindings that alias those resources are rejected until `end_compute_pass`.
 - If supplied views or samplers are present and the active shader has binding metadata, `apply_bindings` requires an applied pipeline and an active `Pipeline_Layout`.
 - Supplied views and samplers must target declared logical groups and slots in the active pipeline layout.
 - Supplied view kinds must match reflected layout entries. Storage image format and storage buffer stride are checked when reflected metadata specifies them.
@@ -613,6 +614,7 @@ Rules:
 - `begin_compute_pass` requires no other pass to be active.
 - The active backend must report compute support.
 - Render-only bindings such as vertex and index buffers are rejected in compute passes.
+- Compute passes are the synchronization boundary for storage writes. Read-after-write across dispatches requires ending the current compute pass and beginning a new pass.
 
 ## Validation
 

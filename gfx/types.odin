@@ -809,6 +809,9 @@ Binding_Group_State :: struct {
 	desc: Binding_Group_Desc,
 }
 
+@(private)
+MAX_COMPUTE_PASS_RESOURCE_WRITES :: MAX_BINDING_GROUPS * MAX_RESOURCE_VIEWS
+
 // Context owns all GPU resources and current frame state for one backend instance.
 Context :: struct {
 	desc: Desc,
@@ -836,6 +839,9 @@ Context :: struct {
 	binding_group_states: map[Binding_Group]Binding_Group_State,
 	current_pipeline: Pipeline,
 	current_compute_pipeline: Compute_Pipeline,
+	current_bindings: Bindings,
+	compute_pass_resource_writes: [MAX_COMPUTE_PASS_RESOURCE_WRITES]View_State,
+	compute_pass_resource_write_count: int,
 	pass_color_attachments: [MAX_COLOR_ATTACHMENTS]View,
 	pass_depth_stencil_attachment: View,
 	backend_data: rawptr,

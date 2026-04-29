@@ -22,6 +22,8 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	capture_pass_attachments(ctx, desc)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	ctx.current_bindings = {}
+	clear_compute_pass_resource_writes(ctx)
 	ctx.in_pass = true
 	ctx.pass_kind = .Render
 	return true
@@ -39,6 +41,7 @@ apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	ctx.current_bindings = {}
 	if !backend_apply_pipeline(ctx, pipeline) {
 		return false
 	}
@@ -72,6 +75,8 @@ begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool 
 	clear_pass_attachments(ctx)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	ctx.current_bindings = {}
+	clear_compute_pass_resource_writes(ctx)
 	ctx.in_pass = true
 	ctx.pass_kind = .Compute
 	return true
@@ -89,6 +94,7 @@ apply_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) -> boo
 
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	ctx.current_bindings = {}
 	if !backend_apply_compute_pipeline(ctx, pipeline) {
 		return false
 	}
@@ -108,7 +114,12 @@ apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		return false
 	}
 
-	return backend_apply_bindings(ctx, bindings)
+	if !backend_apply_bindings(ctx, bindings) {
+		return false
+	}
+
+	ctx.current_bindings = bindings
+	return true
 }
 
 // apply_uniforms uploads one reflected uniform block to the current pipeline.
@@ -159,7 +170,16 @@ dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, 
 		return false
 	}
 
-	return backend_dispatch(ctx, group_count_x, group_count_y, group_count_z)
+	if !validate_compute_dispatch_resource_hazards(ctx) {
+		return false
+	}
+
+	if !backend_dispatch(ctx, group_count_x, group_count_y, group_count_z) {
+		return false
+	}
+
+	record_compute_dispatch_writes(ctx)
+	return true
 }
 
 // end_pass finishes the active render pass.
@@ -181,6 +201,8 @@ end_pass :: proc(ctx: ^Context) -> bool {
 	clear_pass_attachments(ctx)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	ctx.current_bindings = {}
+	clear_compute_pass_resource_writes(ctx)
 	ctx.in_pass = false
 	ctx.pass_kind = .None
 	return ok
@@ -205,6 +227,8 @@ end_compute_pass :: proc(ctx: ^Context) -> bool {
 	clear_pass_attachments(ctx)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
+	ctx.current_bindings = {}
+	clear_compute_pass_resource_writes(ctx)
 	ctx.in_pass = false
 	ctx.pass_kind = .None
 	return ok
@@ -516,7 +540,220 @@ validate_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		return false
 	}
 
+	if !validate_compute_bindings_against_pass_writes(ctx, bindings, "gfx.apply_bindings") {
+		return false
+	}
+
 	return true
+}
+
+@(private)
+Binding_Resource_Access_Flags :: struct {
+	reads: bool,
+	writes: bool,
+}
+
+@(private)
+clear_compute_pass_resource_writes :: proc(ctx: ^Context) {
+	if ctx == nil {
+		return
+	}
+
+	ctx.compute_pass_resource_writes = {}
+	ctx.compute_pass_resource_write_count = 0
+}
+
+@(private)
+validate_compute_dispatch_resource_hazards :: proc(ctx: ^Context) -> bool {
+	if !validate_compute_bindings_against_pass_writes(ctx, ctx.current_bindings, "gfx.dispatch") {
+		return false
+	}
+	if !validate_compute_write_tracking_capacity(ctx, ctx.current_bindings) {
+		return false
+	}
+
+	return true
+}
+
+@(private)
+validate_compute_bindings_against_pass_writes :: proc(ctx: ^Context, bindings: Bindings, op: string) -> bool {
+	if ctx == nil || ctx.pass_kind != .Compute || ctx.compute_pass_resource_write_count == 0 {
+		return true
+	}
+
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				continue
+			}
+
+			access := current_resource_binding_access(ctx, u32(group), u32(slot), view_state)
+			if !access.reads {
+				continue
+			}
+
+			if compute_pass_written_resource_aliases(ctx, view_state) {
+				set_validation_errorf(ctx, "%s: resource view group %d slot %d reads a resource written earlier in the current compute pass", op, group, slot)
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+@(private)
+validate_compute_write_tracking_capacity :: proc(ctx: ^Context, bindings: Bindings) -> bool {
+	if ctx == nil || ctx.pass_kind != .Compute {
+		return true
+	}
+
+	new_write_count := 0
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				continue
+			}
+
+			access := current_resource_binding_access(ctx, u32(group), u32(slot), view_state)
+			if !access.writes || compute_pass_written_resource_aliases(ctx, view_state) {
+				continue
+			}
+
+			new_write_count += 1
+		}
+	}
+
+	if ctx.compute_pass_resource_write_count + new_write_count > MAX_COMPUTE_PASS_RESOURCE_WRITES {
+		set_validation_error(ctx, "gfx.dispatch: compute pass resource write tracking capacity exceeded")
+		return false
+	}
+
+	return true
+}
+
+@(private)
+record_compute_dispatch_writes :: proc(ctx: ^Context) {
+	if ctx == nil || ctx.pass_kind != .Compute {
+		return
+	}
+
+	for group_views, group in ctx.current_bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				continue
+			}
+
+			access := current_resource_binding_access(ctx, u32(group), u32(slot), view_state)
+			if !access.writes || compute_pass_written_resource_aliases(ctx, view_state) {
+				continue
+			}
+
+			ctx.compute_pass_resource_writes[ctx.compute_pass_resource_write_count] = view_state
+			ctx.compute_pass_resource_write_count += 1
+		}
+	}
+}
+
+@(private)
+compute_pass_written_resource_aliases :: proc(ctx: ^Context, view_state: View_State) -> bool {
+	if ctx == nil {
+		return false
+	}
+
+	for i in 0..<ctx.compute_pass_resource_write_count {
+		written_state := ctx.compute_pass_resource_writes[i]
+		if written_state.valid && view_states_alias_resource(view_state, written_state) {
+			return true
+		}
+	}
+
+	return false
+}
+
+@(private)
+current_resource_binding_access :: proc(ctx: ^Context, group, slot: u32, view_state: View_State) -> Binding_Resource_Access_Flags {
+	entry, entry_ok := current_resource_binding_layout_entry(ctx, group, slot)
+	if entry_ok {
+		return binding_resource_access_from_layout(entry.resource_view)
+	}
+
+	return binding_resource_access_from_view_state(view_state)
+}
+
+@(private)
+current_resource_binding_layout_entry :: proc(ctx: ^Context, group, slot: u32) -> (Binding_Group_Layout_Entry_Desc, bool) {
+	if ctx == nil || ctx.pass_kind != .Compute || !compute_pipeline_valid(ctx.current_compute_pipeline) {
+		return {}, false
+	}
+
+	pipeline_state, pipeline_state_ok := query_compute_pipeline_state(ctx, ctx.current_compute_pipeline)
+	if !pipeline_state_ok || !pipeline_layout_valid(pipeline_state.pipeline_layout) {
+		return {}, false
+	}
+
+	shader_state, shader_state_ok := query_shader_state(ctx, pipeline_state.shader)
+	if !shader_state_ok || !shader_state.has_binding_metadata {
+		return {}, false
+	}
+
+	pipeline_layout_state, pipeline_layout_state_ok := query_pipeline_layout_state(ctx, pipeline_state.pipeline_layout)
+	if !pipeline_layout_state_ok || group >= MAX_BINDING_GROUPS {
+		return {}, false
+	}
+
+	group_layout := pipeline_layout_state.desc.group_layouts[group]
+	if !binding_group_layout_valid(group_layout) {
+		return {}, false
+	}
+
+	group_layout_state, group_layout_state_ok := query_binding_group_layout_state(ctx, group_layout)
+	if !group_layout_state_ok {
+		return {}, false
+	}
+
+	return binding_group_layout_find_entry(group_layout_state.desc, .Resource_View, slot)
+}
+
+@(private)
+binding_resource_access_from_layout :: proc(desc: Binding_Group_Resource_View_Layout_Desc) -> Binding_Resource_Access_Flags {
+	if desc.view_kind == .Sampled {
+		return {reads = true}
+	}
+
+	switch desc.access {
+	case .Read:
+		return {reads = true}
+	case .Write:
+		return {writes = true}
+	case .Read_Write, .Unknown:
+		return {reads = true, writes = true}
+	}
+
+	return {reads = true, writes = true}
+}
+
+@(private)
+binding_resource_access_from_view_state :: proc(view_state: View_State) -> Binding_Resource_Access_Flags {
+	return {
+		reads = view_state_reads_resource(view_state),
+		writes = view_state_writes_resource(view_state),
+	}
 }
 
 @(private)

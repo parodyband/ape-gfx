@@ -431,6 +431,16 @@ main :: proc() {
 		os.exit(1)
 	}
 
+	if compute_storage_shader.dispatch_threads(&ctx, 2, 12, 1) {
+		fmt.eprintln("compute read-after-write dispatch unexpectedly succeeded")
+		os.exit(1)
+	}
+	expected = "gfx.dispatch: resource view group 0 slot 0 reads a resource written earlier in the current compute pass"
+	if gfx.last_error(&ctx) != expected {
+		fmt.eprintln("compute read-after-write failed with unexpected error: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+
 	if !gfx.end_compute_pass(&ctx) {
 		fmt.eprintln("end_compute_pass failed: ", gfx.last_error(&ctx))
 		os.exit(1)

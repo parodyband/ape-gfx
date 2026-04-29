@@ -115,6 +115,7 @@ The D3D11 backend proves the current public API with:
 - storage-buffer readback
 - D3D11 debug names from descriptor labels
 - shared validation that rejects transient resource bindings with wrong groups, wrong slots, wrong view kinds, or incompatible storage metadata before backend binding
+- shared compute hazard validation that rejects read-after-write across dispatches inside one compute pass
 - validation before backend calls where possible
 
 The `Null` backend remains useful for smoke tests. The Vulkan backend is scaffolded but not implemented.
@@ -136,7 +137,7 @@ It validates the release by:
 - testing descriptor contracts
 - testing typed error codes
 - testing range helpers, handle lifecycle, image transfers, and state descriptors
-- testing D3D11 backend limits, error codes, buffer transfers, compute, invalid layouts, invalid uniforms, invalid view kinds, resource hazards, and storage views
+- testing D3D11 backend limits, error codes, buffer transfers, compute, invalid layouts, invalid uniforms, invalid view kinds, resource hazards, compute read-after-write rejection, and storage views
 - testing shader compiler rejection and metadata paths
 - testing sample shader hot reload
 - building every D3D11 sample

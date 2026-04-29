@@ -213,7 +213,7 @@ Rules:
 - Sampled and storage views are bound through generated binding groups or `Bindings.views`.
 - Attachment views are used only in `Pass_Desc`.
 - Runtime validation rejects a sampled view in a storage slot, a storage view in a sampled slot, attachment views in resource binding slots, and transient bindings that target undeclared pipeline-layout groups or slots.
-- Views must not create read/write hazards inside one pass or dispatch.
+- Views must not create read/write hazards inside one binding set, pass, or dispatch.
 
 ## Render Pass Contract
 
@@ -264,6 +264,8 @@ Rules:
 - Render-only bindings such as vertex and index buffers are rejected in compute passes.
 - Storage buffers and storage images bind through reflected binding groups or `Bindings.views` slots.
 - Supplied transient compute views are checked against the active compute pipeline layout before backend binding.
+- A dispatch that writes through a reflected write or read-write storage binding marks that resource as written for the rest of the compute pass.
+- A later dispatch in the same compute pass cannot read or read-write an aliased resource. End the compute pass before reading compute output.
 - Readback is explicit through `read_buffer`.
 
 ## Shader Contract
