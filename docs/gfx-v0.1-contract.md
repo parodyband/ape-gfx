@@ -347,6 +347,12 @@ Run the full local gate before treating a change as compatible:
 .\tools\validate_all.ps1
 ```
 
+Run the core/tooling gate when D3D11 runtime validation is not available:
+
+```powershell
+.\tools\validate_core.ps1
+```
+
 This gate:
 
 - compiles checked-in shaders
@@ -357,6 +363,8 @@ This gate:
 - builds every D3D11 sample
 - runs every D3D11 sample with `-AutoExitFrames 5`
 - runs `git diff --check`
+
+`validate_core.ps1` runs the shader compilation, generated docs, null/core contract, shaderc, and hot-reload tooling portions of the gate. It intentionally skips D3D11 backend tests, D3D11 sample builds, and D3D11 sample runs.
 
 The realistic usage sample is:
 

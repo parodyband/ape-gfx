@@ -130,6 +130,12 @@ The default validation command is:
 .\tools\validate_all.ps1
 ```
 
+The core/tooling validation command is:
+
+```powershell
+.\tools\validate_core.ps1
+```
+
 It validates the release by:
 
 - compiling every checked-in shader
@@ -146,6 +152,8 @@ It validates the release by:
 - building every D3D11 sample
 - running every D3D11 sample with `-AutoExitFrames 5`
 - running `git diff --check`
+
+`validate_core.ps1` runs the shader compilation, generated docs, null/core contract, shaderc, and hot-reload tooling checks without creating a D3D11 device or building/running D3D11 samples.
 
 The validation suite passed locally for v0.1 on 2026-04-29.
 

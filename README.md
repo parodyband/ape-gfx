@@ -56,6 +56,14 @@ Run the full validation gate:
 
 `validate_all.ps1` compiles shaders, regenerates/checks public API docs, runs contract tests, builds every D3D11 sample, runs every D3D11 sample with `-AutoExitFrames 5`, and finishes with `git diff --check`.
 
+Run the core/tooling gate without D3D11 runtime tests:
+
+```powershell
+.\tools\validate_core.ps1
+```
+
+`validate_core.ps1` compiles shaders, checks generated docs, runs null/core contract tests, runs shaderc reflection tests, checks shader hot reload tooling, and finishes with `git diff --check`. It does not create a D3D11 device or build/run D3D11 samples.
+
 ## API shape
 
 The render loop is intentionally small:
