@@ -10,9 +10,6 @@ $ShadercPath = Join-Path $TestDir "ape_shaderc.exe"
 $SourcePath = Join-Path $TestDir "parameter_block_groups.slang"
 $PackagePath = Join-Path $TestDir "parameter_block_groups.ashader"
 $GeneratedPath = Join-Path $TestDir "bindings.odin"
-$InvalidSourcePath = Join-Path $TestDir "invalid_parameter_block_data.slang"
-$InvalidPackagePath = Join-Path $TestDir "invalid_parameter_block_data.ashader"
-$InvalidGeneratedPath = Join-Path $TestDir "invalid_parameter_block_data_bindings.odin"
 
 function Assert-Contains {
 	param(
@@ -25,6 +22,48 @@ function Assert-Contains {
 
 	if (-not $Text.Contains($Snippet)) {
 		Write-Error "Missing generated ParameterBlock metadata: $Snippet"
+	}
+}
+
+function Invoke-ShadercExpectFailure {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$Name,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Source,
+
+		[Parameter(Mandatory = $true)]
+		[string]$ExpectedPattern
+	)
+
+	$FailureSourcePath = Join-Path $TestDir "$Name.slang"
+	$FailurePackagePath = Join-Path $TestDir "$Name.ashader"
+	$FailureGeneratedPath = Join-Path $TestDir "$($Name)_bindings.odin"
+	Set-Content -LiteralPath $FailureSourcePath -Value $Source
+
+	$previousErrorActionPreference = $ErrorActionPreference
+	$ErrorActionPreference = "Continue"
+	try {
+		$output = & $ShadercPath `
+			"-shader-name" $Name `
+			"-source" $FailureSourcePath `
+			"-build-dir" $TestDir `
+			"-package" $FailurePackagePath `
+			"-generated" $FailureGeneratedPath 2>&1
+		$exitCode = $LASTEXITCODE
+	}
+	finally {
+		$ErrorActionPreference = $previousErrorActionPreference
+	}
+	$outputText = $output | Out-String
+
+	if ($exitCode -eq 0) {
+		throw "ape_shaderc unexpectedly accepted $Name"
+	}
+	if ($outputText -notmatch $ExpectedPattern) {
+		Write-Host $outputText
+		throw "ape_shaderc failed $Name for the wrong reason"
 	}
 }
 
@@ -136,7 +175,10 @@ foreach ($Snippet in $ExpectedSnippets) {
 	Assert-Contains -Text $Generated -Snippet $Snippet
 }
 
-Set-Content -LiteralPath $InvalidSourcePath -Value @'
+Invoke-ShadercExpectFailure `
+	-Name "invalid_parameter_block_data" `
+	-ExpectedPattern "ParameterBlock ordinary data is not supported yet" `
+	-Source @'
 struct VS_Input
 {
 	float3 position : POSITION;
@@ -169,24 +211,167 @@ float4 fs_main(VS_Output input) : SV_Target
 }
 '@
 
-$previousErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-$output = & $ShadercPath `
-	"-shader-name" "invalid_parameter_block_data" `
-	"-source" $InvalidSourcePath `
-	"-build-dir" $TestDir `
-	"-package" $InvalidPackagePath `
-	"-generated" $InvalidGeneratedPath 2>&1
-$exitCode = $LASTEXITCODE
-$ErrorActionPreference = $previousErrorActionPreference
-$outputText = $output | Out-String
+Invoke-ShadercExpectFailure `
+	-Name "invalid_parameter_block_array" `
+	-ExpectedPattern "ParameterBlock arrays are not supported yet" `
+	-Source @'
+struct VS_Input
+{
+	float3 position : POSITION;
+	float2 uv : TEXCOORD;
+};
 
-if ($exitCode -eq 0) {
-	throw "ape_shaderc unexpectedly accepted ordinary data inside ParameterBlock"
+struct VS_Output
+{
+	float4 position : SV_Position;
+	float2 uv : TEXCOORD;
+};
+
+struct Bad_Params
+{
+	Texture2D<float4> textures[2];
+	SamplerState sampler;
+};
+
+ParameterBlock<Bad_Params> bad_array;
+
+[shader("vertex")]
+VS_Output vs_main(VS_Input input)
+{
+	VS_Output output;
+	output.position = float4(input.position, 1.0);
+	output.uv = input.uv;
+	return output;
 }
-if ($outputText -notmatch "ParameterBlock ordinary data is not supported yet") {
-	Write-Host $outputText
-	throw "ape_shaderc failed invalid ParameterBlock data for the wrong reason"
+
+[shader("fragment")]
+float4 fs_main(VS_Output input) : SV_Target
+{
+	return bad_array.textures[0].Sample(bad_array.sampler, input.uv);
 }
+'@
+
+Invoke-ShadercExpectFailure `
+	-Name "invalid_parameter_block_nested" `
+	-ExpectedPattern "nested ParameterBlock fields are not supported yet" `
+	-Source @'
+struct VS_Input
+{
+	float3 position : POSITION;
+	float2 uv : TEXCOORD;
+};
+
+struct VS_Output
+{
+	float4 position : SV_Position;
+	float2 uv : TEXCOORD;
+};
+
+struct Inner_Params
+{
+	Texture2D<float4> texture;
+	SamplerState sampler;
+};
+
+struct Outer_Params
+{
+	ParameterBlock<Inner_Params> inner;
+};
+
+ParameterBlock<Outer_Params> bad_nested;
+
+[shader("vertex")]
+VS_Output vs_main(VS_Input input)
+{
+	VS_Output output;
+	output.position = float4(input.position, 1.0);
+	output.uv = input.uv;
+	return output;
+}
+
+[shader("fragment")]
+float4 fs_main(VS_Output input) : SV_Target
+{
+	return bad_nested.inner.texture.Sample(bad_nested.inner.sampler, input.uv);
+}
+'@
+
+Invoke-ShadercExpectFailure `
+	-Name "invalid_parameter_block_constant_buffer" `
+	-ExpectedPattern "ParameterBlock constant buffer fields are not supported yet" `
+	-Source @'
+struct VS_Input
+{
+	float3 position : POSITION;
+};
+
+struct VS_Output
+{
+	float4 position : SV_Position;
+};
+
+struct Data
+{
+	float4 tint;
+};
+
+struct Bad_Params
+{
+	ConstantBuffer<Data> data;
+};
+
+ParameterBlock<Bad_Params> bad_constant_buffer;
+
+[shader("vertex")]
+VS_Output vs_main(VS_Input input)
+{
+	VS_Output output;
+	output.position = float4(input.position, 1.0);
+	return output;
+}
+
+[shader("fragment")]
+float4 fs_main(VS_Output input) : SV_Target
+{
+	return bad_constant_buffer.data.tint;
+}
+'@
+
+Invoke-ShadercExpectFailure `
+	-Name "invalid_parameter_block_texture_shape" `
+	-ExpectedPattern "unsupported resource texture shape" `
+	-Source @'
+struct VS_Input
+{
+	float3 position : POSITION;
+};
+
+struct VS_Output
+{
+	float4 position : SV_Position;
+};
+
+struct Bad_Params
+{
+	TextureCube<float4> cube_texture;
+	SamplerState sampler;
+};
+
+ParameterBlock<Bad_Params> bad_texture_shape;
+
+[shader("vertex")]
+VS_Output vs_main(VS_Input input)
+{
+	VS_Output output;
+	output.position = float4(input.position, 1.0);
+	return output;
+}
+
+[shader("fragment")]
+float4 fs_main(VS_Output input) : SV_Target
+{
+	return bad_texture_shape.cube_texture.Sample(bad_texture_shape.sampler, float3(1.0, 0.0, 0.0));
+}
+'@
 
 Write-Host "Shaderc ParameterBlock group reflection test passed"

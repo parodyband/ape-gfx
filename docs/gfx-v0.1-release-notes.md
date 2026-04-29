@@ -85,6 +85,8 @@ Generated bindings currently cover:
 - storage image and storage buffer metadata
 - compute thread-group constants and dispatch helpers
 
+Generated shader resource support is intentionally limited to shapes the public API can represent: `Texture2D`, `RWTexture2D`, samplers, raw storage buffers, and structured storage buffers.
+
 Manual `Pipeline_Desc.layout` overrides remain supported for real engine use cases such as compact vertex formats, multiple vertex streams, instancing, or custom semantic conventions.
 
 ## D3D11 Backend
@@ -205,7 +207,6 @@ These pieces exist, but should not be treated as long-term frozen yet:
 
 After v0.1, the next larger areas are:
 
-- add negative shaderc tests for unsupported `ParameterBlock<>` shapes
 - decide whether `Pipeline_Layout` is needed now that generated logical groups are real
 - sketch resource-array and bindless reflection before freezing the group record shape further
 - improve storage and compute ergonomics beyond the current samples

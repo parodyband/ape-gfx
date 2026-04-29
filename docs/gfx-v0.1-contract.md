@@ -282,6 +282,8 @@ Stable generated helpers:
 - `ParameterBlock<>` resource groups mapped to generated logical groups.
 - Compute thread-group constants and dispatch helpers.
 
+Generated resource binding support is intentionally narrow. `Texture2D`, `RWTexture2D`, samplers, raw storage buffers, and structured storage buffers are covered. Cube textures, 3D textures, image arrays, resource arrays, and bindless-style layouts are rejected until the public view and binding model can represent them directly.
+
 Generated vertex layout support is intentionally narrow:
 
 - `float` maps to `.Float32`.

@@ -239,16 +239,18 @@ Supported first-pass mapping:
 
 Supported parameter-block fields today:
 
-- sampled textures
-- samplers
-- storage image and storage buffer shapes already supported by normal resource reflection
+- `Texture2D<T>` sampled textures
+- `SamplerState`
+- `RWTexture2D<float>` and `RWTexture2D<float4>`
+- raw and structured storage buffers already supported by normal resource reflection
 
 Unsupported parameter-block fields fail during shader generation:
 
 - ordinary data fields
+- `ConstantBuffer<T>` fields
 - nested parameter blocks
 - arrays or bindless-style resource arrays
-- unsupported resource shapes
+- unsupported resource shapes such as cube textures
 
 Uniform data inside `ParameterBlock<>` is intentionally deferred. Keep per-draw data in ordinary constant buffers for now.
 
@@ -403,7 +405,7 @@ Supported resource view shapes:
 
 | Slang shape | Generated view kind |
 | --- | --- |
-| sampled texture resource | `gfx.View_Kind.Sampled` |
+| `Texture2D<T>` sampled texture resource | `gfx.View_Kind.Sampled` |
 | read-only buffer resource | `gfx.View_Kind.Storage_Buffer` or sampled fallback depending reflection shape |
 | `RWTexture2D<float>` | `gfx.View_Kind.Storage_Image`, format `.R32F` |
 | `RWTexture2D<float4>` | `gfx.View_Kind.Storage_Image`, format `.RGBA32F` |
@@ -535,8 +537,8 @@ Planned order:
 - [x] Traverse Slang reflection JSON deeply enough to represent `ParameterBlock<>` resources, multiple logical groups, native slots, and native spaces without hand-authored binding registers.
 - [x] Generate group-aware Odin helpers and package binding records.
 - [x] Validate and apply multiple object-backed binding groups through `gfx.apply_binding_groups`.
+- [x] Add negative shaderc coverage for unsupported `ParameterBlock<>` shapes: ordinary data, `ConstantBuffer<T>`, nested parameter blocks, resource arrays, and unsupported texture shapes.
 - [ ] Extend the modern Slang API surface for deeper program layout traversal and entry-point metadata where JSON is too weak.
-- [ ] Add negative shaderc coverage for unsupported `ParameterBlock<>` shapes. Ordinary data is covered; nested blocks and arrays still need focused cases.
 - [ ] Decide whether uniform data inside `ParameterBlock<>` belongs in generated binding groups or stays on `apply_uniform_*`.
 - [ ] Decide whether a public `Pipeline_Layout` object is needed once multiple groups are common.
 
@@ -548,7 +550,7 @@ Open questions:
 
 The rule stays the same for samples: use register-free Slang source, let `ape_shaderc` publish the reflected contract, and keep manual binding layouts as explicit escape hatches.
 
-Next implementation breadcrumb: harden Slang group semantics with negative shaderc tests for unsupported `ParameterBlock<>` shapes, then evaluate whether the current group-aware binding records are strong enough to design `Pipeline_Layout` without adding another compatibility layer.
+Next implementation breadcrumb: evaluate whether the current group-aware binding records are strong enough to design `Pipeline_Layout` without adding another compatibility layer. Only add `Pipeline_Layout` if it removes real validation ambiguity or enables cross-shader reuse that generated `Binding_Group_Layout` cannot cover.
 
 ## Validation
 
@@ -559,6 +561,7 @@ Current shader reflection validation is covered by:
 .\tools\test_shaderc_modern_api_probe.ps1
 .\tools\test_shaderc_register_free_samples.ps1
 .\tools\test_shaderc_descriptor_table_slots.ps1
+.\tools\test_shaderc_parameter_block_groups.ps1
 .\tools\test_shaderc_invalid_vertex_layout.ps1
 .\tools\test_shaderc_storage_resource_metadata.ps1
 .\tools\test_d3d11_invalid_pipeline_layout.ps1

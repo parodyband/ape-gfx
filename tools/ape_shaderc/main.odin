@@ -1144,13 +1144,12 @@ append_parameter_block_field_binding :: proc(
 		fmt.eprintln("ape_shaderc: reflected ParameterBlock field is missing a type: ", group_name, ".", field_name)
 		return false
 	}
+	if !validate_parameter_block_field_type(field_type_value, group_name, field_name) {
+		return false
+	}
 
 	binding_value, binding_ok := json_field(field, "binding")
 	if !binding_ok {
-		if parameter_block_field_requires_ordinary_data_support(field_type_value) {
-			fmt.eprintln("ape_shaderc: ParameterBlock ordinary data is not supported yet; keep uniforms in cbuffer declarations for now: ", group_name, ".", field_name)
-			return false
-		}
 		return true
 	}
 	binding, binding_object_ok := json_object(binding_value)
@@ -1161,10 +1160,6 @@ append_parameter_block_field_binding :: proc(
 
 	binding_kind, binding_kind_ok := json_string_field(binding, "kind")
 	native_slot, native_slot_ok := json_u32_field(binding, "index")
-	if parameter_block_field_requires_ordinary_data_support(field_type_value) {
-		fmt.eprintln("ape_shaderc: ParameterBlock ordinary data is not supported yet; keep uniforms in cbuffer declarations for now: ", group_name, ".", field_name)
-		return false
-	}
 	if !binding_kind_ok || !native_slot_ok {
 		fmt.eprintln("ape_shaderc: reflected ParameterBlock field binding is incomplete: ", group_name, ".", field_name)
 		return false
@@ -1267,20 +1262,34 @@ parameter_block_field_native_slot :: proc(parameter: json.Object, binding_kind: 
 	return relative_slot
 }
 
-parameter_block_field_requires_ordinary_data_support :: proc(type_value: json.Value) -> bool {
+validate_parameter_block_field_type :: proc(type_value: json.Value, group_name, field_name: string) -> bool {
 	type_object, type_object_ok := json_object(type_value)
 	if !type_object_ok {
-		return true
+		fmt.eprintln("ape_shaderc: ParameterBlock field type is not supported yet: ", group_name, ".", field_name)
+		return false
 	}
 	kind, kind_ok := json_string_field(type_object, "kind")
 	if !kind_ok {
-		return true
-	}
-	switch kind {
-	case "resource", "samplerState", "shaderStorageBuffer", "structuredBuffer", "constantBuffer", "parameterBlock":
+		fmt.eprintln("ape_shaderc: ParameterBlock field type is missing a reflected kind: ", group_name, ".", field_name)
 		return false
 	}
-	return true
+
+	switch kind {
+	case "resource", "samplerState", "shaderStorageBuffer", "structuredBuffer":
+		return true
+	case "array":
+		fmt.eprintln("ape_shaderc: ParameterBlock arrays are not supported yet; resource arrays and bindless-style arrays need a separate binding contract: ", group_name, ".", field_name)
+		return false
+	case "parameterBlock":
+		fmt.eprintln("ape_shaderc: nested ParameterBlock fields are not supported yet: ", group_name, ".", field_name)
+		return false
+	case "constantBuffer":
+		fmt.eprintln("ape_shaderc: ParameterBlock constant buffer fields are not supported yet; keep uniforms in cbuffer declarations for now: ", group_name, ".", field_name)
+		return false
+	}
+
+	fmt.eprintln("ape_shaderc: ParameterBlock ordinary data is not supported yet; keep uniforms in cbuffer declarations for now: ", group_name, ".", field_name)
+	return false
 }
 
 json_type_kind_is :: proc(type_value: json.Value, expected: string) -> bool {
@@ -2008,6 +2017,10 @@ resource_view_metadata_from_type_json :: proc(type_value: json.Value, binding_ki
 	base_shape, base_shape_ok := json_string_field(type_object, "baseShape")
 	if type_kind == "resource" && base_shape_ok {
 		if resource_shape_is_texture(base_shape) {
+			if !resource_shape_is_supported_texture(base_shape) {
+				fmt.eprintln("ape_shaderc: unsupported resource texture shape in generated bindings; only Texture2D/RWTexture2D are supported today")
+				return .Sampled, access, .Invalid, 0, false
+			}
 			if binding_kind == "unorderedAccess" || access == .Write || access == .Read_Write {
 				format, format_ok := storage_image_format_from_type_json(type_object)
 				if !format_ok {
@@ -2018,6 +2031,10 @@ resource_view_metadata_from_type_json :: proc(type_value: json.Value, binding_ki
 			return .Sampled, access, .Invalid, 0, true
 		}
 		if resource_shape_is_buffer(base_shape) {
+			if !resource_shape_is_supported_buffer(base_shape) {
+				fmt.eprintln("ape_shaderc: unsupported resource buffer shape in generated bindings")
+				return .Storage_Buffer, access, .Invalid, 0, false
+			}
 			stride: u32
 			if base_shape == "structuredBuffer" {
 				stride_ok: bool
@@ -2225,12 +2242,28 @@ resource_shape_is_texture :: proc(shape: string) -> bool {
 	return string_has_prefix(shape, "texture")
 }
 
+resource_shape_is_supported_texture :: proc(shape: string) -> bool {
+	return shape == "texture2D"
+}
+
 resource_shape_is_buffer :: proc(shape: string) -> bool {
 	return shape == "buffer" ||
 	       shape == "rawBuffer" ||
 	       shape == "structuredBuffer" ||
 	       shape == "byteAddressBuffer" ||
 	       shape == "textureBuffer" ||
+	       string_has_suffix(shape, "Buffer")
+}
+
+resource_shape_is_supported_buffer :: proc(shape: string) -> bool {
+	if shape == "textureBuffer" {
+		return false
+	}
+
+	return shape == "buffer" ||
+	       shape == "rawBuffer" ||
+	       shape == "structuredBuffer" ||
+	       shape == "byteAddressBuffer" ||
 	       string_has_suffix(shape, "Buffer")
 }
 
