@@ -17,8 +17,7 @@ Validate_Full_Options :: struct {
 	root_path: string,
 	auto_exit_frames: int,
 	skip_shader_compile: bool,
-	skip_d3d11_builds: bool,
-	skip_d3d11_runs: bool,
+	skip_sample_builds: bool,
 	skip_git_diff_check: bool,
 }
 
@@ -101,10 +100,8 @@ parse_validate_full_options :: proc(args: []string) -> (Validate_Full_Options, b
 			options.auto_exit_frames = value
 		case "-skip-shader-compile", "-SkipShaderCompile":
 			options.skip_shader_compile = true
-		case "-skip-d3d11-builds", "-SkipD3D11Builds":
-			options.skip_d3d11_builds = true
-		case "-skip-d3d11-runs", "-SkipD3D11Runs":
-			options.skip_d3d11_runs = true
+		case "-skip-sample-builds", "-SkipSampleBuilds":
+			options.skip_sample_builds = true
 		case "-skip-git-diff-check", "-SkipGitDiffCheck":
 			options.skip_git_diff_check = true
 		case:
@@ -140,7 +137,6 @@ validate_core :: proc(options: Validate_Core_Options) -> bool {
 	started_at := time.now()
 	fmt.println("Ape GFX core validation")
 	fmt.printf("Root: %s\n", root)
-	fmt.println("D3D11 runtime tests: skipped")
 
 	step_started_at := validation_step_start("repo hygiene")
 	if !check_repo_hygiene(root) {
@@ -260,18 +256,6 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"test_gfx_binding_group_arrays.ps1",
 		"test_gfx_range_helpers.ps1",
 		"test_gfx_handle_lifecycle.ps1",
-		"test_d3d11_backend_limits.ps1",
-		"test_d3d11_error_codes.ps1",
-		"test_d3d11_buffer_transfers.ps1",
-		"test_d3d11_compute_pass.ps1",
-		"test_d3d11_invalid_pipeline_layout.ps1",
-		"test_d3d11_invalid_uniform_size.ps1",
-		"test_d3d11_invalid_view_kind.ps1",
-		"test_d3d11_resource_hazards.ps1",
-		"test_d3d11_storage_views.ps1",
-		"test_d3d11_bindless_reject.ps1",
-		"test_d3d11_barrier_validation.ps1",
-		"test_d3d11_indirect_validation.ps1",
 		"test_shader_hot_reload.ps1",
 	}
 	for script in public_scripts {
@@ -294,65 +278,31 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 	}
 	validation_step_pass("shaderc reflection tests", step_started_at)
 
-	d3d11_build_scripts := [?]string {
-		"build_d3d11_clear.ps1",
-		"build_d3d11_cube.ps1",
-		"build_d3d11_depth_render_to_texture.ps1",
-		"build_d3d11_dynamic_texture.ps1",
-		"build_d3d11_gfx_lab.ps1",
-		"build_d3d11_improved_shadows.ps1",
-		"build_d3d11_mrt.ps1",
-		"build_d3d11_msaa.ps1",
-		"build_d3d11_render_to_texture.ps1",
-		"build_d3d11_textured_cube.ps1",
-		"build_d3d11_textured_quad.ps1",
-		"build_d3d11_transient_uniforms.ps1",
-		"build_d3d11_triangle.ps1",
-		"build_d3d11_triangle_indirect.ps1",
-		"build_d3d11_triangle_minimal.ps1",
-		"build_d3d11_dispatch_indirect.ps1",
-	}
-	if !options.skip_d3d11_builds {
-		for script in d3d11_build_scripts {
-			step_started_at := validation_step_start(script)
-			if !run_repo_script(root, script) {
-				validation_step_fail(script)
-				return false
-			}
-			validation_step_pass(script, step_started_at)
+	if !options.skip_sample_builds {
+		step_started_at = validation_step_start("build all samples")
+		if !build_samples({
+			root_path = root,
+			auto_exit_frames = options.auto_exit_frames,
+			all = true,
+			name = "all",
+		}) {
+			validation_step_fail("build all samples")
+			return false
 		}
-	}
+		validation_step_pass("build all samples", step_started_at)
 
-	d3d11_run_scripts := [?]string {
-		"run_d3d11_clear.ps1",
-		"run_d3d11_cube.ps1",
-		"run_d3d11_depth_render_to_texture.ps1",
-		"run_d3d11_dynamic_texture.ps1",
-		"run_d3d11_gfx_lab.ps1",
-		"run_d3d11_improved_shadows.ps1",
-		"run_d3d11_mrt.ps1",
-		"run_d3d11_msaa.ps1",
-		"run_d3d11_render_to_texture.ps1",
-		"run_d3d11_textured_cube.ps1",
-		"run_d3d11_textured_quad.ps1",
-		"run_d3d11_transient_uniforms.ps1",
-		"run_d3d11_triangle.ps1",
-		"run_d3d11_triangle_indirect.ps1",
-		"run_d3d11_triangle_minimal.ps1",
-		"run_d3d11_dispatch_indirect.ps1",
-	}
-	if !options.skip_d3d11_runs {
-		for script in d3d11_run_scripts {
-			step_name := fmt.tprintf("%s -AutoExitFrames %d", script, options.auto_exit_frames)
-			step_started_at := validation_step_start(step_name)
-			auto_exit_arg := fmt.tprintf("%d", options.auto_exit_frames)
-			args := [?]string {"-AutoExitFrames", auto_exit_arg}
-			if !run_repo_script(root, script, args[:]) {
-				validation_step_fail(step_name)
-				return false
-			}
-			validation_step_pass(step_name, step_started_at)
+		step_started_at = validation_step_start("run all samples")
+		if !run_samples({
+			root_path = root,
+			auto_exit_frames = options.auto_exit_frames,
+			all = true,
+			name = "all",
+			skip_shader_compile = true,
+		}) {
+			validation_step_fail("run all samples")
+			return false
 		}
+		validation_step_pass("run all samples", step_started_at)
 	}
 
 	if !options.skip_git_diff_check {

@@ -292,7 +292,7 @@ current_pipeline_layout :: proc(ctx: ^Context, op: string) -> (Pipeline_Layout, 
 @(private)
 pipeline_layout_requires_native_bindings :: proc(backend: Backend) -> bool {
 	switch backend {
-	case .D3D11, .Vulkan:
+	case .D3D12, .Vulkan:
 		return true
 	case .Auto, .Null:
 		return false

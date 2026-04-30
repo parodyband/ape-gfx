@@ -1,4 +1,4 @@
-# Ape GFX Public API Audit
+﻿# Ape GFX Public API Audit
 
 Date: 2026-04-27
 Source: `docs/api/markdown/gfx.md`
@@ -40,7 +40,7 @@ Composite statuses are comma-separated.
 | `Buffer_Invalid` | keep | Stable invalid sentinel. |
 | `Binding_Group_Invalid` | keep | Stable invalid sentinel for object-backed binding groups. |
 | `Binding_Group_Layout_Invalid` | keep | Stable invalid sentinel for object-backed binding group layouts. |
-| `Binding_Heap_Invalid` | defer | APE-23/APE-25 bindless binding heap sentinel. Stays public when bindless ships in a non-D3D11 backend. |
+| `Binding_Heap_Invalid` | defer | APE-23/APE-25 bindless binding heap sentinel. Stays public when bindless ships in a non-D3D12 backend. |
 | `COLOR_MASK_A` | keep, needs_docs | Stable color-write mask bit. |
 | `COLOR_MASK_B` | keep, needs_docs | Stable color-write mask bit. |
 | `COLOR_MASK_G` | keep, needs_docs | Stable color-write mask bit. |
@@ -52,7 +52,7 @@ Composite statuses are comma-separated.
 | `DRAW_INDEXED_INDIRECT_ARGS_SIZE` | keep | APE-7 indexed indirect arg record size before inter-record padding. |
 | `DRAW_INDEXED_INDIRECT_ARGS_STRIDE` | keep | APE-7 indexed indirect arg stride, padded so multi-draw record offsets stay aligned. |
 | `DRAW_INDIRECT_ARGS_STRIDE` | keep | APE-7 non-indexed indirect arg stride (`size_of(Draw_Indirect_Args)`). |
-| `INDIRECT_ARGS_OFFSET_ALIGNMENT` | keep | APE-10 required byte alignment for indirect args buffer offsets (16 bytes — strictest of supported backends). |
+| `INDIRECT_ARGS_OFFSET_ALIGNMENT` | keep | APE-10 required byte alignment for indirect args buffer offsets (16 bytes â€” strictest of supported backends). |
 | `Image_Invalid` | keep | Stable invalid sentinel. |
 | `MAX_BINDING_GROUPS` | keep | Public logical binding group limit. |
 | `MAX_BINDING_GROUP_ARRAYS` | keep | APE-24 public limit on binding-group runtime/fixed array entries. |
@@ -91,7 +91,7 @@ Composite statuses are comma-separated.
 | `acquire_transfer_queue` | defer | APE-17 queue/timeline draft. Returns Unsupported until backend queues land. |
 | `apply_binding_group` | keep, needs_test | Applies an object-backed binding group with optional geometry bindings. |
 | `apply_binding_groups` | keep, needs_test | Applies multiple object-backed binding groups with optional geometry bindings. |
-| `apply_binding_heap` | defer | APE-23/APE-25 bindless heap bind. D3D11 rejects; lands with D3D12/Vulkan bindless. |
+| `apply_binding_heap` | defer | APE-23/APE-25 bindless heap bind. D3D12 rejects; lands with D3D12/Vulkan bindless. |
 | `apply_bindings` | keep, needs_test | Core command. Expand validation tests around buffer/view/sampler slots. |
 | `apply_compute_pipeline` | keep, needs_test | Core compute command. Keep if compute is v0.1-stable. |
 | `apply_pipeline` | keep, needs_test | Core render command. |
@@ -99,7 +99,7 @@ Composite statuses are comma-separated.
 | `apply_uniform_at` | keep, needs_test | Offset-aware uniform binding (APE-21) that binds a `Transient_Slice` as a constant buffer at a slot. |
 | `apply_uniform_at_typed` | keep, needs_docs | Ergonomic typed wrapper over `apply_uniform_at`. |
 | `apply_uniforms` | keep, needs_test | Core uniform upload. |
-| `barrier` | keep, needs_test | APE-16 immediate-mode barrier verb. D3D11 no-ops; in debug builds runs the per-frame last-known-usage tracker to flag wrong-barrier and missing-barrier scenarios. |
+| `barrier` | keep, needs_test | APE-16 immediate-mode barrier verb. D3D12 no-ops; in debug builds runs the per-frame last-known-usage tracker to flag wrong-barrier and missing-barrier scenarios. |
 | `barrier_buffer_target` | defer | APE-15 helper that builds a whole-buffer `Barrier_Target`. |
 | `barrier_image_target` | defer | APE-15 helper that builds an image `Barrier_Target` with optional `Subresource_Range`. |
 | `backend_name` | keep | Small diagnostic helper. |
@@ -135,7 +135,7 @@ Composite statuses are comma-separated.
 | `create_command_list` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
 | `create_binding_group` | keep, needs_test | Primary binding group creation spelling. |
 | `create_binding_group_layout` | keep, needs_test | Primary binding group layout creation spelling. |
-| `create_binding_heap` | defer | APE-23/APE-25 bindless heap creation. D3D11 rejects; lands with D3D12/Vulkan bindless. |
+| `create_binding_heap` | defer | APE-23/APE-25 bindless heap creation. D3D12 rejects; lands with D3D12/Vulkan bindless. |
 | `create_compute_pipeline` | keep, needs_test | Primary compute pipeline creation spelling. |
 | `create_image` | keep, needs_test | Primary image creation spelling. |
 | `create_pipeline` | keep, needs_test | Primary graphics pipeline creation spelling. |
@@ -161,10 +161,10 @@ Composite statuses are comma-separated.
 | `destroy_shader` | keep | Explicit destroy remains available. |
 | `destroy_view` | keep | Explicit destroy remains available. |
 | `dispatch` | keep, needs_test | Core compute command. |
-| `dispatch_indirect` | keep, needs_test | APE-7 indirect compute dispatch entry point. D3D11 backend calls `DispatchIndirect`. |
+| `dispatch_indirect` | keep, needs_test | APE-7 indirect compute dispatch entry point. D3D12 backend calls `DispatchIndirect`. |
 | `draw` | keep, needs_test | Core render command. |
-| `draw_indexed_indirect` | keep, needs_test | APE-7/APE-8 indirect indexed draw entry point. D3D11 backend loops `DrawIndexedInstancedIndirect`. |
-| `draw_indirect` | keep, needs_test | APE-7/APE-8 indirect non-indexed draw entry point. D3D11 backend loops `DrawInstancedIndirect`. |
+| `draw_indexed_indirect` | keep, needs_test | APE-7/APE-8 indirect indexed draw entry point. D3D12 backend loops `DrawIndexedInstancedIndirect`. |
+| `draw_indirect` | keep, needs_test | APE-7/APE-8 indirect non-indexed draw entry point. D3D12 backend loops `DrawInstancedIndirect`. |
 | `end_compute_pass` | keep, needs_test | Core compute command. |
 | `end_pass` | keep, needs_test | Core render command. |
 | `finish_command_list` | defer | APE-5 recording draft. Returns Unsupported until explicit recording lands. |
@@ -203,7 +203,7 @@ Composite statuses are comma-separated.
 | `timeline_semaphore_wait` | defer | APE-17 queue/timeline draft. Returns Unsupported until timeline semaphores land. |
 | `create_transient_allocator` | keep, needs_test | Primary creation spelling for per-frame linear allocators (APE-19/APE-20). |
 | `destroy_transient_allocator` | keep | Releases backing chunks owned by a transient allocator. |
-| `reset_transient_allocator` | keep, needs_test | Returns the bump pointer to zero after the previous frame retires; rotates D3D11 chunks via `Map(WRITE_DISCARD)`. |
+| `reset_transient_allocator` | keep, needs_test | Returns the bump pointer to zero after the previous frame retires; rotates D3D12 chunks via `Map(WRITE_DISCARD)`. |
 | `transient_alloc` | keep, needs_test | Per-frame slice allocation; alignment selected by `Transient_Usage`. |
 | `transient_allocator_capacity` | keep | Per-role capacity diagnostic. |
 | `transient_allocator_used` | keep | Per-frame bytes-handed-out diagnostic. |
@@ -258,7 +258,7 @@ Composite statuses are comma-separated.
 | `Command_List_State` | defer | APE-5 recording sketch enum. |
 | `Command_Queue` | defer | APE-5 recording-affinity enum. Companion to APE-17 `Queue_Kind`. |
 | `Compare_Func` | keep, needs_docs | Depth state enum. |
-| `Compute_Pass_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md`; D3D11 compute behavior is covered by `tools/test_d3d11_compute_pass.ps1`. |
+| `Compute_Pass_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md`; D3D12 compute behavior is covered by the `dispatch_indirect` and `gpu_driven_indirect` samples in `ape validate full`. |
 | `Compute_Pass_Encoder` | defer | APE-5 recording sketch type. Body and backend land with the explicit recording path. |
 | `Compute_Pipeline` | keep | Stable handle if compute remains v0.1-stable. |
 | `Compute_Pipeline_Desc` | keep | Contract documented in `docs/gfx-descriptor-contracts.md` and covered by `tools/test_gfx_state_descriptor_contracts.ps1`. |

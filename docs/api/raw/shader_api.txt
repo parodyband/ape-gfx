@@ -113,7 +113,7 @@ package shader
 
 
 	types
-		Backend_Target :: enum {D3D11_DXBC, Vulkan_SPIRV}
+		Backend_Target :: enum {D3D12_DXIL, Vulkan_SPIRV}
 			Backend_Target selects which compiled backend payload to read from an .ashader package.
 
 		Library :: struct {entries: [dynamic]Library_Entry, name_index: map[string]Shader_Id, pipelines: [dynamic]Pipeline_Cache_Entry, compile: Library_Compiler, compile_user: rawptr}
@@ -142,9 +142,8 @@ package shader
 			Package owns bytes and parsed metadata loaded from one .ashader file.
 
 			`axes` and `variants` describe the permutation key space declared by the
-			shader package. Pre-v10 packages synthesize a single default variant that
-			covers every stage and binding so existing shaders keep loading without
-			permutation metadata.
+			shader package. v11 is the first D3D12/DXIL package version; older packages
+			are intentionally rejected.
 
 		Permutation_Axis :: struct {name: string, kind: Permutation_Axis_Kind, static_axis: bool, value_count: u32, default_index: u32}
 			Permutation_Axis describes one named axis declared by the shader package.

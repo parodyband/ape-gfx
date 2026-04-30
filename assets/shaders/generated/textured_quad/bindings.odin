@@ -39,13 +39,13 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 }
 
 GROUP_0 :: 0
-D3D11_FS_VIEW_material_ape_texture :: 0
-D3D11_FS_VIEW_material_ape_texture_SPACE :: 0
+D3D12_FS_VIEW_material_ape_texture :: 0
+D3D12_FS_VIEW_material_ape_texture_SPACE :: 0
 VIEW_material_ape_texture :: 0
 VIEW_KIND_material_ape_texture :: gfx.View_Kind.Sampled
 VIEW_ACCESS_material_ape_texture :: gfx.Shader_Resource_Access.Read
-D3D11_FS_SMP_material_ape_sampler :: 0
-D3D11_FS_SMP_material_ape_sampler_SPACE :: 0
+D3D12_FS_SMP_material_ape_sampler :: 0
+D3D12_FS_SMP_material_ape_sampler_SPACE :: 0
 SMP_material_ape_sampler :: 0
 VK_FS_VIEW_material_ape_texture :: 0
 VK_FS_VIEW_material_ape_texture_SPACE :: 0
@@ -81,7 +81,7 @@ Binding_Record_Desc :: struct {
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
 	records[0] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("material.ape_texture"),
@@ -97,7 +97,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[1] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
 		name = cstring("material.ape_sampler"),
@@ -166,7 +166,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Resource_View,
 			slot = 0,
@@ -177,7 +177,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[1] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Sampler,
 			slot = 0,

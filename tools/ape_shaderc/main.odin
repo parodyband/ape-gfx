@@ -8,7 +8,7 @@ import "core:path/filepath"
 import "core:strings"
 
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
-PACKAGE_VERSION :: u32(10)
+PACKAGE_VERSION :: u32(11)
 PACKAGE_HEADER_SIZE :: 28
 PACKAGE_STAGE_RECORD_SIZE :: 52
 PACKAGE_BINDING_RECORD_SIZE :: 64
@@ -17,7 +17,7 @@ PACKAGE_PERMUTATION_AXIS_RECORD_SIZE :: 24
 PACKAGE_VARIANT_RECORD_SIZE :: 40
 
 Target :: enum u32 {
-	D3D11_DXBC,
+	D3D12_DXIL,
 	Vulkan_SPIRV,
 }
 
@@ -421,16 +421,16 @@ create_modern_slang_context :: proc(slang: ^Slang_API) -> (Modern_Slang_Context,
 		return {}, false
 	}
 
-	dxbc_profile := global_session.vtable.findProfile(global_session, cstring("sm_5_0"))
+	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_0"))
 	spirv_profile := global_session.vtable.findProfile(global_session, cstring("glsl_450"))
-	if dxbc_profile == SLANG_PROFILE_UNKNOWN || spirv_profile == SLANG_PROFILE_UNKNOWN {
+	if dxil_profile == SLANG_PROFILE_UNKNOWN || spirv_profile == SLANG_PROFILE_UNKNOWN {
 		fmt.eprintln("ape_shaderc: failed to resolve modern Slang target profiles")
 		release_slang_unknown(cast(^ISlangUnknown)global_session)
 		return {}, false
 	}
 
 	targets := [?]Slang_Target_Desc {
-		{structureSize = uint(size_of(Slang_Target_Desc)), format = SLANG_TARGET_DXBC, profile = dxbc_profile},
+		{structureSize = uint(size_of(Slang_Target_Desc)), format = SLANG_TARGET_DXIL, profile = dxil_profile},
 		{structureSize = uint(size_of(Slang_Target_Desc)), format = SLANG_TARGET_SPIRV, profile = spirv_profile},
 	}
 	session_desc := Slang_Session_Desc {
@@ -804,7 +804,7 @@ slang_stage_for_stage :: proc(stage: Stage) -> (SlangStage, bool) {
 
 modern_target_index :: proc(target: Target) -> (SlangInt, bool) {
 	switch target {
-	case .D3D11_DXBC:
+	case .D3D12_DXIL:
 		return 0, true
 	case .Vulkan_SPIRV:
 		return 1, true
@@ -816,11 +816,11 @@ modern_target_index :: proc(target: Target) -> (SlangInt, bool) {
 append_stage_descs :: proc(stages: ^[dynamic]Stage_Desc, options: Options) {
 	if options.kind == .Compute {
 		append(stages, Stage_Desc {
-			target = .D3D11_DXBC,
+			target = .D3D12_DXIL,
 			stage = .Compute,
 			entry = "cs_main",
-			bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxbc", options.shader_name)}),
-			reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxbc.json", options.shader_name)}),
+			bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxil", options.shader_name)}),
+			reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxil.json", options.shader_name)}),
 		})
 		append(stages, Stage_Desc {
 			target = .Vulkan_SPIRV,
@@ -833,18 +833,18 @@ append_stage_descs :: proc(stages: ^[dynamic]Stage_Desc, options: Options) {
 	}
 
 	append(stages, Stage_Desc {
-		target = .D3D11_DXBC,
+		target = .D3D12_DXIL,
 		stage = .Vertex,
 		entry = "vs_main",
-		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxbc", options.shader_name)}),
-		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxbc.json", options.shader_name)}),
+		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxil", options.shader_name)}),
+		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxil.json", options.shader_name)}),
 	})
 	append(stages, Stage_Desc {
-		target = .D3D11_DXBC,
+		target = .D3D12_DXIL,
 		stage = .Fragment,
 		entry = "fs_main",
-		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxbc", options.shader_name)}),
-		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxbc.json", options.shader_name)}),
+		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxil", options.shader_name)}),
+		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxil.json", options.shader_name)}),
 	})
 	append(stages, Stage_Desc {
 		target = .Vulkan_SPIRV,
@@ -1202,10 +1202,10 @@ append_parameter_block_field_binding :: proc(
 		return false
 	}
 
+	// ParameterBlock fields inherit the reflected sub-element register space.
+	// DXIL uses that space for resources/samplers, while Vulkan uses it for
+	// descriptor-table slots.
 	space := native_space
-	if category != .Descriptor_Table_Slot {
-		space = 0
-	}
 
 	used := false
 	result := metadata.vtable.isParameterLocationUsed(
@@ -3448,8 +3448,8 @@ binding_kind_odin :: proc(kind: Binding_Kind) -> string {
 
 backend_odin :: proc(target: Target) -> string {
 	switch target {
-	case .D3D11_DXBC:
-		return "D3D11"
+	case .D3D12_DXIL:
+		return "D3D12"
 	case .Vulkan_SPIRV:
 		return "Vulkan"
 	}
@@ -3472,8 +3472,8 @@ stage_odin :: proc(stage: Stage) -> string {
 
 target_prefix :: proc(target: Target) -> string {
 	switch target {
-	case .D3D11_DXBC:
-		return "D3D11"
+	case .D3D12_DXIL:
+		return "D3D12"
 	case .Vulkan_SPIRV:
 		return "VK"
 	}

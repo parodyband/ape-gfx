@@ -15,9 +15,10 @@ import "core:fmt"
 // `Resource_Usage` lives in types.odin and supplies the from/to vocabulary.
 // `Subresource_Aspect` is the only aspect type in the public API.
 //
-// On the immediate-mode `Context` API (`gfx.barrier`), the D3D11 backend
-// validates the desc, runs the APE-16 debug-build consistency check against
-// a per-frame last-known-usage tracker on `Context`, and otherwise no-ops.
+// On the immediate-mode `Context` API (`gfx.barrier`), modern explicit
+// backends use this schema to emit native barriers and to run the APE-16
+// debug-build consistency check against the per-frame last-known-usage
+// tracker on `Context`.
 // `cmd_barrier(list, desc)` is the encoder-mode equivalent and returns
 // Unsupported until the `Command_List` runtime lands in APE-5; both verbs
 // share the same validator so the schema does not drift.
@@ -184,8 +185,7 @@ barrier_buffer_target :: proc(buffer: Buffer) -> Barrier_Target {
 // The immediate-mode counterpart of `cmd_barrier`. Recorded outside any pass
 // (calling between `begin_pass` / `end_pass` is a validation error). The
 // runtime emits one backend barrier record on Vulkan / D3D12 covering all
-// transitions in `desc`; D3D11 routes through the APE-16 validation policy
-// and otherwise no-ops.
+// transitions in `desc`.
 //
 // Validation (APE-16):
 //
@@ -197,8 +197,8 @@ barrier_buffer_target :: proc(buffer: Buffer) -> Barrier_Target {
 //     transitions update the tracker; the tracker is flushed at every
 //     `commit`.
 //
-// On D3D11 the actual D3D11 call is a no-op; the validator is the entire
-// observable behavior. The schema is the explicit one — D3D11 just has
+// On D3D12 the actual D3D12 call is a no-op; the validator is the entire
+// observable behavior. The schema is the explicit one — D3D12 just has
 // nothing to do with it (gfx-barriers-note.md §9.6).
 //
 // example:
@@ -233,7 +233,7 @@ barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
 // while a `Render_Pass_Encoder` or `Compute_Pass_Encoder` is open is a
 // validation error. The runtime emits one backend barrier record
 // (`vkCmdPipelineBarrier2` / `ResourceBarrier`) covering all transitions in
-// `desc`; D3D11 routes through the item-20 validation policy and otherwise
+// `desc`; D3D12 routes through the item-20 validation policy and otherwise
 // no-ops.
 //
 // Returns false on validation/backend failure; per-list error follows
@@ -575,10 +575,9 @@ barrier_tracker_role_for_view :: proc(view_state: View_State) -> Resource_Usage 
 	case .Sampled:
 		return .Sampled
 	case .Storage_Image, .Storage_Buffer:
-		// D3D11 has no public split between storage read and storage write,
-		// and Slang reflection access is conservative for storage resources.
-		// Treat a storage view bind as read/write so barriers must declare the
-		// common UAV-style role explicitly.
+		// Storage reflection can be conservative; treat a storage view bind as
+		// read/write so barriers must declare the common UAV-style role
+		// explicitly.
 		return .Storage_Read_Write
 	case .Color_Attachment, .Depth_Stencil_Attachment:
 		return .None

@@ -49,14 +49,14 @@ SIZE_ComputeUniforms_pad1 :: 4
 #assert(offset_of(ComputeUniforms, pad1) == OFFSET_ComputeUniforms_pad1)
 
 GROUP_0 :: 0
-D3D11_CS_VIEW_indirect_args :: 0
-D3D11_CS_VIEW_indirect_args_SPACE :: 0
+D3D12_CS_VIEW_indirect_args :: 0
+D3D12_CS_VIEW_indirect_args_SPACE :: 0
 VIEW_indirect_args :: 0
 VIEW_KIND_indirect_args :: gfx.View_Kind.Storage_Buffer
 VIEW_ACCESS_indirect_args :: gfx.Shader_Resource_Access.Read_Write
 VIEW_STRIDE_indirect_args :: 0
-D3D11_CS_UB_ComputeUniforms :: 0
-D3D11_CS_UB_ComputeUniforms_SPACE :: 0
+D3D12_CS_UB_ComputeUniforms :: 0
+D3D12_CS_UB_ComputeUniforms_SPACE :: 0
 UB_ComputeUniforms :: 0
 VK_CS_VIEW_indirect_args :: 0
 VK_CS_VIEW_indirect_args_SPACE :: 0
@@ -92,7 +92,7 @@ Binding_Record_Desc :: struct {
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
 	records[0] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Compute,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("indirect_args"),
@@ -108,7 +108,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[1] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Compute,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("ComputeUniforms"),
@@ -186,7 +186,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Compute,
 			kind = gfx.Shader_Binding_Kind.Resource_View,
 			slot = 0,
@@ -197,7 +197,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[1] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Compute,
 			kind = gfx.Shader_Binding_Kind.Uniform_Block,
 			slot = 0,

@@ -5,7 +5,7 @@ package gfx
 //
 // example:
 //   pkg, _ := shader_assets.load("build/shaders/triangle.ashader")
-//   desc, _ := shader_assets.shader_desc(&pkg, .D3D11_DXBC, "triangle")
+//   desc, _ := shader_assets.shader_desc(&pkg, .D3D12_DXIL, "triangle")
 //   shader, ok := gfx.create_shader(&ctx, desc)
 create_shader :: proc(ctx: ^Context, desc: Shader_Desc) -> (Shader, bool) {
 	if !require_initialized(ctx, "gfx.create_shader") {

@@ -19,7 +19,7 @@ package gfx
 
 // Command_Queue selects the queue submit_command_list targets.
 //
-// Today only `Graphics` is honored by the D3D11 backend. The enum exists so
+// Today only `Graphics` is honored by the D3D12 backend. The enum exists so
 // async compute and explicit transfer (items 21, 22 of the AAA roadmap) do
 // not require a parallel API later.
 Command_Queue :: enum {
@@ -49,8 +49,8 @@ Command_List_State :: enum {
 //
 // Per command-recording-note §7, the list carries the per-recorder error slot
 // (drained onto Context at submit) and the backend-private recording state
-// (a D3D11 deferred context, a Vulkan VkCommandBuffer + VkCommandPool checkout,
-// or a D3D12 ID3D12GraphicsCommandList + allocator checkout).
+// (a D3D12 ID3D12GraphicsCommandList + allocator checkout or a Vulkan
+// VkCommandBuffer + VkCommandPool checkout).
 Command_List :: struct {
 	ctx: ^Context,
 	frame_index: u64,
@@ -122,7 +122,7 @@ finish_command_list :: proc(list: ^Command_List) -> bool {
 // list case. Acquires the appropriate Queue from `ctx`, builds a one-element
 // `Submit_Info`, and forwards. Drains `list.last_error` onto `ctx` and
 // transitions the list to state `Submitted`. Today only `.Graphics` is
-// honored by the D3D11 backend; other queues are reserved for future work.
+// honored by the D3D12 backend; other queues are reserved for future work.
 //
 // Use `gfx.submit` directly when the submit needs timeline waits, signals,
 // or more than one list.

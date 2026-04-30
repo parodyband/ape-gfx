@@ -22,7 +22,7 @@ COLOR_MASK_RGBA :: COLOR_MASK_RGB | COLOR_MASK_A
 Backend :: enum {
 	Auto,
 	Null,
-	D3D11,
+	D3D12,
 	Vulkan,
 }
 
@@ -56,10 +56,7 @@ Binding_Group_Invalid :: Binding_Group(0)
 // `draw_indexed_indirect`, and `dispatch_indirect` (AAA roadmap item 11).
 // It composes with another role flag — typically `.Storage` for compute
 // passes that produce indirect args, or `.Immutable` for CPU-prepared initial
-// indirect buffers. D3D11 maps this to
-// `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS`, which precludes structured
-// storage views; combine `.Indirect` with `.Storage` only for raw buffers
-// (`storage_stride == 0`).
+// indirect buffers.
 Buffer_Usage_Flag :: enum {
 	Vertex,
 	Index,
@@ -123,22 +120,21 @@ View_Kind :: enum {
 // Backend mapping per value:
 //
 //   None
-//     D3D11   no-op (D3D11 has no public state).
 //     D3D12   D3D12_RESOURCE_STATE_COMMON.
 //     Vulkan  VK_IMAGE_LAYOUT_UNDEFINED, no access mask.
 //     Meaning: pre-first-use. The first transition out of None is auto-emitted
 //     by §9.1 attachments or by the first barrier that names the resource.
 //
 //   Sampled
-//     D3D11   SRV bind (informational).
+//     D3D12   SRV bind (informational).
 //     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
 //             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.
 //     Vulkan  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 //             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT.
 //
 //   Storage_Read
-//     D3D11   SRV bind on a structured/byteaddress buffer or storage image
-//             (informational; D3D11 does not split UAV read from write).
+//     D3D12   SRV bind on a structured/byteaddress buffer or storage image
+//             (informational; D3D12 does not split UAV read from write).
 //     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
 //             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE on UAV-capable
 //             resources used read-only this pass.
@@ -146,7 +142,7 @@ View_Kind :: enum {
 //             VK_ACCESS_2_SHADER_STORAGE_READ_BIT.
 //
 //   Storage_Write
-//     D3D11   UAV bind (informational).
+//     D3D12   UAV bind (informational).
 //     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
 //     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
 //             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
@@ -154,7 +150,7 @@ View_Kind :: enum {
 //             an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
 //
 //   Storage_Read_Write
-//     D3D11   UAV bind (informational; common read/write storage path).
+//     D3D12   UAV bind (informational; common read/write storage path).
 //     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
 //     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
 //             VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
@@ -162,13 +158,13 @@ View_Kind :: enum {
 //             resources a shader may both read and write in the same pass.
 //
 //   Color_Target
-//     D3D11   OMSetRenderTargets (informational).
+//     D3D12   OMSetRenderTargets (informational).
 //     D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
 //     Vulkan  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 //             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT.
 //
 //   Depth_Target_Read
-//     D3D11   OMSetRenderTargets with read-only DSV (informational).
+//     D3D12   OMSetRenderTargets with read-only DSV (informational).
 //     D3D12   D3D12_RESOURCE_STATE_DEPTH_READ.
 //     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
 //             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT. Used for early-Z
@@ -176,33 +172,33 @@ View_Kind :: enum {
 //             texture (gfx-barriers-note.md case 4.6).
 //
 //   Depth_Target_Write
-//     D3D11   OMSetRenderTargets with read/write DSV (informational).
+//     D3D12   OMSetRenderTargets with read/write DSV (informational).
 //     D3D12   D3D12_RESOURCE_STATE_DEPTH_WRITE.
 //     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 //             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT.
 //
 //   Copy_Source
-//     D3D11   CopyResource / CopySubresourceRegion source (informational).
+//     D3D12   CopyResource / CopySubresourceRegion source (informational).
 //     D3D12   D3D12_RESOURCE_STATE_COPY_SOURCE.
 //     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 //             VK_ACCESS_2_TRANSFER_READ_BIT.
 //
 //   Copy_Dest
-//     D3D11   CopyResource / CopySubresourceRegion destination, UpdateSubresource
+//     D3D12   CopyResource / CopySubresourceRegion destination, UpdateSubresource
 //             target (informational).
 //     D3D12   D3D12_RESOURCE_STATE_COPY_DEST.
 //     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 //             VK_ACCESS_2_TRANSFER_WRITE_BIT.
 //
 //   Indirect_Argument
-//     D3D11   ExecuteIndirect-style argument buffer bind (informational).
+//     D3D12   ExecuteIndirect-style argument buffer bind (informational).
 //     D3D12   D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT.
 //     Vulkan  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT (buffers only — there is
 //             no image layout for this state). Read by draw_indirect /
 //             dispatch_indirect (AAA roadmap items 11-15).
 //
 //   Present
-//     D3D11   IDXGISwapChain::Present source (informational).
+//     D3D12   IDXGISwapChain::Present source (informational).
 //     D3D12   D3D12_RESOURCE_STATE_PRESENT (alias of COMMON).
 //     Vulkan  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR. Only valid on swapchain images;
 //             pass attachments use it as `initial_usage` / `final_usage` to
@@ -537,9 +533,9 @@ Pass_Action :: struct {
 // Desc configures a graphics Context.
 //
 // `backend` selects the native implementation. `Backend.Auto` resolves at
-// `init` time to a platform-appropriate backend: `D3D11` on Windows, and
+// `init` time to a platform-appropriate backend: `D3D12` on Windows, and
 // `Null` on every other platform until Vulkan/Metal land. Naming a concrete
-// backend (e.g. `.D3D11`) bypasses resolution and is used as-is.
+// backend (e.g. `.D3D12`) bypasses resolution and is used as-is.
 Desc :: struct {
 	backend: Backend,
 	width: i32,
@@ -579,9 +575,7 @@ Buffer_Read_Desc :: struct {
 //
 // Field order and types match `D3D12_DRAW_ARGUMENTS`,
 // `VkDrawIndirectCommand`, and `MTLDrawPrimitivesIndirectArguments` so the
-// same byte image dispatches across all three backends. D3D11
-// `DrawInstancedIndirect` consumes the same four `u32` words via
-// `D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS` buffers.
+// same byte image dispatches across all modern backends.
 Draw_Indirect_Args :: struct {
 	vertex_count:   u32,
 	instance_count: u32,
@@ -610,8 +604,7 @@ Draw_Indexed_Indirect_Args :: struct {
 //
 // Field order matches `D3D12_DISPATCH_ARGUMENTS`,
 // `VkDispatchIndirectCommand`, and
-// `MTLDispatchThreadgroupsIndirectArguments`. D3D11
-// `DispatchIndirect` consumes the same three `u32` words.
+// `MTLDispatchThreadgroupsIndirectArguments`.
 Dispatch_Indirect_Args :: struct {
 	thread_group_count_x: u32,
 	thread_group_count_y: u32,
@@ -621,8 +614,7 @@ Dispatch_Indirect_Args :: struct {
 // INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
 // `offset` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect` /
 // `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
-// backends (D3D11 indirect-args buffers; D3D12 / Vulkan are looser) so a
-// value that satisfies this constant is valid everywhere.
+// planned backends, so a value that satisfies this constant is valid everywhere.
 INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
 
 // DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
@@ -1141,8 +1133,8 @@ backend_name :: proc(backend: Backend) -> string {
 		return "auto"
 	case .Null:
 		return "null"
-	case .D3D11:
-		return "d3d11"
+	case .D3D12:
+		return "d3d12"
 	case .Vulkan:
 		return "vulkan"
 	}

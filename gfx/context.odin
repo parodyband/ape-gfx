@@ -223,7 +223,7 @@ resolve_backend :: proc(desc: Desc) -> Backend {
 	if desc.backend == .Auto {
 		when ODIN_OS == .Windows {
 			if desc.native_window != nil {
-				return .D3D11
+				return .D3D12
 			}
 
 			return .Null

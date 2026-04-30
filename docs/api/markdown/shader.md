@@ -234,7 +234,7 @@ unload frees package-owned slices created by load.
 ### `Backend_Target`
 
 ```odin
-Backend_Target :: enum {D3D11_DXBC, Vulkan_SPIRV}
+Backend_Target :: enum {D3D12_DXIL, Vulkan_SPIRV}
 ```
 
 Backend_Target selects which compiled backend payload to read from an .ashader package.
@@ -283,9 +283,8 @@ Package :: struct {version: u32, bytes: []u8, stages: []Stage_Record, bindings: 
 
 Package owns bytes and parsed metadata loaded from one .ashader file.
 `axes` and `variants` describe the permutation key space declared by the
-shader package. Pre-v10 packages synthesize a single default variant that
-covers every stage and binding so existing shaders keep loading without
-permutation metadata.
+shader package. v11 is the first D3D12/DXIL package version; older packages
+are intentionally rejected.
 
 ### `Permutation_Axis`
 

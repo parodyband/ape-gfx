@@ -26,8 +26,8 @@ dispatch_threads :: proc(ctx: ^gfx.Context, thread_count_x: u32, thread_count_y:
 }
 
 GROUP_0 :: 0
-D3D11_CS_VIEW_output_buffer :: 0
-D3D11_CS_VIEW_output_buffer_SPACE :: 0
+D3D12_CS_VIEW_output_buffer :: 0
+D3D12_CS_VIEW_output_buffer_SPACE :: 0
 VIEW_output_buffer :: 0
 VIEW_KIND_output_buffer :: gfx.View_Kind.Storage_Buffer
 VIEW_ACCESS_output_buffer :: gfx.Shader_Resource_Access.Read_Write
@@ -64,7 +64,7 @@ Binding_Record_Desc :: struct {
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
 	records[0] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Compute,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("output_buffer"),
@@ -120,7 +120,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Compute,
 			kind = gfx.Shader_Binding_Kind.Resource_View,
 			slot = 0,

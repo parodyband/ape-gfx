@@ -1,4 +1,4 @@
-param()
+﻿param()
 
 $ErrorActionPreference = "Stop"
 
@@ -56,19 +56,19 @@ $ForbiddenInternalPatterns = @(
 	"backend_create_",
 	"backend_destroy_",
 	"backend_query_",
-	"d3d11_create_",
-	"d3d11_destroy_",
-	"d3d11_query_",
+	"d3d12_create_",
+	"d3d12_destroy_",
+	"d3d12_query_",
 	"null_create_",
 	"null_destroy_",
 	"vulkan_create_",
 	"vulkan_destroy_",
-	"D3D11_State",
-	"D3D11_Buffer",
-	"D3D11_Image",
-	"D3D11_View",
-	"D3D11_Shader",
-	"D3D11_Pipeline",
+	"D3D12_State",
+	"D3D12_Buffer",
+	"D3D12_Image",
+	"D3D12_View",
+	"D3D12_Shader",
+	"D3D12_Pipeline",
 	"Resource_Pool",
 	"Resource_Handle_Status",
 	"alloc_resource_id",

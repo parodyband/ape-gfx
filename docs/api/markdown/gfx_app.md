@@ -278,7 +278,7 @@ Run_Desc :: struct {title: cstring, width: i32, height: i32, gfx_label: string, 
 Run_Desc configures the gfx_app.run sample harness.
 The harness owns app.init/shutdown, window creation, gfx.init/shutdown, and
 the swapchain-resize / event-poll loop. It does NOT touch the recording
-model — callers still issue begin_pass / apply_pipeline / draw / end_pass /
+model â€” callers still issue begin_pass / apply_pipeline / draw / end_pass /
 commit explicitly inside `frame`.
 This package is deliberately separate from `gfx`: production code is
 expected to drive gfx directly. The harness exists only to keep one-question

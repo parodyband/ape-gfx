@@ -22,7 +22,7 @@ SlangSessionFlags :: u32
 SLANG_API_VERSION :: u32(0)
 SLANG_LANGUAGE_VERSION_2025 :: u32(2025)
 SLANG_PROFILE_UNKNOWN :: SlangProfileID(0)
-SLANG_TARGET_DXBC :: SlangCompileTarget(8)
+SLANG_TARGET_DXIL :: SlangCompileTarget(10)
 SLANG_TARGET_SPIRV :: SlangCompileTarget(6)
 SLANG_STAGE_VERTEX :: SlangStage(1)
 SLANG_STAGE_FRAGMENT :: SlangStage(5)
@@ -485,9 +485,9 @@ probe_modern_slang_api :: proc(api: ^Slang_API) -> bool {
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)global_session)
 
-	dxbc_profile := global_session.vtable.findProfile(global_session, cstring("sm_5_0"))
-	if dxbc_profile == SLANG_PROFILE_UNKNOWN {
-		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_5_0")
+	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_0"))
+	if dxil_profile == SLANG_PROFILE_UNKNOWN {
+		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_6_0")
 		return false
 	}
 
@@ -500,8 +500,8 @@ probe_modern_slang_api :: proc(api: ^Slang_API) -> bool {
 	targets := [?]Slang_Target_Desc {
 		{
 			structureSize = uint(size_of(Slang_Target_Desc)),
-			format = SLANG_TARGET_DXBC,
-			profile = dxbc_profile,
+			format = SLANG_TARGET_DXIL,
+			profile = dxil_profile,
 		},
 		{
 			structureSize = uint(size_of(Slang_Target_Desc)),

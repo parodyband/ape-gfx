@@ -1,4 +1,4 @@
-param()
+﻿param()
 
 $ErrorActionPreference = "Stop"
 
@@ -61,16 +61,16 @@ main :: proc() {
 	}
 	expect_error_info(&vulkan_ctx, .Unsupported, "gfx.vulkan: backend scaffold exists, instance/device creation is not implemented yet")
 
-	d3d11_without_window_ctx, d3d11_without_window_ok := gfx.init({
-		backend = .D3D11,
+	d3d12_ctx, d3d12_ok := gfx.init({
+		backend = .D3D12,
 		width = 1,
 		height = 1,
 		swapchain_format = .BGRA8,
 	})
-	if d3d11_without_window_ok {
-		fail("D3D11 Desc without native_window unexpectedly succeeded")
+	if d3d12_ok {
+		fail("D3D12 without native window unexpectedly initialized")
 	}
-	expect_error_info(&d3d11_without_window_ctx, .Validation, "gfx.d3d11: native_window is required")
+	expect_error_info(&d3d12_ctx, .Validation, "gfx.d3d12: native_window is required")
 
 	ctx, ok := gfx.init({backend = .Null, label = "descriptor contracts"})
 	if !ok {

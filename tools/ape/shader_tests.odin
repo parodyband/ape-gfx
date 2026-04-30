@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import "core:fmt"
 import "core:os"
@@ -236,11 +236,11 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
 	expected := [?]string {
 		"BINDING_RECORD_COUNT :: 10",
 		"GROUP_0 :: 0",
-		"D3D11_CS_UB_FrameUniforms :: 0",
-		"D3D11_CS_VIEW_input_texture :: 0",
-		"D3D11_CS_SMP_input_sampler :: 0",
-		"D3D11_CS_VIEW_output_image :: 0",
-		"D3D11_CS_VIEW_output_items :: 1",
+		"D3D12_CS_UB_FrameUniforms :: 0",
+		"D3D12_CS_VIEW_input_texture :: 0",
+		"D3D12_CS_SMP_input_sampler :: 0",
+		"D3D12_CS_VIEW_output_image :: 0",
+		"D3D12_CS_VIEW_output_items :: 1",
 		"VK_CS_UB_FrameUniforms :: 0",
 		"VK_CS_VIEW_input_texture :: 1",
 		"VK_CS_SMP_input_sampler :: 2",
@@ -274,7 +274,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
 		"desc.entries[0] = {",
 		"stages = {.Compute}",
 		"desc.native_bindings[0] = {",
-		"target = gfx.Backend.D3D11",
+		"target = gfx.Backend.D3D12",
 		"target = gfx.Backend.Vulkan",
 		"native_space = 0",
 		"set_group_view_input_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
@@ -376,10 +376,14 @@ float4 fs_main(VS_Output input) : SV_Target
 		"SMP_material_diffuse_sampler :: 0",
 		"VIEW_shadow_resources_shadow_map :: 0",
 		"SMP_shadow_resources_shadow_sampler :: 0",
-		"D3D11_FS_VIEW_material_diffuse_texture :: 0",
-		"D3D11_FS_SMP_material_diffuse_sampler :: 0",
-		"D3D11_FS_VIEW_shadow_resources_shadow_map :: 1",
-		"D3D11_FS_SMP_shadow_resources_shadow_sampler :: 1",
+		"D3D12_FS_VIEW_material_diffuse_texture :: 0",
+		"D3D12_FS_SMP_material_diffuse_sampler :: 0",
+		"D3D12_FS_VIEW_material_diffuse_texture_SPACE :: 1",
+		"D3D12_FS_SMP_material_diffuse_sampler_SPACE :: 1",
+		"D3D12_FS_VIEW_shadow_resources_shadow_map :: 0",
+		"D3D12_FS_SMP_shadow_resources_shadow_sampler :: 0",
+		"D3D12_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2",
+		"D3D12_FS_SMP_shadow_resources_shadow_sampler_SPACE :: 2",
 		"VK_FS_VIEW_material_diffuse_texture_SPACE :: 1",
 		"VK_FS_SMP_material_diffuse_sampler_SPACE :: 1",
 		"VK_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2",
@@ -714,17 +718,17 @@ remove_shaderc_failure_outputs :: proc(test_dir: string, name: string, kind: Sha
 
 	switch kind {
 	case .Compute:
-		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc", name)}, context.temp_allocator)) ||
-		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc.json", name)}, context.temp_allocator)) ||
+		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil.json", name)}, context.temp_allocator)) ||
 		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.spv", name)}, context.temp_allocator)) ||
 		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.spv.json", name)}, context.temp_allocator)) {
 			return false
 		}
 	case .Graphics:
-		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc", name)}, context.temp_allocator)) ||
-		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc.json", name)}, context.temp_allocator)) ||
-		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc", name)}, context.temp_allocator)) ||
-		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc.json", name)}, context.temp_allocator)) ||
+		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil.json", name)}, context.temp_allocator)) ||
 		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.spv", name)}, context.temp_allocator)) ||
 		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.spv.json", name)}, context.temp_allocator)) ||
 		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.spv", name)}, context.temp_allocator)) ||
@@ -755,17 +759,17 @@ assert_shaderc_failure_outputs_absent :: proc(test_dir: string, name: string, ki
 
 	switch kind {
 	case .Compute:
-		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc", name)}, context.temp_allocator), "D3D11 compute bytecode") ||
-		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxbc.json", name)}, context.temp_allocator), "D3D11 compute reflection") ||
+		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil", name)}, context.temp_allocator), "D3D12 compute bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil.json", name)}, context.temp_allocator), "D3D12 compute reflection") ||
 		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.spv", name)}, context.temp_allocator), "Vulkan compute bytecode") ||
 		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.spv.json", name)}, context.temp_allocator), "Vulkan compute reflection") {
 			return false
 		}
 	case .Graphics:
-		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc", name)}, context.temp_allocator), "D3D11 vertex bytecode") ||
-		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxbc.json", name)}, context.temp_allocator), "D3D11 vertex reflection") ||
-		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc", name)}, context.temp_allocator), "D3D11 fragment bytecode") ||
-		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxbc.json", name)}, context.temp_allocator), "D3D11 fragment reflection") ||
+		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil", name)}, context.temp_allocator), "D3D12 vertex bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil.json", name)}, context.temp_allocator), "D3D12 vertex reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil", name)}, context.temp_allocator), "D3D12 fragment bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil.json", name)}, context.temp_allocator), "D3D12 fragment reflection") ||
 		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.spv", name)}, context.temp_allocator), "Vulkan vertex bytecode") ||
 		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.spv.json", name)}, context.temp_allocator), "Vulkan vertex reflection") ||
 		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.spv", name)}, context.temp_allocator), "Vulkan fragment bytecode") ||

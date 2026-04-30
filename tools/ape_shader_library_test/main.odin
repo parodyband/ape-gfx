@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import "core:fmt"
 import "core:os"
@@ -12,7 +12,7 @@ import shader "ape:shader"
 //      keys and asserts the handles differ between variants.
 //   2. Repeats both lookups and asserts the cache returns the same handles.
 //   3. Drives a Null-backend frame that applies *both* pipelines in a single
-//      pass — the runtime "switch a permutation mid-frame" case the design
+//      pass â€” the runtime "switch a permutation mid-frame" case the design
 //      note calls out.
 //
 // The pipeline cache is keyed by (Shader_Id, Permutation_Key, state_hash);
@@ -38,14 +38,14 @@ main :: proc() {
 			axis_values = nil,
 			stages = []shader.Test_Package_Variant_Stage {
 				{
-					target = .D3D11_DXBC,
+					target = .D3D12_DXIL,
 					stage = .Vertex,
 					entry = "vs_main",
 					bytecode = vs_default_bytecode,
 					reflection_json = "{}",
 				},
 				{
-					target = .D3D11_DXBC,
+					target = .D3D12_DXIL,
 					stage = .Fragment,
 					entry = "fs_main",
 					bytecode = fs_default_bytecode,
@@ -57,14 +57,14 @@ main :: proc() {
 			axis_values = []u16{1},
 			stages = []shader.Test_Package_Variant_Stage {
 				{
-					target = .D3D11_DXBC,
+					target = .D3D12_DXIL,
 					stage = .Vertex,
 					entry = "vs_alt",
 					bytecode = vs_alt_bytecode,
 					reflection_json = "{}",
 				},
 				{
-					target = .D3D11_DXBC,
+					target = .D3D12_DXIL,
 					stage = .Fragment,
 					entry = "fs_alt",
 					bytecode = fs_alt_bytecode,

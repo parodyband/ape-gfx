@@ -24,8 +24,8 @@ main :: proc() {
 	}
 	defer shader_assets.unload(&pkg)
 
-	if pkg.version != 10 {
-		fmt.eprintln("ape_ashader_roundtrip_test: expected version 10, got ", pkg.version)
+	if pkg.version != 11 {
+		fmt.eprintln("ape_ashader_roundtrip_test: expected version 11, got ", pkg.version)
 		os.exit(1)
 	}
 

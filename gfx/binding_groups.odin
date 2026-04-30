@@ -1052,7 +1052,7 @@ validate_binding_group_native_binding :: proc(
 	index: int,
 ) -> bool {
 	switch native.target {
-	case .D3D11, .Vulkan:
+	case .D3D12, .Vulkan:
 	case .Auto, .Null:
 		set_validation_errorf(ctx, "gfx.validate_binding_group_layout_desc: native binding %d has an invalid backend target", index)
 		return false

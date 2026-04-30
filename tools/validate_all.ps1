@@ -1,8 +1,7 @@
 param(
 	[int]$AutoExitFrames = 5,
 	[switch]$SkipShaderCompile,
-	[switch]$SkipD3D11Builds,
-	[switch]$SkipD3D11Runs,
+	[switch]$SkipSampleBuilds,
 	[switch]$SkipGitDiffCheck
 )
 
@@ -26,11 +25,8 @@ $ApeArguments = @(
 if ($SkipShaderCompile) {
 	$ApeArguments += "-skip-shader-compile"
 }
-if ($SkipD3D11Builds) {
-	$ApeArguments += "-skip-d3d11-builds"
-}
-if ($SkipD3D11Runs) {
-	$ApeArguments += "-skip-d3d11-runs"
+if ($SkipSampleBuilds) {
+	$ApeArguments += "-skip-sample-builds"
 }
 if ($SkipGitDiffCheck) {
 	$ApeArguments += "-skip-git-diff-check"

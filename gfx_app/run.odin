@@ -1,4 +1,4 @@
-package gfx_app
+﻿package gfx_app
 
 import "core:fmt"
 import app "ape:app"
@@ -20,7 +20,7 @@ Frame_Info :: struct {
 //
 // The harness owns app.init/shutdown, window creation, gfx.init/shutdown, and
 // the swapchain-resize / event-poll loop. It does NOT touch the recording
-// model — callers still issue begin_pass / apply_pipeline / draw / end_pass /
+// model â€” callers still issue begin_pass / apply_pipeline / draw / end_pass /
 // commit explicitly inside `frame`.
 //
 // This package is deliberately separate from `gfx`: production code is
@@ -79,7 +79,7 @@ run :: proc(desc: Run_Desc) -> bool {
 
 	backend := desc.backend
 	if backend == .Auto {
-		backend = .D3D11
+		backend = .D3D12
 	}
 	swapchain_format := desc.swapchain_format
 	if swapchain_format == .Invalid {

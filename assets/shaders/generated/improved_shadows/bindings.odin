@@ -87,31 +87,31 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 }
 
 GROUP_0 :: 0
-D3D11_VS_UB_ObjectUniforms :: 0
-D3D11_VS_UB_ObjectUniforms_SPACE :: 0
+D3D12_VS_UB_ObjectUniforms :: 0
+D3D12_VS_UB_ObjectUniforms_SPACE :: 0
 UB_ObjectUniforms :: 0
-D3D11_VS_UB_FrameUniforms :: 1
-D3D11_VS_UB_FrameUniforms_SPACE :: 0
+D3D12_VS_UB_FrameUniforms :: 1
+D3D12_VS_UB_FrameUniforms_SPACE :: 0
 UB_FrameUniforms :: 1
-D3D11_FS_UB_FrameUniforms :: 1
-D3D11_FS_UB_FrameUniforms_SPACE :: 0
+D3D12_FS_UB_FrameUniforms :: 1
+D3D12_FS_UB_FrameUniforms_SPACE :: 0
 GROUP_1 :: 1
-D3D11_FS_VIEW_material_diffuse_texture :: 0
-D3D11_FS_VIEW_material_diffuse_texture_SPACE :: 0
+D3D12_FS_VIEW_material_diffuse_texture :: 0
+D3D12_FS_VIEW_material_diffuse_texture_SPACE :: 1
 VIEW_material_diffuse_texture :: 0
 VIEW_KIND_material_diffuse_texture :: gfx.View_Kind.Sampled
 VIEW_ACCESS_material_diffuse_texture :: gfx.Shader_Resource_Access.Read
-D3D11_FS_SMP_material_diffuse_sampler :: 0
-D3D11_FS_SMP_material_diffuse_sampler_SPACE :: 0
+D3D12_FS_SMP_material_diffuse_sampler :: 0
+D3D12_FS_SMP_material_diffuse_sampler_SPACE :: 1
 SMP_material_diffuse_sampler :: 0
 GROUP_2 :: 2
-D3D11_FS_VIEW_shadow_resources_shadow_map :: 1
-D3D11_FS_VIEW_shadow_resources_shadow_map_SPACE :: 0
+D3D12_FS_VIEW_shadow_resources_shadow_map :: 0
+D3D12_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2
 VIEW_shadow_resources_shadow_map :: 0
 VIEW_KIND_shadow_resources_shadow_map :: gfx.View_Kind.Sampled
 VIEW_ACCESS_shadow_resources_shadow_map :: gfx.Shader_Resource_Access.Read
-D3D11_FS_SMP_shadow_resources_shadow_sampler :: 1
-D3D11_FS_SMP_shadow_resources_shadow_sampler_SPACE :: 0
+D3D12_FS_SMP_shadow_resources_shadow_sampler :: 0
+D3D12_FS_SMP_shadow_resources_shadow_sampler_SPACE :: 2
 SMP_shadow_resources_shadow_sampler :: 0
 VK_VS_UB_ObjectUniforms :: 0
 VK_VS_UB_ObjectUniforms_SPACE :: 0
@@ -157,7 +157,7 @@ Binding_Record_Desc :: struct {
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
 	records[0] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("ObjectUniforms"),
@@ -170,7 +170,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[1] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("FrameUniforms"),
@@ -183,7 +183,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[2] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("FrameUniforms"),
@@ -196,14 +196,14 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[3] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("material.diffuse_texture"),
 		group = 1,
 		logical_slot = 0,
 		native_slot = 0,
-		native_space = 0,
+		native_space = 1,
 		resource_view = {
 			view_kind = gfx.View_Kind.Sampled,
 			access = gfx.Shader_Resource_Access.Read,
@@ -212,24 +212,24 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[4] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
 		name = cstring("material.diffuse_sampler"),
 		group = 1,
 		logical_slot = 0,
 		native_slot = 0,
-		native_space = 0,
+		native_space = 1,
 	}
 	records[5] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
 		name = cstring("shadow_resources.shadow_map"),
 		group = 2,
 		logical_slot = 0,
-		native_slot = 1,
-		native_space = 0,
+		native_slot = 0,
+		native_space = 2,
 		resource_view = {
 			view_kind = gfx.View_Kind.Sampled,
 			access = gfx.Shader_Resource_Access.Read,
@@ -238,14 +238,14 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		},
 	}
 	records[6] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
 		name = cstring("shadow_resources.shadow_sampler"),
 		group = 2,
 		logical_slot = 0,
-		native_slot = 1,
-		native_space = 0,
+		native_slot = 0,
+		native_space = 2,
 	}
 	records[7] = {
 		target = gfx.Backend.Vulkan,
@@ -420,7 +420,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Vertex,
 			kind = gfx.Shader_Binding_Kind.Uniform_Block,
 			slot = 0,
@@ -431,7 +431,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[1] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Vertex,
 			kind = gfx.Shader_Binding_Kind.Uniform_Block,
 			slot = 1,
@@ -442,7 +442,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[2] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Uniform_Block,
 			slot = 1,
@@ -453,45 +453,45 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 1 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Resource_View,
 			slot = 0,
 			native_slot = 0,
-			native_space = 0,
+			native_space = 1,
 		}
 	}
 	if group == 1 {
 		desc.native_bindings[1] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Sampler,
 			slot = 0,
 			native_slot = 0,
-			native_space = 0,
+			native_space = 1,
 		}
 	}
 	if group == 2 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Resource_View,
 			slot = 0,
-			native_slot = 1,
-			native_space = 0,
+			native_slot = 0,
+			native_space = 2,
 		}
 	}
 	if group == 2 {
 		desc.native_bindings[1] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Fragment,
 			kind = gfx.Shader_Binding_Kind.Sampler,
 			slot = 0,
-			native_slot = 1,
-			native_space = 0,
+			native_slot = 0,
+			native_space = 2,
 		}
 	}
 	if group == 0 {

@@ -24,12 +24,6 @@ package gfx
 //
 // Backend story:
 //
-//   D3D11   — one logical Graphics queue, no real timelines. `acquire_*_queue`
-//             returns the same Queue for Graphics and a sentinel for Compute /
-//             Transfer; explicit multi-queue submits return Unsupported until
-//             queue runtime exists; Timeline_Semaphore maps to a CPU-side u64
-//             plus a single ID3D11Query for fence emulation; Present rides
-//             IDXGISwapChain::Present.
 //   D3D12   — one ID3D12CommandQueue per kind; Timeline_Semaphore maps 1:1
 //             onto ID3D12Fence; Present rides IDXGISwapChain::Present and the
 //             frame fence is signaled on the graphics queue.
@@ -134,9 +128,7 @@ acquire_graphics_queue :: proc(ctx: ^Context) -> Queue {
 
 // acquire_compute_queue returns the Queue handle for the async-compute family.
 //
-// On D3D11 this returns the same Queue as `acquire_graphics_queue` and the
-// runtime serializes; on D3D12/Vulkan this is a distinct queue when the
-// adapter exposes one.
+// On D3D12/Vulkan this is a distinct queue when the adapter exposes one.
 acquire_compute_queue :: proc(ctx: ^Context) -> Queue {
 	set_unsupported_error(ctx, "gfx.acquire_compute_queue: explicit queues are not implemented yet")
 	return Queue_Invalid
@@ -144,7 +136,7 @@ acquire_compute_queue :: proc(ctx: ^Context) -> Queue {
 
 // acquire_transfer_queue returns the Queue handle for the copy-only family.
 //
-// Same fold-to-graphics rule as `acquire_compute_queue` on D3D11.
+// Returns the transfer queue when the backend exposes one.
 acquire_transfer_queue :: proc(ctx: ^Context) -> Queue {
 	set_unsupported_error(ctx, "gfx.acquire_transfer_queue: explicit queues are not implemented yet")
 	return Queue_Invalid

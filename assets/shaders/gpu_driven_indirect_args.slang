@@ -1,4 +1,4 @@
-// Compute shader for samples/d3d11_gpu_driven_indirect (AAA roadmap item 15).
+// Compute shader for samples/gpu_driven_indirect (AAA roadmap item 15).
 // Writes a single gfx.Draw_Indirect_Args record into a raw indirect buffer so a
 // later draw_indirect call can consume it without a CPU-side update.
 

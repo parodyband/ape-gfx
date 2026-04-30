@@ -121,8 +121,7 @@ INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
 INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
 `offset` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect` /
 `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
-backends (D3D11 indirect-args buffers; D3D12 / Vulkan are looser) so a
-value that satisfies this constant is valid everywhere.
+planned backends, so a value that satisfies this constant is valid everywhere.
 
 ### `Image_Invalid`
 
@@ -299,7 +298,7 @@ TRANSIENT_UNIFORM_ALIGNMENT :: 256
 TRANSIENT_UNIFORM_ALIGNMENT is the public alignment for slices returned
 with `Transient_Usage.Uniform`.
 256 is the strictest of the three target backends (D3D12 CB offset);
-using it on D3D11 too keeps per-frame heap usage portable across
+using it on D3D12 too keeps per-frame heap usage portable across
 builds. See gfx-transient-allocator-note.md §4.
 
 ### `TRANSIENT_VERTEX_ALIGNMENT`
@@ -338,9 +337,7 @@ acquire_compute_queue :: proc(ctx: ^Context) -> Queue {...}
 ```
 
 acquire_compute_queue returns the Queue handle for the async-compute family.
-On D3D11 this returns the same Queue as `acquire_graphics_queue` and the
-runtime serializes; on D3D12/Vulkan this is a distinct queue when the
-adapter exposes one.
+On D3D12/Vulkan this is a distinct queue when the adapter exposes one.
 
 ### `acquire_graphics_queue`
 
@@ -359,7 +356,7 @@ acquire_transfer_queue :: proc(ctx: ^Context) -> Queue {...}
 ```
 
 acquire_transfer_queue returns the Queue handle for the copy-only family.
-Same fold-to-graphics rule as `acquire_compute_queue` on D3D11.
+Returns the transfer queue when the backend exposes one.
 
 ### `apply_binding_group`
 
@@ -389,7 +386,7 @@ slot, parallel to `apply_binding_group`.
 heap (the layout slot's `kind == .Heap`). Mixing `apply_binding_group`
 and `apply_binding_heap` for the same logical slot in one draw is a
 validation error.
-Per the indexing model in §6, the *shader* declaration decides whether
+Per the indexing model in Â§6, the *shader* declaration decides whether
 reads use a constant, dynamic-uniform, or fully-dynamic index into the
 heap. The runtime does not pick.
 
@@ -489,8 +486,7 @@ barrier records one set of explicit transitions on a Context.
 The immediate-mode counterpart of `cmd_barrier`. Recorded outside any pass
 (calling between `begin_pass` / `end_pass` is a validation error). The
 runtime emits one backend barrier record on Vulkan / D3D12 covering all
-transitions in `desc`; D3D11 routes through the APE-16 validation policy
-and otherwise no-ops.
+transitions in `desc`.
 Validation (APE-16):
   - Always: handles valid, kind/handle agreement, ranges in bounds for the
     resource, `from`/`to` in the `Resource_Usage` enum.
@@ -499,8 +495,8 @@ Validation (APE-16):
     mismatch is reported as a wrong-barrier validation error. Successful
     transitions update the tracker; the tracker is flushed at every
     `commit`.
-On D3D11 the actual D3D11 call is a no-op; the validator is the entire
-observable behavior. The schema is the explicit one — D3D11 just has
+On D3D12 the actual D3D12 call is a no-op; the validator is the entire
+observable behavior. The schema is the explicit one — D3D12 just has
 nothing to do with it (gfx-barriers-note.md §9.6).
 example:
   gfx.barrier(&ctx, gfx.Barrier_Desc{
@@ -674,7 +670,7 @@ Recorded between encoder scopes (§9.2 of the barriers note); calling it
 while a `Render_Pass_Encoder` or `Compute_Pass_Encoder` is open is a
 validation error. The runtime emits one backend barrier record
 (`vkCmdPipelineBarrier2` / `ResourceBarrier`) covering all transitions in
-`desc`; D3D11 routes through the item-20 validation policy and otherwise
+`desc`; D3D12 routes through the item-20 validation policy and otherwise
 no-ops.
 Returns false on validation/backend failure; per-list error follows
 recording-note §7.3.
@@ -826,15 +822,9 @@ create_binding_heap allocates a long-lived descriptor heap.
 Must be called on the Context thread. Returns `Binding_Heap_Invalid` and
 `false` on validation/backend failure; check `last_error(ctx)`.
 Backends:
-  D3D11   — permanently rejected with `Features.bindless_resource_tables
-            = false` (item 29 / APE-25). The error code is
-            `Error_Code.Unsupported`; the message names D3D11 explicitly
-            so the rejection is not confused with the implementation-
-            pending Unsupported on other backends. See §9 of the
-            bindless note.
-  D3D12   — allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
+  D3D12   â€” allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
             matching `D3D12_DESCRIPTOR_HEAP_TYPE`.
-  Vulkan  — allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
+  Vulkan  â€” allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
             with `UPDATE_AFTER_BIND` / `PARTIALLY_BOUND` /
             `runtimeDescriptorArray` flags from
             `VK_EXT_descriptor_indexing`.
@@ -958,7 +948,7 @@ create_shader creates backend shader objects from compiled shader bytecode.
 On failure, the returned handle is Shader_Invalid and last_error explains why.
 example:
   pkg, _ := shader_assets.load("build/shaders/triangle.ashader")
-  desc, _ := shader_assets.shader_desc(&pkg, .D3D11_DXBC, "triangle")
+  desc, _ := shader_assets.shader_desc(&pkg, .D3D12_DXIL, "triangle")
   shader, ok := gfx.create_shader(&ctx, desc)
 
 ### `create_timeline_semaphore`
@@ -1428,7 +1418,7 @@ The heap remembers the wait. The next `update_binding_heap_views` /
 error until `gfx.timeline_semaphore_value(frame_done.semaphore) >=
 frame_done.value`. Callers that already serialize frame pacing on the
 CPU side may pass `{Timeline_Semaphore_Invalid, 0}` to release without
-a fence (§7.2 of the bindless note).
+a fence (Â§7.2 of the bindless note).
 Releasing a slot does not zero or null its descriptor; readers that race
 the release see the old contents. The fence guarantees no submit reads
 the descriptor after release completes.
@@ -1531,7 +1521,7 @@ Convenience wrapper over `submit` (queue.odin) for the no-semaphore single-
 list case. Acquires the appropriate Queue from `ctx`, builds a one-element
 `Submit_Info`, and forwards. Drains `list.last_error` onto `ctx` and
 transitions the list to state `Submitted`. Today only `.Graphics` is
-honored by the D3D11 backend; other queues are reserved for future work.
+honored by the D3D12 backend; other queues are reserved for future work.
 Use `gfx.submit` directly when the submit needs timeline waits, signals,
 or more than one list.
 
@@ -1621,7 +1611,7 @@ update_binding_heap_views :: proc(ctx: ^Context, heap: Binding_Heap, first_index
 update_binding_heap_views writes a contiguous range of resource-view
 descriptors into a heap.
 The write is **visible to every submit issued after this call returns**
-(§7.1 of the bindless note). It is *not* visible to in-flight submits;
+(Â§7.1 of the bindless note). It is *not* visible to in-flight submits;
 a slot already read by an unfinished submit must be released first.
 Validation:
   - `heap` is a resource-view heap (not a sampler heap).
@@ -1630,7 +1620,7 @@ Validation:
     `view_kind` / `access` / `storage_image_format` /
     `storage_buffer_stride`.
   - no slot in the range has a pending fence recorded by
-    `release_binding_heap_slot` that has not yet retired (§7.2).
+    `release_binding_heap_slot` that has not yet retired (Â§7.2).
 Returns false on validation/backend failure; check `last_error(ctx)`.
 example:
   gfx.update_binding_heap_views(&ctx, heap, 0, []gfx.View{
@@ -1698,7 +1688,7 @@ range is an overload group for common upload/readback byte ranges.
 ### `Backend`
 
 ```odin
-Backend :: enum {Auto, Null, D3D11, Vulkan}
+Backend :: enum {Auto, Null, D3D12, Vulkan}
 ```
 
 Backend selects the native graphics implementation used by a Context.
@@ -1774,7 +1764,7 @@ occupies `[slot, slot + count)` in the layout's per-kind slot space.
 Backend-native expansion uses `Binding_Group_Native_Binding_Desc` for the
 base slot; the per-element native slots are `base + index` and are not
 emitted into `native_bindings` separately.
-`views` and `samplers` are mutually exclusive — exactly one is non-empty,
+`views` and `samplers` are mutually exclusive â€” exactly one is non-empty,
 gated by `kind`. `len(views)` (or `len(samplers)`) must equal the
 generated array's reflected `count` for full population, or the user must
 use the `_range` setter from the generated binding to populate a subset.
@@ -1857,8 +1847,8 @@ table.
 Created by `create_binding_heap`. Slots are written individually with
 `update_binding_heap_views` / `update_binding_heap_samplers`. Unlike
 `Binding_Group`, a heap is *not* immutable; per-entry reuse is fence-
-gated through `Timeline_Semaphore` (see §7.2 of the bindless note).
-One heap holds one element kind — sampled views, storage images, storage
+gated through `Timeline_Semaphore` (see Â§7.2 of the bindless note).
+One heap holds one element kind â€” sampled views, storage images, storage
 buffers, *or* samplers. Mixed-kind heaps are not in the public contract
 (Vulkan and D3D12 both forbid them in their natural form).
 
@@ -1872,7 +1862,7 @@ Binding_Heap_Desc creates a `Binding_Heap`.
 Exactly one of (`view_kind`, `samplers`) names the heap's element kind:
   samplers = true                  -> sampler heap; view_kind / format /
                                       stride must be zero-init.
-  samplers = false, view_kind = … -> resource-view heap; field semantics
+  samplers = false, view_kind = â€¦ -> resource-view heap; field semantics
                                       follow `Binding_Group_Resource_View_Layout_Desc`.
 `capacity` is the number of slots. Fence-gated reuse means a 4096-slot
 heap can serve far more than 4096 distinct resources over its lifetime;
@@ -2002,10 +1992,7 @@ Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
 `draw_indexed_indirect`, and `dispatch_indirect` (AAA roadmap item 11).
 It composes with another role flag — typically `.Storage` for compute
 passes that produce indirect args, or `.Immutable` for CPU-prepared initial
-indirect buffers. D3D11 maps this to
-`D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS`, which precludes structured
-storage views; combine `.Indirect` with `.Storage` only for raw buffers
-(`storage_stride == 0`).
+indirect buffers.
 
 ### `Color`
 
@@ -2055,8 +2042,8 @@ The owning thread records passes into the list, calls `finish_command_list`,
 and may then transfer ownership to the Context thread for `submit_command_list`.
 Per command-recording-note §7, the list carries the per-recorder error slot
 (drained onto Context at submit) and the backend-private recording state
-(a D3D11 deferred context, a Vulkan VkCommandBuffer + VkCommandPool checkout,
-or a D3D12 ID3D12GraphicsCommandList + allocator checkout).
+(a D3D12 ID3D12GraphicsCommandList + allocator checkout or a Vulkan
+VkCommandBuffer + VkCommandPool checkout).
 
 ### `Command_List_State`
 
@@ -2078,7 +2065,7 @@ Command_Queue :: enum {Graphics, Compute, Transfer}
 ```
 
 Command_Queue selects the queue submit_command_list targets.
-Today only `Graphics` is honored by the D3D11 backend. The enum exists so
+Today only `Graphics` is honored by the D3D12 backend. The enum exists so
 async compute and explicit transfer (items 21, 22 of the AAA roadmap) do
 not require a parallel API later.
 
@@ -2174,9 +2161,9 @@ Desc :: struct {backend: Backend, width: i32, height: i32, native_window: rawptr
 
 Desc configures a graphics Context.
 `backend` selects the native implementation. `Backend.Auto` resolves at
-`init` time to a platform-appropriate backend: `D3D11` on Windows, and
+`init` time to a platform-appropriate backend: `D3D12` on Windows, and
 `Null` on every other platform until Vulkan/Metal land. Naming a concrete
-backend (e.g. `.D3D11`) bypasses resolution and is used as-is.
+backend (e.g. `.D3D12`) bypasses resolution and is used as-is.
 
 ### `Dispatch_Indirect_Args`
 
@@ -2188,8 +2175,7 @@ Dispatch_Indirect_Args is the canonical layout one indirect dispatch
 consumes from an indirect-capable buffer (AAA roadmap item 11).
 Field order matches `D3D12_DISPATCH_ARGUMENTS`,
 `VkDispatchIndirectCommand`, and
-`MTLDispatchThreadgroupsIndirectArguments`. D3D11
-`DispatchIndirect` consumes the same three `u32` words.
+`MTLDispatchThreadgroupsIndirectArguments`.
 
 ### `Draw_Indexed_Indirect_Args`
 
@@ -2215,9 +2201,7 @@ Draw_Indirect_Args is the canonical layout one non-indexed indirect draw
 command consumes from an indirect-capable buffer (AAA roadmap item 11).
 Field order and types match `D3D12_DRAW_ARGUMENTS`,
 `VkDrawIndirectCommand`, and `MTLDrawPrimitivesIndirectArguments` so the
-same byte image dispatches across all three backends. D3D11
-`DrawInstancedIndirect` consumes the same four `u32` words via
-`D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS` buffers.
+same byte image dispatches across all modern backends.
 
 ### `Error_Code`
 
@@ -2558,75 +2542,74 @@ APE-13 (auto inside a pass, explicit between passes/queues) keeps the user
 writing usages while the runtime translates to backend states.
 Backend mapping per value:
   None
-    D3D11   no-op (D3D11 has no public state).
     D3D12   D3D12_RESOURCE_STATE_COMMON.
     Vulkan  VK_IMAGE_LAYOUT_UNDEFINED, no access mask.
     Meaning: pre-first-use. The first transition out of None is auto-emitted
     by §9.1 attachments or by the first barrier that names the resource.
   Sampled
-    D3D11   SRV bind (informational).
+    D3D12   SRV bind (informational).
     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.
     Vulkan  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT.
   Storage_Read
-    D3D11   SRV bind on a structured/byteaddress buffer or storage image
-            (informational; D3D11 does not split UAV read from write).
+    D3D12   SRV bind on a structured/byteaddress buffer or storage image
+            (informational; D3D12 does not split UAV read from write).
     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE on UAV-capable
             resources used read-only this pass.
     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
             VK_ACCESS_2_SHADER_STORAGE_READ_BIT.
   Storage_Write
-    D3D11   UAV bind (informational).
+    D3D12   UAV bind (informational).
     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
             the same view across two dispatches in one compute pass triggers
             an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
   Storage_Read_Write
-    D3D11   UAV bind (informational; common read/write storage path).
+    D3D12   UAV bind (informational; common read/write storage path).
     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
             VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Use this for storage
             resources a shader may both read and write in the same pass.
   Color_Target
-    D3D11   OMSetRenderTargets (informational).
+    D3D12   OMSetRenderTargets (informational).
     D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
     Vulkan  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT.
   Depth_Target_Read
-    D3D11   OMSetRenderTargets with read-only DSV (informational).
+    D3D12   OMSetRenderTargets with read-only DSV (informational).
     D3D12   D3D12_RESOURCE_STATE_DEPTH_READ.
     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT. Used for early-Z
             passes that bind the depth image as both attachment and sampled
             texture (gfx-barriers-note.md case 4.6).
   Depth_Target_Write
-    D3D11   OMSetRenderTargets with read/write DSV (informational).
+    D3D12   OMSetRenderTargets with read/write DSV (informational).
     D3D12   D3D12_RESOURCE_STATE_DEPTH_WRITE.
     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT.
   Copy_Source
-    D3D11   CopyResource / CopySubresourceRegion source (informational).
+    D3D12   CopyResource / CopySubresourceRegion source (informational).
     D3D12   D3D12_RESOURCE_STATE_COPY_SOURCE.
     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_ACCESS_2_TRANSFER_READ_BIT.
   Copy_Dest
-    D3D11   CopyResource / CopySubresourceRegion destination, UpdateSubresource
+    D3D12   CopyResource / CopySubresourceRegion destination, UpdateSubresource
             target (informational).
     D3D12   D3D12_RESOURCE_STATE_COPY_DEST.
     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_ACCESS_2_TRANSFER_WRITE_BIT.
   Indirect_Argument
-    D3D11   ExecuteIndirect-style argument buffer bind (informational).
+    D3D12   ExecuteIndirect-style argument buffer bind (informational).
     D3D12   D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT.
     Vulkan  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT (buffers only — there is
             no image layout for this state). Read by draw_indirect /
             dispatch_indirect (AAA roadmap items 11-15).
   Present
-    D3D11   IDXGISwapChain::Present source (informational).
+    D3D12   IDXGISwapChain::Present source (informational).
     D3D12   D3D12_RESOURCE_STATE_PRESENT (alias of COMMON).
     Vulkan  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR. Only valid on swapchain images;
             pass attachments use it as `initial_usage` / `final_usage` to

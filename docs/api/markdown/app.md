@@ -80,7 +80,7 @@ mouse_button_down reports whether a mouse button is currently pressed.
 native_window_handle :: proc(window: ^Window) -> rawptr {...}
 ```
 
-native_window_handle returns the Win32 HWND used by the D3D11 backend.
+native_window_handle returns the Win32 HWND used by the D3D12 backend.
 
 ### `poll_events`
 

@@ -1,40 +1,24 @@
-package gfx
+﻿package gfx
 
-// Bindless / resource-array public API — AAA roadmap items 26 / 27,
+// Bindless / resource-array public API â€” AAA roadmap items 26 / 27,
 // APE-22 / APE-23.
 //
 // This file holds the locked public types and verbs. Runtime-only bodies
 // return Unsupported until their backend implementations land. The shapes
 // reflect the design in docs/private/gfx-bindless-note.md, which composes with:
 //
-//   gfx-bindless-note.md §5    — storage shape (item 27 / APE-23):
-//                                Binding_Group carries fixed arrays via
-//                                Binding_Group_Array_Desc; Binding_Heap
-//                                carries runtime / bindless arrays.
-//                                Group-only and heap-only candidates
-//                                rejected.
-//   gfx-bindless-note.md §6    — indexing model: shader declarations carry
-//                                constant / dynamic-uniform / fully-dynamic
-//                                intent; one public apply surface.
-//   gfx-bindless-note.md §7    — lifetime: descriptor writes are visible at
-//                                the next `submit` boundary; per-entry reuse
-//                                is fence-gated via Timeline_Semaphore.
-//   gfx-bindless-note.md §9    — D3D11 fallback (item 29 / APE-25):
-//                                fixed arrays use Policy C (feature-gated
-//                                expansion into contiguous native slots,
-//                                lands with item 28); runtime / bindless
-//                                heap is Policy A — `create_binding_heap`
-//                                permanently rejects on Backend.D3D11 with
-//                                a D3D11-specific Unsupported message.
+//   gfx-bindless-note.md §9    — D3D12 / Vulkan descriptor heaps are the
+//                                intended runtime-array path after the
+//                                D3D12 backend migration.
 //   gfx-slang-reflection-contract.md "Descriptor Arrays And Bindless
-//                                Direction" — generated-binding shapes that
+//                                Direction" â€” generated-binding shapes that
 //                                target this runtime API. The runtime type
 //                                consumed by Slang tooling is named
 //                                `Binding_Heap` (was `Binding_Table` in
 //                                pre-item-27 drafts).
-//   binding_groups.odin        — existing immutable-group surface that this
+//   binding_groups.odin        â€” existing immutable-group surface that this
 //                                file extends without rewriting.
-//   queue.odin                 — Timeline_Semaphore is the public sync for
+//   queue.odin                 â€” Timeline_Semaphore is the public sync for
 //                                heap-slot reuse.
 //
 // Heap-side verbs validate their descriptor shape, then return Unsupported
@@ -69,7 +53,7 @@ MAX_BINDING_HEAPS :: MAX_BINDING_GROUPS
 // base slot; the per-element native slots are `base + index` and are not
 // emitted into `native_bindings` separately.
 //
-// `views` and `samplers` are mutually exclusive — exactly one is non-empty,
+// `views` and `samplers` are mutually exclusive â€” exactly one is non-empty,
 // gated by `kind`. `len(views)` (or `len(samplers)`) must equal the
 // generated array's reflected `count` for full population, or the user must
 // use the `_range` setter from the generated binding to populate a subset.
@@ -95,9 +79,9 @@ Binding_Group_Array_Desc :: struct {
 // Created by `create_binding_heap`. Slots are written individually with
 // `update_binding_heap_views` / `update_binding_heap_samplers`. Unlike
 // `Binding_Group`, a heap is *not* immutable; per-entry reuse is fence-
-// gated through `Timeline_Semaphore` (see §7.2 of the bindless note).
+// gated through `Timeline_Semaphore` (see Â§7.2 of the bindless note).
 //
-// One heap holds one element kind — sampled views, storage images, storage
+// One heap holds one element kind â€” sampled views, storage images, storage
 // buffers, *or* samplers. Mixed-kind heaps are not in the public contract
 // (Vulkan and D3D12 both forbid them in their natural form).
 Binding_Heap :: distinct u64
@@ -109,7 +93,7 @@ Binding_Heap_Invalid :: Binding_Heap(0)
 //
 //   samplers = true                  -> sampler heap; view_kind / format /
 //                                       stride must be zero-init.
-//   samplers = false, view_kind = … -> resource-view heap; field semantics
+//   samplers = false, view_kind = â€¦ -> resource-view heap; field semantics
 //                                       follow `Binding_Group_Resource_View_Layout_Desc`.
 //
 // `capacity` is the number of slots. Fence-gated reuse means a 4096-slot
@@ -147,15 +131,9 @@ Binding_Heap_Slot_Range :: struct {
 //
 // Backends:
 //
-//   D3D11   — permanently rejected with `Features.bindless_resource_tables
-//             = false` (item 29 / APE-25). The error code is
-//             `Error_Code.Unsupported`; the message names D3D11 explicitly
-//             so the rejection is not confused with the implementation-
-//             pending Unsupported on other backends. See §9 of the
-//             bindless note.
-//   D3D12   — allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
+//   D3D12   â€” allocates a shader-visible `D3D12_DESCRIPTOR_HEAP` of the
 //             matching `D3D12_DESCRIPTOR_HEAP_TYPE`.
-//   Vulkan  — allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
+//   Vulkan  â€” allocates a `VkDescriptorPool` + `VkDescriptorSet` configured
 //             with `UPDATE_AFTER_BIND` / `PARTIALLY_BOUND` /
 //             `runtimeDescriptorArray` flags from
 //             `VK_EXT_descriptor_indexing`.
@@ -203,7 +181,7 @@ binding_heap_capacity :: proc(ctx: ^Context, heap: Binding_Heap) -> u32 {
 // descriptors into a heap.
 //
 // The write is **visible to every submit issued after this call returns**
-// (§7.1 of the bindless note). It is *not* visible to in-flight submits;
+// (Â§7.1 of the bindless note). It is *not* visible to in-flight submits;
 // a slot already read by an unfinished submit must be released first.
 //
 // Validation:
@@ -214,7 +192,7 @@ binding_heap_capacity :: proc(ctx: ^Context, heap: Binding_Heap) -> u32 {
 //     `view_kind` / `access` / `storage_image_format` /
 //     `storage_buffer_stride`.
 //   - no slot in the range has a pending fence recorded by
-//     `release_binding_heap_slot` that has not yet retired (§7.2).
+//     `release_binding_heap_slot` that has not yet retired (Â§7.2).
 //
 // Returns false on validation/backend failure; check `last_error(ctx)`.
 //
@@ -256,7 +234,7 @@ update_binding_heap_samplers :: proc(ctx: ^Context, heap: Binding_Heap, first_in
 // error until `gfx.timeline_semaphore_value(frame_done.semaphore) >=
 // frame_done.value`. Callers that already serialize frame pacing on the
 // CPU side may pass `{Timeline_Semaphore_Invalid, 0}` to release without
-// a fence (§7.2 of the bindless note).
+// a fence (Â§7.2 of the bindless note).
 //
 // Releasing a slot does not zero or null its descriptor; readers that race
 // the release see the old contents. The fence guarantees no submit reads
@@ -281,7 +259,7 @@ release_binding_heap_slot :: proc(ctx: ^Context, heap: Binding_Heap, index: u32,
 // and `apply_binding_heap` for the same logical slot in one draw is a
 // validation error.
 //
-// Per the indexing model in §6, the *shader* declaration decides whether
+// Per the indexing model in Â§6, the *shader* declaration decides whether
 // reads use a constant, dynamic-uniform, or fully-dynamic index into the
 // heap. The runtime does not pick.
 apply_binding_heap :: proc(ctx: ^Context, group: u32, heap: Binding_Heap) -> bool {
@@ -311,12 +289,10 @@ cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u3
     return compute_encoder_set_unsupported(encoder, "gfx.cmd_apply_compute_binding_heap: explicit command recording is not implemented yet")
 }
 
-// reject_binding_heap_for_backend implements the §9 / item 29 D3D11 fallback
-// decision: the D3D11 backend permanently rejects the runtime / bindless
-// heap path with `Features.bindless_resource_tables = false`. Other backends
-// fall through to the implementation-pending Unsupported error so the
-// distinction between "this backend cannot do this, ever" and "we have not
-// wired it up yet" stays in the error vocabulary.
+// reject_binding_heap_for_backend exists so backend-specific permanent
+// rejections have one place to live. D3D12 and Vulkan are expected to support
+// this path once their descriptor backends land, so they currently fall
+// through to the implementation-pending Unsupported error.
 //
 // Returns true if the call has been rejected (the caller's error is set);
 // false if the backend has no permanent objection and the caller should
@@ -324,18 +300,13 @@ cmd_apply_compute_binding_heap :: proc(encoder: ^Compute_Pass_Encoder, group: u3
 @(private)
 reject_binding_heap_for_backend :: proc(ctx: ^Context, op: string) -> bool {
     switch ctx.backend {
-    case .D3D11:
-        set_unsupported_errorf(ctx,
-            "%s: D3D11 does not support bindless or runtime descriptor arrays (Features.bindless_resource_tables = false); use Binding_Group fixed arrays or pick the Vulkan / D3D12 backend",
-            op)
-        return true
-    case .Null, .Vulkan, .Auto:
+    case .Null, .D3D12, .Vulkan, .Auto:
         return false
     }
     return false
 }
 
-// validate_binding_heap_desc enforces the shape rules in §5 / §6 of the
+// validate_binding_heap_desc enforces the shape rules in Â§5 / Â§6 of the
 // bindless note. Backends will reject the desc with an additional Unsupported
 // error until the runtime / bindless heap path lands.
 @(private)

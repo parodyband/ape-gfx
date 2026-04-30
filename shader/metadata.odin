@@ -6,9 +6,9 @@ import gfx "ape:gfx"
 @(private)
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
 @(private)
-PACKAGE_VERSION_MIN :: u32(1)
+PACKAGE_VERSION_MIN :: u32(11)
 @(private)
-PACKAGE_VERSION :: u32(10)
+PACKAGE_VERSION :: u32(11)
 @(private)
 PACKAGE_HEADER_SIZE_V1 :: 16
 @(private)
@@ -51,7 +51,7 @@ MAX_PERMUTATION_VARIANTS :: 4096
 
 // Backend_Target selects which compiled backend payload to read from an .ashader package.
 Backend_Target :: enum {
-	D3D11_DXBC,
+	D3D12_DXIL,
 	Vulkan_SPIRV,
 }
 
@@ -171,9 +171,8 @@ Vertex_Input_Record :: struct {
 // Package owns bytes and parsed metadata loaded from one .ashader file.
 //
 // `axes` and `variants` describe the permutation key space declared by the
-// shader package. Pre-v10 packages synthesize a single default variant that
-// covers every stage and binding so existing shaders keep loading without
-// permutation metadata.
+// shader package. v11 is the first D3D12/DXIL package version; older packages
+// are intentionally rejected.
 Package :: struct {
 	version: u32,
 	bytes: []u8,

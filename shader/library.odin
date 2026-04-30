@@ -253,16 +253,16 @@ permutation_key_hash :: proc(key: Permutation_Key) -> u64 {
 // runtime should fetch. Returns false for backends without a baked target.
 target_for_backend :: proc(backend: gfx.Backend) -> (Backend_Target, bool) {
 	switch backend {
-	case .D3D11:
-		return .D3D11_DXBC, true
+	case .D3D12:
+		return .D3D12_DXIL, true
 	case .Vulkan:
 		return .Vulkan_SPIRV, true
 	case .Null:
-		return .D3D11_DXBC, true
+		return .D3D12_DXIL, true
 	case .Auto:
-		return .D3D11_DXBC, false
+		return .D3D12_DXIL, false
 	}
-	return .D3D11_DXBC, false
+	return .D3D12_DXIL, false
 }
 
 // resolve maps (id, key) to a backend gfx.Shader, materialising it on first

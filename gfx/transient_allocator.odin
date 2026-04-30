@@ -1,7 +1,7 @@
 package gfx
 
 // Transient uniform / storage allocation API — AAA roadmap items 23 (sketch)
-// and 24 (D3D11-backed implementation).
+// and 24 (D3D12-backed implementation).
 //
 // Design composes with:
 //
@@ -24,7 +24,7 @@ package gfx
 // with `Transient_Usage.Uniform`.
 //
 // 256 is the strictest of the three target backends (D3D12 CB offset);
-// using it on D3D11 too keeps per-frame heap usage portable across
+// using it on D3D12 too keeps per-frame heap usage portable across
 // builds. See gfx-transient-allocator-note.md §4.
 TRANSIENT_UNIFORM_ALIGNMENT :: 256
 
@@ -322,7 +322,7 @@ transient_alloc :: proc(allocator: Transient_Allocator, size: int, usage: Transi
 	}
 
 	// The backend may have temporarily Unmapped the chunk to satisfy a
-	// previous bind+draw (e.g. d3d11_apply_uniform_at). Resolve the current
+	// previous bind+draw (e.g. d3d12_apply_uniform_at). Resolve the current
 	// CPU pointer; cheap when no remap is required.
 	ctx := transient_allocator_context(allocator)
 	if ctx == nil {

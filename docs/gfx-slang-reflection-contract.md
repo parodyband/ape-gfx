@@ -1,4 +1,4 @@
-# Ape GFX Slang Reflection Contract
+﻿# Ape GFX Slang Reflection Contract
 
 Date: 2026-04-28
 
@@ -86,7 +86,7 @@ Compute shaders use:
 
 | Target | Status |
 | --- | --- |
-| `D3D11_DXBC` | v0.1 runtime target. |
+| `D3D12_DXIL` | v0.1 runtime target. |
 | `Vulkan_SPIRV` | Build artifact for future backend work. No v0.1 runtime contract. |
 
 Graphics compilation emits vertex and fragment payloads for both targets. Compute compilation emits compute payloads for both targets.
@@ -145,12 +145,12 @@ Generated files are build artifacts, but they are checked in because they are pa
 Native constants include target and stage:
 
 ```odin
-D3D11_FS_VIEW_ape_texture :: 0
-D3D11_FS_VIEW_ape_texture_SPACE :: 0
+D3D12_FS_VIEW_ape_texture :: 0
+D3D12_FS_VIEW_ape_texture_SPACE :: 0
 VK_FS_VIEW_ape_texture :: 0
 VK_FS_VIEW_ape_texture_SPACE :: 0
-D3D11_FS_SMP_ape_sampler :: 0
-D3D11_FS_SMP_ape_sampler_SPACE :: 0
+D3D12_FS_SMP_ape_sampler :: 0
+D3D12_FS_SMP_ape_sampler_SPACE :: 0
 VK_FS_SMP_ape_sampler :: 1
 VK_FS_SMP_ape_sampler_SPACE :: 0
 ```
@@ -256,7 +256,7 @@ Supported first-pass mapping:
 - If a shader has only `ParameterBlock<>` resources, the first block maps to group `0`.
 - If a shader has global bindings plus `ParameterBlock<>` resources, global bindings stay in group `0` and parameter blocks start at group `1`.
 - Each supported resource field inside a parameter block becomes a generated binding name of `<block>.<field>`.
-- D3D11 metadata flattens groups to native stage slots. Vulkan metadata preserves the reflected native space for future descriptor-set mapping.
+- D3D12 metadata flattens groups to native stage slots. Vulkan metadata preserves the reflected native space for future descriptor-set mapping.
 
 Supported parameter-block fields today:
 
@@ -324,7 +324,7 @@ set_group_view_array_material_textures :: proc(group: ^gfx.Binding_Group_Desc, v
 set_group_view_array_material_textures_range :: proc(group: ^gfx.Binding_Group_Desc, first_index: u32, views: []gfx.View) -> bool
 ```
 
-The generated setters should validate the expected count for full-array setup, reject writes outside the reflected range, and preserve the logical slot as one binding. Backend native metadata can still map fixed arrays to contiguous D3D11 slots or to a single Vulkan descriptor with `descriptorCount = N`.
+The generated setters should validate the expected count for full-array setup, reject writes outside the reflected range, and preserve the logical slot as one binding. Backend native metadata can still map fixed arrays to contiguous D3D12 slots or to a single Vulkan descriptor with `descriptorCount = N`.
 
 Runtime `Binding_Group_Desc` should grow an explicit array payload instead of overloading the existing scalar `views` and `samplers` arrays. A fixed-array shape could be:
 
@@ -372,7 +372,7 @@ Feature and limit reporting needs new fields before unsized arrays are accepted:
 - `Limits.max_bindless_samplers`
 - `Limits.max_bindless_storage_views`
 
-D3D11 can support small fixed arrays by mapping array elements to contiguous native slots. D3D11 should report `bindless_resource_tables = false` and reject unsized arrays or bindless tables with a validation error. Vulkan should be the first backend pressure test for unsized arrays, descriptor indexing, partially bound arrays, and partial table updates.
+D3D12 can support small fixed arrays by mapping array elements to contiguous native slots. D3D12 should report `bindless_resource_tables = false` and reject unsized arrays or bindless tables with a validation error. Vulkan should be the first backend pressure test for unsized arrays, descriptor indexing, partially bound arrays, and partial table updates.
 
 Until those runtime types, limits, and backend rules exist, `ape_shaderc` must continue rejecting descriptor arrays and bindless declarations before generating target bytecode, package files, or Odin bindings.
 
@@ -480,7 +480,7 @@ Unsupported generated vertex layout shapes:
 | Integer attributes | `unsupported vertex input type for generated layout` |
 | Matrix attributes | `unsupported vertex input type for generated layout` |
 | Array attributes | `unsupported vertex input type for generated layout` |
-| Layout differs between D3D11 and SPIR-V reflection | `reflected vertex input layout differs across targets` |
+| Layout differs between D3D12 and SPIR-V reflection | `reflected vertex input layout differs across targets` |
 
 Manual `Pipeline_Desc.layout` overrides remain supported. Use a manual layout for:
 
@@ -651,12 +651,12 @@ Planned order:
 - [x] Bind and validate the minimum modern Slang API surface for `IGlobalSession`, `ISession`, target/profile setup, and session creation.
 - [x] Use the modern module/component path for normal `.ashader` package generation.
 - [x] Read reflection JSON from modern `ProgramLayout` and used-binding data from entry-point metadata.
-- [x] Add focused descriptor-table validation for register-free constant buffers, sampled textures, samplers, storage images, and storage buffers across D3D11 and Vulkan records.
+- [x] Add focused descriptor-table validation for register-free constant buffers, sampled textures, samplers, storage images, and storage buffers across D3D12 and Vulkan records.
 - [x] Parse Slang reflection JSON once per stage into a small binding model before generating binding records.
 - [x] Settle generated binding record payload semantics before the generated binding-group contract.
 - [x] Generate the first descriptor-only single-group layout helper on top of reflected names, logical slots, native slots, and native spaces.
 - [x] Add a `Binding_Group_Desc` / `apply_binding_group` path for generated resource views and samplers.
-- [x] Exercise binding groups in `d3d11_gfx_lab` and `d3d11_improved_shadows` so the API is tested by a simple display pass and shared material/pass resource groups.
+- [x] Exercise binding groups in `gfx_lab` and `improved_shadows` so the API is tested by a simple display pass and shared material/pass resource groups.
 - [x] Tighten `apply_binding_group` validation so generated layouts must match the currently applied pipeline's reflected logical slots, stages, names, payload metadata, and backend native slots.
 - [x] Replace the transient public apply path with `Binding_Group_Layout` and `Binding_Group` handles.
 - [x] Traverse Slang reflection JSON deeply enough to represent `ParameterBlock<>` resources, multiple logical groups, native slots, and native spaces without hand-authored binding registers.
@@ -689,12 +689,8 @@ Current shader reflection validation is covered by:
 ```powershell
 odin run .\tools\ape -- shader compile -all
 odin run .\tools\ape -- shader test -all
-.\tools\test_d3d11_invalid_pipeline_layout.ps1
-.\tools\test_d3d11_invalid_uniform_size.ps1
-.\tools\test_d3d11_invalid_view_kind.ps1
-.\tools\test_d3d11_resource_hazards.ps1
-.\tools\test_d3d11_storage_views.ps1
-.\tools\test_d3d11_compute_pass.ps1
+odin run .\tools\ape -- validate core
+odin run .\tools\ape -- sample run all -AutoExitFrames 5
 ```
 
 The full gate is:
