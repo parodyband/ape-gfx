@@ -65,6 +65,10 @@ destroy_view :: proc(ctx: ^Context, view: View) {
 	if !require_resource(ctx, &ctx.view_pool, u64(view), "gfx.destroy_view", "view") {
 		return
 	}
+	if message := view_blocked_from_destroy(ctx, view); message != "" {
+		set_validation_error(ctx, message)
+		return
+	}
 
 	backend_destroy_view(ctx, view)
 	release_resource_id(&ctx.view_pool, u64(view))

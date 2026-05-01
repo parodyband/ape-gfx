@@ -8,14 +8,16 @@ import "core:path/filepath"
 import "core:strings"
 
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
-PACKAGE_VERSION :: u32(9)
-PACKAGE_HEADER_SIZE :: 20
-PACKAGE_STAGE_RECORD_SIZE :: 48
-PACKAGE_BINDING_RECORD_SIZE :: 60
+PACKAGE_VERSION :: u32(11)
+PACKAGE_HEADER_SIZE :: 28
+PACKAGE_STAGE_RECORD_SIZE :: 52
+PACKAGE_BINDING_RECORD_SIZE :: 64
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
+PACKAGE_PERMUTATION_AXIS_RECORD_SIZE :: 24
+PACKAGE_VARIANT_RECORD_SIZE :: 40
 
 Target :: enum u32 {
-	D3D11_DXBC,
+	D3D12_DXIL,
 	Vulkan_SPIRV,
 }
 
@@ -67,6 +69,8 @@ Compiled_Stage :: struct {
 	target: Target,
 	stage: Stage,
 	entry: string,
+	bytecode_path: string,
+	reflection_path: string,
 	bytecode: []byte,
 	reflection: []byte,
 }
@@ -189,6 +193,12 @@ Modern_Slang_Context :: struct {
 	session: ^ISlangSession,
 }
 
+Slang_Linked_Entry :: struct {
+	entry_point: ^ISlangEntryPoint,
+	composite: ^ISlangComponentType,
+	linked: ^ISlangComponentType,
+}
+
 Options :: struct {
 	shader_name: string,
 	source_path: string,
@@ -209,6 +219,8 @@ SAMPLE_SHADER_JOBS :: [?]Shader_Job {
 	{name = "shadow_depth", kind = .Graphics},
 	{name = "improved_shadows", kind = .Graphics},
 	{name = "mrt", kind = .Graphics},
+	{name = "dispatch_indirect_fill", kind = .Compute},
+	{name = "gpu_driven_indirect_args", kind = .Compute},
 }
 
 main :: proc() {
@@ -409,16 +421,16 @@ create_modern_slang_context :: proc(slang: ^Slang_API) -> (Modern_Slang_Context,
 		return {}, false
 	}
 
-	dxbc_profile := global_session.vtable.findProfile(global_session, cstring("sm_5_0"))
+	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_0"))
 	spirv_profile := global_session.vtable.findProfile(global_session, cstring("glsl_450"))
-	if dxbc_profile == SLANG_PROFILE_UNKNOWN || spirv_profile == SLANG_PROFILE_UNKNOWN {
+	if dxil_profile == SLANG_PROFILE_UNKNOWN || spirv_profile == SLANG_PROFILE_UNKNOWN {
 		fmt.eprintln("ape_shaderc: failed to resolve modern Slang target profiles")
 		release_slang_unknown(cast(^ISlangUnknown)global_session)
 		return {}, false
 	}
 
 	targets := [?]Slang_Target_Desc {
-		{structureSize = uint(size_of(Slang_Target_Desc)), format = SLANG_TARGET_DXBC, profile = dxbc_profile},
+		{structureSize = uint(size_of(Slang_Target_Desc)), format = SLANG_TARGET_DXIL, profile = dxil_profile},
 		{structureSize = uint(size_of(Slang_Target_Desc)), format = SLANG_TARGET_SPIRV, profile = spirv_profile},
 	}
 	session_desc := Slang_Session_Desc {
@@ -456,6 +468,79 @@ destroy_modern_slang_context :: proc(ctx: ^Modern_Slang_Context) {
 	ctx^ = {}
 }
 
+create_slang_linked_entry :: proc(
+	session: ^ISlangSession,
+	module: ^ISlangModule,
+	entry_name: string,
+	stage: SlangStage,
+	label: string,
+) -> (Slang_Linked_Entry, bool) {
+	entry_name_c, entry_name_err := strings.clone_to_cstring(entry_name, context.temp_allocator)
+	if entry_name_err != nil {
+		fmt.eprintln("ape_shaderc: failed to prepare ", label, " entry name")
+		return {}, false
+	}
+
+	diagnostics: ^ISlangBlob
+	entry_point: ^ISlangEntryPoint
+	result := module.vtable.findAndCheckEntryPoint(module, entry_name_c, stage, &entry_point, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || entry_point == nil)
+	if slang_failed(result) || entry_point == nil {
+		fmt.eprintln("ape_shaderc: ", label, " failed to find entry point: ", entry_name)
+		return {}, false
+	}
+
+	component_types := [?]^ISlangComponentType {
+		cast(^ISlangComponentType)module,
+		cast(^ISlangComponentType)entry_point,
+	}
+
+	composite: ^ISlangComponentType
+	result = session.vtable.createCompositeComponentType(session, raw_data(component_types[:]), SlangInt(len(component_types)), &composite, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || composite == nil)
+	if slang_failed(result) || composite == nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry_point)
+		fmt.eprintln("ape_shaderc: ", label, " failed to create composite component for ", entry_name)
+		return {}, false
+	}
+
+	// Slang's linked component keeps internal ownership tied to the composite.
+	// Holding our own reference avoids release-order heap corruption on exit.
+	_ = (cast(^ISlangUnknown)composite).vtable.addRef(cast(^ISlangUnknown)composite)
+
+	linked: ^ISlangComponentType
+	result = composite.vtable.link(composite, &linked, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || linked == nil)
+	if slang_failed(result) || linked == nil {
+		release_slang_unknown(cast(^ISlangUnknown)composite)
+		release_slang_unknown(cast(^ISlangUnknown)entry_point)
+		fmt.eprintln("ape_shaderc: ", label, " failed to link component for ", entry_name)
+		return {}, false
+	}
+
+	return Slang_Linked_Entry {
+		entry_point = entry_point,
+		composite = composite,
+		linked = linked,
+	}, true
+}
+
+delete_slang_linked_entry :: proc(entry: ^Slang_Linked_Entry) {
+	if entry == nil {
+		return
+	}
+	if entry.linked != nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry.linked)
+	}
+	if entry.composite != nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry.composite)
+	}
+	if entry.entry_point != nil {
+		release_slang_unknown(cast(^ISlangUnknown)entry.entry_point)
+	}
+	entry^ = {}
+}
+
 build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Options, result: ^Shader_Build_Result) -> bool {
 	stages: [dynamic]Stage_Desc
 	defer delete(stages)
@@ -488,13 +573,7 @@ build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Option
 
 	diagnostics: ^ISlangBlob
 	module := session.vtable.loadModuleFromSourceString(session, module_name_c, source_path_c, source_c, &diagnostics)
-	if diagnostics != nil {
-		if module == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
+	release_slang_diagnostics(&diagnostics, module == nil)
 	if module == nil {
 		fmt.eprintln("ape_shaderc: modern Slang failed to load module: ", options.source_path)
 		return false
@@ -524,6 +603,10 @@ build_shader :: proc(slang: ^Slang_API, session: ^ISlangSession, options: Option
 		delete_shader_build_result(result)
 		return false
 	}
+	if !write_compiled_stage_artifacts(result.compiled[:]) {
+		delete_shader_build_result(result)
+		return false
+	}
 
 	return true
 }
@@ -545,67 +628,12 @@ compile_modern_component_stage :: proc(
 		return {}, false
 	}
 
-	entry_name_c, entry_name_err := strings.clone_to_cstring(stage.entry, context.temp_allocator)
-	if entry_name_err != nil {
-		fmt.eprintln("ape_shaderc: failed to prepare modern Slang entry name")
+	linked_entry, linked_entry_ok := create_slang_linked_entry(session, module, stage.entry, slang_stage, "modern Slang")
+	if !linked_entry_ok {
 		return {}, false
 	}
-
-	diagnostics: ^ISlangBlob
-	entry_point: ^ISlangEntryPoint
-	result := module.vtable.findAndCheckEntryPoint(module, entry_name_c, slang_stage, &entry_point, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || entry_point == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || entry_point == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to find entry point: ", stage.entry)
-		return {}, false
-	}
-	defer release_slang_unknown(cast(^ISlangUnknown)entry_point)
-
-	component_types := [?]^ISlangComponentType {
-		cast(^ISlangComponentType)module,
-		cast(^ISlangComponentType)entry_point,
-	}
-
-	composite: ^ISlangComponentType
-	diagnostics = nil
-	result = session.vtable.createCompositeComponentType(session, raw_data(component_types[:]), SlangInt(len(component_types)), &composite, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || composite == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || composite == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to create composite component for ", stage.entry)
-		return {}, false
-	}
-	// Slang's linked component keeps internal ownership tied to the composite.
-	// Holding our own reference avoids release-order heap corruption on exit.
-	_ = (cast(^ISlangUnknown)composite).vtable.addRef(cast(^ISlangUnknown)composite)
-	defer release_slang_unknown(cast(^ISlangUnknown)composite)
-
-	linked: ^ISlangComponentType
-	diagnostics = nil
-	result = composite.vtable.link(composite, &linked, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || linked == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || linked == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to link component for ", stage.entry)
-		return {}, false
-	}
-	defer release_slang_unknown(cast(^ISlangUnknown)linked)
+	defer delete_slang_linked_entry(&linked_entry)
+	linked := linked_entry.linked
 
 	target_index, target_index_ok := modern_target_index(stage.target)
 	if !target_index_ok {
@@ -613,53 +641,27 @@ compile_modern_component_stage :: proc(
 		return {}, false
 	}
 
-	code_blob: ^ISlangBlob
-	diagnostics = nil
-	result = linked.vtable.getEntryPointCode(linked, 0, target_index, &code_blob, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || code_blob == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || code_blob == nil {
-		fmt.eprintln("ape_shaderc: modern Slang failed to compile bytecode for ", stage.entry)
-		return {}, false
-	}
-	defer release_slang_blob(cast(rawptr)code_blob)
-
-	bytecode := copy_blob_bytes(cast(rawptr)code_blob)
-	if bytecode == nil {
-		fmt.eprintln("ape_shaderc: failed to copy modern Slang bytecode for ", stage.entry)
-		return {}, false
-	}
-
-	if !write_stage_artifact(stage.bytecode_path, bytecode, "modern bytecode") {
-		delete(bytecode)
-		return {}, false
-	}
-
 	reflection_blob: rawptr
 	layout: rawptr
 	reflection, reflection_ok := get_modern_reflection_json(slang, linked, target_index, &layout, &reflection_blob)
 	if !reflection_ok {
-		delete(bytecode)
 		return {}, false
 	}
 	defer release_slang_blob(reflection_blob)
 
 	reflection_model, reflection_model_ok := parse_reflection_model(options, stage, reflection)
 	if !reflection_model_ok {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
 	defer delete_reflection_model(&reflection_model)
+	if !validate_no_top_level_resource_arrays(reflection_model) {
+		delete(reflection)
+		return {}, false
+	}
 
 	layout_info: Slang_Program_Layout_Info
 	if !collect_slang_program_layout_info(slang, layout, &layout_info) {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
@@ -668,21 +670,18 @@ compile_modern_component_stage :: proc(
 	entry_layout, entry_layout_ok := slang_entry_point_layout_by_name_stage(layout_info, stage.entry, slang_stage)
 	if !entry_layout_ok {
 		fmt.eprintln("ape_shaderc: Slang API reflection has no entry point named ", stage.entry, ": ", options.source_path)
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
 
 	metadata: ^ISlangMetadata
 	if !get_modern_entry_point_metadata(linked, target_index, &metadata) {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)metadata)
 
 	if !collect_bindings_from_reflection(slang, metadata, layout, stage, reflection_model, bindings, uniform_blocks) {
-		delete(bytecode)
 		delete(reflection)
 		return {}, false
 	}
@@ -690,13 +689,11 @@ compile_modern_component_stage :: proc(
 	if stage.stage == .Vertex && stage.entry == "vs_main" {
 		stage_vertex_layout: Generated_Vertex_Layout
 		if !collect_vertex_layout_from_slang_api(options, stage, entry_layout^, &stage_vertex_layout) {
-			delete(bytecode)
 			delete(reflection)
 			delete_vertex_layout(&stage_vertex_layout)
 			return {}, false
 		}
 		if !merge_vertex_layout(vertex_layout, &stage_vertex_layout) {
-			delete(bytecode)
 			delete(reflection)
 			delete_vertex_layout(&stage_vertex_layout)
 			return {}, false
@@ -707,19 +704,29 @@ compile_modern_component_stage :: proc(
 	if stage.stage == .Compute && stage.entry == "cs_main" {
 		stage_compute_thread_group: Compute_Thread_Group_Size
 		if !collect_compute_thread_group_from_slang_api(options, stage, entry_layout^, &stage_compute_thread_group) {
-			delete(bytecode)
 			delete(reflection)
 			return {}, false
 		}
 		if !merge_compute_thread_group(compute_thread_group, stage_compute_thread_group) {
-			delete(bytecode)
 			delete(reflection)
 			return {}, false
 		}
 	}
 
-	if !write_stage_artifact(stage.reflection_path, reflection, "reflection") {
-		delete(bytecode)
+	code_blob: ^ISlangBlob
+	diagnostics: ^ISlangBlob
+	result := linked.vtable.getEntryPointCode(linked, 0, target_index, &code_blob, &diagnostics)
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || code_blob == nil)
+	if slang_failed(result) || code_blob == nil {
+		fmt.eprintln("ape_shaderc: modern Slang failed to compile bytecode for ", stage.entry)
+		delete(reflection)
+		return {}, false
+	}
+	defer release_slang_blob(cast(rawptr)code_blob)
+
+	bytecode := copy_blob_bytes(cast(rawptr)code_blob)
+	if bytecode == nil {
+		fmt.eprintln("ape_shaderc: failed to copy modern Slang bytecode for ", stage.entry)
 		delete(reflection)
 		return {}, false
 	}
@@ -728,6 +735,8 @@ compile_modern_component_stage :: proc(
 		target = stage.target,
 		stage = stage.stage,
 		entry = stage.entry,
+		bytecode_path = stage.bytecode_path,
+		reflection_path = stage.reflection_path,
 		bytecode = bytecode,
 		reflection = reflection,
 	}, true
@@ -742,12 +751,7 @@ get_modern_reflection_json :: proc(
 ) -> ([]byte, bool) {
 	diagnostics: ^ISlangBlob
 	layout := linked.vtable.getLayout(linked, target_index, &diagnostics)
-	if diagnostics != nil {
-		if layout == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-	}
+	release_slang_diagnostics(&diagnostics, layout == nil)
 	if layout == nil {
 		fmt.eprintln("ape_shaderc: modern Slang returned no program layout")
 		return nil, false
@@ -776,12 +780,7 @@ get_modern_entry_point_metadata :: proc(
 ) -> bool {
 	diagnostics: ^ISlangBlob
 	result := linked.vtable.getEntryPointMetadata(linked, 0, target_index, out_metadata, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || out_metadata^ == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-	}
+	release_slang_diagnostics(&diagnostics, slang_failed(result) || out_metadata^ == nil)
 	if slang_failed(result) || out_metadata^ == nil {
 		fmt.eprintln("ape_shaderc: modern Slang returned no entry-point metadata")
 		return false
@@ -805,7 +804,7 @@ slang_stage_for_stage :: proc(stage: Stage) -> (SlangStage, bool) {
 
 modern_target_index :: proc(target: Target) -> (SlangInt, bool) {
 	switch target {
-	case .D3D11_DXBC:
+	case .D3D12_DXIL:
 		return 0, true
 	case .Vulkan_SPIRV:
 		return 1, true
@@ -817,11 +816,11 @@ modern_target_index :: proc(target: Target) -> (SlangInt, bool) {
 append_stage_descs :: proc(stages: ^[dynamic]Stage_Desc, options: Options) {
 	if options.kind == .Compute {
 		append(stages, Stage_Desc {
-			target = .D3D11_DXBC,
+			target = .D3D12_DXIL,
 			stage = .Compute,
 			entry = "cs_main",
-			bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxbc", options.shader_name)}),
-			reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxbc.json", options.shader_name)}),
+			bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxil", options.shader_name)}),
+			reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.cs.dxil.json", options.shader_name)}),
 		})
 		append(stages, Stage_Desc {
 			target = .Vulkan_SPIRV,
@@ -834,18 +833,18 @@ append_stage_descs :: proc(stages: ^[dynamic]Stage_Desc, options: Options) {
 	}
 
 	append(stages, Stage_Desc {
-		target = .D3D11_DXBC,
+		target = .D3D12_DXIL,
 		stage = .Vertex,
 		entry = "vs_main",
-		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxbc", options.shader_name)}),
-		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxbc.json", options.shader_name)}),
+		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxil", options.shader_name)}),
+		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.vs.dxil.json", options.shader_name)}),
 	})
 	append(stages, Stage_Desc {
-		target = .D3D11_DXBC,
+		target = .D3D12_DXIL,
 		stage = .Fragment,
 		entry = "fs_main",
-		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxbc", options.shader_name)}),
-		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxbc.json", options.shader_name)}),
+		bytecode_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxil", options.shader_name)}),
+		reflection_path = filepath.join({options.build_dir, fmt.tprintf("%s.fs.dxil.json", options.shader_name)}),
 	})
 	append(stages, Stage_Desc {
 		target = .Vulkan_SPIRV,
@@ -1203,10 +1202,10 @@ append_parameter_block_field_binding :: proc(
 		return false
 	}
 
+	// ParameterBlock fields inherit the reflected sub-element register space.
+	// DXIL uses that space for resources/samplers, while Vulkan uses it for
+	// descriptor-table slots.
 	space := native_space
-	if category != .Descriptor_Table_Slot {
-		space = 0
-	}
 
 	used := false
 	result := metadata.vtable.isParameterLocationUsed(
@@ -1468,6 +1467,16 @@ parse_reflection_model :: proc(options: Options, stage: Stage_Desc, reflection_j
 	}
 
 	return model, true
+}
+
+validate_no_top_level_resource_arrays :: proc(model: Reflection_Model) -> bool {
+	for parameter in model.parameters {
+		if json_type_kind_is(parameter.type_value, "array") {
+			fmt.eprintln("ape_shaderc: resource arrays are not supported yet; descriptor arrays and bindless resources need a separate binding contract: ", parameter.name)
+			return false
+		}
+	}
+	return true
 }
 
 delete_reflection_model :: proc(model: ^Reflection_Model) {
@@ -2475,6 +2484,18 @@ write_stage_artifact :: proc(path: string, bytes: []byte, label: string) -> bool
 	return true
 }
 
+write_compiled_stage_artifacts :: proc(stages: []Compiled_Stage) -> bool {
+	for stage in stages {
+		if !write_stage_artifact(stage.bytecode_path, stage.bytecode, "modern bytecode") {
+			return false
+		}
+		if !write_stage_artifact(stage.reflection_path, stage.reflection, "reflection") {
+			return false
+		}
+	}
+	return true
+}
+
 copy_raw_bytes :: proc(ptr: rawptr, size: uint) -> []byte {
 	if ptr == nil || size == 0 {
 		return nil
@@ -2512,6 +2533,17 @@ print_slang_blob_diagnostics :: proc(blob: ^ISlangBlob) {
 	if message != "" {
 		fmt.eprintln(message)
 	}
+}
+
+release_slang_diagnostics :: proc(diagnostics: ^^ISlangBlob, should_print: bool) {
+	if diagnostics == nil || diagnostics^ == nil {
+		return
+	}
+	if should_print {
+		print_slang_blob_diagnostics(diagnostics^)
+	}
+	release_slang_unknown(cast(^ISlangUnknown)diagnostics^)
+	diagnostics^ = nil
 }
 
 release_slang_blob :: proc(blob: rawptr) {
@@ -3149,10 +3181,18 @@ write_package :: proc(
 	payload: [dynamic]byte
 	defer delete(payload)
 
+	// Default-only package: zero permutation axes, one variant covering every
+	// stage and binding. The variant key is empty so its hash is the FNV-1a
+	// seed; readers verify hash against the canonical key.
+	axis_count := 0
+	variant_count := 1
+
 	payload_start := PACKAGE_HEADER_SIZE +
 	                 PACKAGE_STAGE_RECORD_SIZE * len(stages) +
 	                 PACKAGE_BINDING_RECORD_SIZE * len(bindings) +
-	                 PACKAGE_VERTEX_INPUT_RECORD_SIZE * len(vertex_layout.attrs)
+	                 PACKAGE_VERTEX_INPUT_RECORD_SIZE * len(vertex_layout.attrs) +
+	                 PACKAGE_PERMUTATION_AXIS_RECORD_SIZE * axis_count +
+	                 PACKAGE_VARIANT_RECORD_SIZE * variant_count
 	for stage, index in stages {
 		entry_offset := payload_start + len(payload)
 		append_string(&payload, stage.entry)
@@ -3197,6 +3237,8 @@ write_package :: proc(
 	write_u32(&output, u32(len(stage_records)))
 	write_u32(&output, u32(len(binding_records)))
 	write_u32(&output, u32(len(vertex_layout.attrs)))
+	write_u32(&output, u32(axis_count))
+	write_u32(&output, u32(variant_count))
 
 	for record in stage_records {
 		write_u32(&output, u32(record.target))
@@ -3207,6 +3249,7 @@ write_package :: proc(
 		write_u64(&output, record.bytecode_size)
 		write_u64(&output, record.reflection_offset)
 		write_u64(&output, record.reflection_size)
+		write_u32(&output, 0) // variant index — default-only package
 	}
 
 	for record in binding_records {
@@ -3225,6 +3268,7 @@ write_package :: proc(
 		write_u32(&output, record.storage_buffer_stride)
 		write_u32(&output, record.space)
 		write_u32(&output, record.group)
+		write_u32(&output, 0) // variant index — default-only package
 	}
 
 	for attr, index in vertex_layout.attrs {
@@ -3234,6 +3278,20 @@ write_package :: proc(
 		write_u32(&output, package_vertex_format(attr.format))
 		write_u32(&output, 1)
 	}
+
+	// Permutation axes table: empty until APE-28 wires runtime lookup.
+
+	// Variant table: one default variant covering every stage and binding.
+	default_key_hash :: u64(0xcbf29ce484222325) // FNV-1a 64-bit seed (empty key)
+	write_u64(&output, default_key_hash)
+	write_u32(&output, 0) // key_offset
+	write_u32(&output, 0) // key_pair_count
+	write_u32(&output, 0) // stage_first
+	write_u32(&output, u32(len(stage_records)))
+	write_u32(&output, 0) // binding_first
+	write_u32(&output, u32(len(binding_records)))
+	write_u32(&output, 0) // name_offset
+	write_u32(&output, 0) // name_size
 
 	append_bytes(&output, payload[:])
 
@@ -3390,8 +3448,8 @@ binding_kind_odin :: proc(kind: Binding_Kind) -> string {
 
 backend_odin :: proc(target: Target) -> string {
 	switch target {
-	case .D3D11_DXBC:
-		return "D3D11"
+	case .D3D12_DXIL:
+		return "D3D12"
 	case .Vulkan_SPIRV:
 		return "Vulkan"
 	}
@@ -3414,8 +3472,8 @@ stage_odin :: proc(stage: Stage) -> string {
 
 target_prefix :: proc(target: Target) -> string {
 	switch target {
-	case .D3D11_DXBC:
-		return "D3D11"
+	case .D3D12_DXIL:
+		return "D3D12"
 	case .Vulkan_SPIRV:
 		return "VK"
 	}

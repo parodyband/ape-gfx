@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import "core:fmt"
 import "core:os"
@@ -88,6 +88,7 @@ run_shader_tests :: proc(options: Shader_Test_Options) -> bool {
 			"invalid-vertex-layout",
 			"uniform-host-layout",
 			"storage-resource-metadata",
+			"ashader-roundtrip",
 		}
 		for test in tests {
 			if !run_shader_test_by_name(&test_ctx, test) {
@@ -119,6 +120,8 @@ run_shader_test_by_name :: proc(ctx: ^Shader_Test_Context, name: string) -> bool
 		return test_shaderc_uniform_host_layout(ctx)
 	case "storage-resource-metadata":
 		return test_shaderc_storage_resource_metadata(ctx)
+	case "ashader-roundtrip":
+		return test_ashader_roundtrip(ctx)
 	case:
 		fmt.eprintln("ape: unknown shader test: ", name)
 		return false
@@ -233,11 +236,11 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
 	expected := [?]string {
 		"BINDING_RECORD_COUNT :: 10",
 		"GROUP_0 :: 0",
-		"D3D11_CS_UB_FrameUniforms :: 0",
-		"D3D11_CS_VIEW_input_texture :: 0",
-		"D3D11_CS_SMP_input_sampler :: 0",
-		"D3D11_CS_VIEW_output_image :: 0",
-		"D3D11_CS_VIEW_output_items :: 1",
+		"D3D12_CS_UB_FrameUniforms :: 0",
+		"D3D12_CS_VIEW_input_texture :: 0",
+		"D3D12_CS_SMP_input_sampler :: 0",
+		"D3D12_CS_VIEW_output_image :: 0",
+		"D3D12_CS_VIEW_output_items :: 1",
 		"VK_CS_UB_FrameUniforms :: 0",
 		"VK_CS_VIEW_input_texture :: 1",
 		"VK_CS_SMP_input_sampler :: 2",
@@ -271,7 +274,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
 		"desc.entries[0] = {",
 		"stages = {.Compute}",
 		"desc.native_bindings[0] = {",
-		"target = gfx.Backend.D3D11",
+		"target = gfx.Backend.D3D12",
 		"target = gfx.Backend.Vulkan",
 		"native_space = 0",
 		"set_group_view_input_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
@@ -373,10 +376,14 @@ float4 fs_main(VS_Output input) : SV_Target
 		"SMP_material_diffuse_sampler :: 0",
 		"VIEW_shadow_resources_shadow_map :: 0",
 		"SMP_shadow_resources_shadow_sampler :: 0",
-		"D3D11_FS_VIEW_material_diffuse_texture :: 0",
-		"D3D11_FS_SMP_material_diffuse_sampler :: 0",
-		"D3D11_FS_VIEW_shadow_resources_shadow_map :: 1",
-		"D3D11_FS_SMP_shadow_resources_shadow_sampler :: 1",
+		"D3D12_FS_VIEW_material_diffuse_texture :: 0",
+		"D3D12_FS_SMP_material_diffuse_sampler :: 0",
+		"D3D12_FS_VIEW_material_diffuse_texture_SPACE :: 1",
+		"D3D12_FS_SMP_material_diffuse_sampler_SPACE :: 1",
+		"D3D12_FS_VIEW_shadow_resources_shadow_map :: 0",
+		"D3D12_FS_SMP_shadow_resources_shadow_sampler :: 0",
+		"D3D12_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2",
+		"D3D12_FS_SMP_shadow_resources_shadow_sampler_SPACE :: 2",
 		"VK_FS_VIEW_material_diffuse_texture_SPACE :: 1",
 		"VK_FS_SMP_material_diffuse_sampler_SPACE :: 1",
 		"VK_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2",
@@ -428,6 +435,9 @@ test_shaderc_resource_arrays :: proc(ctx: ^Shader_Test_Context) -> bool {
 		return false
 	}
 	if !expect_shaderc_failure(ctx, test_dir, "global_sampler_array", .Graphics, "resource arrays are not supported yet", GLOBAL_SAMPLER_ARRAY) {
+		return false
+	}
+	if !expect_shaderc_failure(ctx, test_dir, "global_storage_array", .Compute, "resource arrays are not supported yet", GLOBAL_STORAGE_ARRAY) {
 		return false
 	}
 
@@ -548,6 +558,63 @@ test_shaderc_storage_resource_metadata :: proc(ctx: ^Shader_Test_Context) -> boo
 	return true
 }
 
+ASHADER_ROUNDTRIP_SOURCE :: `cbuffer FrameUniforms
+{
+	float4 tint;
+};
+
+Texture2D<float4> input_texture;
+SamplerState input_sampler;
+RWTexture2D<float4> output_image;
+
+[shader("compute")]
+[numthreads(8, 4, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
+{
+	float2 uv = float2(0.5, 0.5);
+	float4 color = input_texture.SampleLevel(input_sampler, uv, 0.0) * tint;
+	output_image[dispatch_id.xy] = color;
+}
+`
+
+test_ashader_roundtrip :: proc(ctx: ^Shader_Test_Context) -> bool {
+	test_dir := shader_test_dir(ctx, "shaderc_ashader_roundtrip")
+	source_path := filepath.join({test_dir, "ashader_roundtrip.slang"}, context.temp_allocator)
+	package_path := filepath.join({test_dir, "ashader_roundtrip.ashader"}, context.temp_allocator)
+	generated_path := filepath.join({test_dir, "bindings.odin"}, context.temp_allocator)
+
+	if !write_text_file(source_path, ASHADER_ROUNDTRIP_SOURCE) {
+		return false
+	}
+	if !run_shaderc_success(ctx, "ashader_roundtrip", .Compute, source_path, package_path, generated_path, test_dir) {
+		return false
+	}
+
+	tool_dir := repo_path(ctx.root, "build/tools")
+	if !ensure_directory(tool_dir) {
+		return false
+	}
+	checker_path := filepath.join({tool_dir, fmt.tprintf("ape_ashader_roundtrip_test%s", EXE_SUFFIX)}, context.temp_allocator)
+	build_command := [?]string {
+		"odin",
+		"build",
+		repo_path(ctx.root, "tools/ape_ashader_roundtrip_test"),
+		fmt.tprintf("-collection:ape=%s", ctx.root),
+		fmt.tprintf("-out:%s", checker_path),
+	}
+	if !run_command("build ape_ashader_roundtrip_test", build_command[:], ctx.root) {
+		return false
+	}
+
+	check_command := [?]string {checker_path, package_path}
+	if !run_command("ashader round-trip checker", check_command[:], ctx.root) {
+		return false
+	}
+
+	fmt.println("Shaderc .ashader round-trip test passed")
+	return true
+}
+
 shader_test_dir :: proc(ctx: ^Shader_Test_Context, name: string) -> string {
 	dir := filepath.join({ctx.base_dir, name}, context.temp_allocator)
 	_ = ensure_directory(dir)
@@ -585,6 +652,9 @@ expect_shaderc_failure :: proc(ctx: ^Shader_Test_Context, test_dir: string, name
 	source_path := filepath.join({test_dir, fmt.tprintf("%s.slang", name)}, context.temp_allocator)
 	package_path := filepath.join({test_dir, fmt.tprintf("%s.ashader", name)}, context.temp_allocator)
 	generated_path := filepath.join({test_dir, fmt.tprintf("%s_bindings.odin", name)}, context.temp_allocator)
+	if !remove_shaderc_failure_outputs(test_dir, name, kind, package_path, generated_path) {
+		return false
+	}
 	if !write_text_file(source_path, source) {
 		return false
 	}
@@ -634,8 +704,89 @@ expect_shaderc_failure :: proc(ctx: ^Shader_Test_Context, test_dir: string, name
 		fmt.eprintln("ape: shaderc failed ", name, " for the wrong reason; expected: ", expected)
 		return false
 	}
+	if !assert_shaderc_failure_outputs_absent(test_dir, name, kind, package_path, generated_path) {
+		return false
+	}
 
 	return true
+}
+
+remove_shaderc_failure_outputs :: proc(test_dir: string, name: string, kind: Shader_Kind, package_path: string, generated_path: string) -> bool {
+	if !remove_file_if_exists(package_path) || !remove_file_if_exists(generated_path) {
+		return false
+	}
+
+	switch kind {
+	case .Compute:
+		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.spv", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.cs.spv.json", name)}, context.temp_allocator)) {
+			return false
+		}
+	case .Graphics:
+		if !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.spv", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.vs.spv.json", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.spv", name)}, context.temp_allocator)) ||
+		   !remove_file_if_exists(filepath.join({test_dir, fmt.tprintf("%s.fs.spv.json", name)}, context.temp_allocator)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+remove_file_if_exists :: proc(path: string) -> bool {
+	if path == "" || !os.exists(path) {
+		return true
+	}
+	err := os.remove(path)
+	if err != nil && os.exists(path) {
+		fmt.eprintln("ape: failed to remove stale shaderc failure output: ", path)
+		return false
+	}
+	return true
+}
+
+assert_shaderc_failure_outputs_absent :: proc(test_dir: string, name: string, kind: Shader_Kind, package_path: string, generated_path: string) -> bool {
+	if !assert_file_absent(package_path, "package") || !assert_file_absent(generated_path, "generated bindings") {
+		return false
+	}
+
+	switch kind {
+	case .Compute:
+		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil", name)}, context.temp_allocator), "D3D12 compute bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.dxil.json", name)}, context.temp_allocator), "D3D12 compute reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.spv", name)}, context.temp_allocator), "Vulkan compute bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.cs.spv.json", name)}, context.temp_allocator), "Vulkan compute reflection") {
+			return false
+		}
+	case .Graphics:
+		if !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil", name)}, context.temp_allocator), "D3D12 vertex bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.dxil.json", name)}, context.temp_allocator), "D3D12 vertex reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil", name)}, context.temp_allocator), "D3D12 fragment bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.dxil.json", name)}, context.temp_allocator), "D3D12 fragment reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.spv", name)}, context.temp_allocator), "Vulkan vertex bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.vs.spv.json", name)}, context.temp_allocator), "Vulkan vertex reflection") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.spv", name)}, context.temp_allocator), "Vulkan fragment bytecode") ||
+		   !assert_file_absent(filepath.join({test_dir, fmt.tprintf("%s.fs.spv.json", name)}, context.temp_allocator), "Vulkan fragment reflection") {
+			return false
+		}
+	}
+
+	return true
+}
+
+assert_file_absent :: proc(path: string, label: string) -> bool {
+	if !os.exists(path) {
+		return true
+	}
+	fmt.eprintln("ape: shaderc failure wrote ", label, " before rejecting the shader: ", path)
+	return false
 }
 
 assert_contains_all :: proc(text: string, snippets: []string, label: string) -> bool {
@@ -907,6 +1058,25 @@ VS_Output vs_main(VS_Input input)
 float4 fs_main(VS_Output input) : SV_Target
 {
 	return texture.Sample(samplers[0], input.uv);
+}
+`
+
+GLOBAL_STORAGE_ARRAY :: `struct Item
+{
+	float4 value;
+	uint id;
+};
+
+RWStructuredBuffer<Item> output_items[2];
+
+[shader("compute")]
+[numthreads(8, 4, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
+{
+	Item item;
+	item.value = float4(1.0, 0.0, 0.0, 1.0);
+	item.id = dispatch_id.x;
+	output_items[0][dispatch_id.x] = item;
 }
 `
 

@@ -22,7 +22,7 @@ COLOR_MASK_RGBA :: COLOR_MASK_RGB | COLOR_MASK_A
 Backend :: enum {
 	Auto,
 	Null,
-	D3D11,
+	D3D12,
 	Vulkan,
 }
 
@@ -51,11 +51,18 @@ Pipeline_Layout_Invalid :: Pipeline_Layout(0)
 Binding_Group_Invalid :: Binding_Group(0)
 
 // Buffer_Usage_Flag describes the intended roles and CPU update path for a buffer.
+//
+// `Indirect` tags a buffer as legal source storage for `draw_indirect`,
+// `draw_indexed_indirect`, and `dispatch_indirect` (AAA roadmap item 11).
+// It composes with another role flag — typically `.Storage` for compute
+// passes that produce indirect args, or `.Immutable` for CPU-prepared initial
+// indirect buffers.
 Buffer_Usage_Flag :: enum {
 	Vertex,
 	Index,
 	Uniform,
 	Storage,
+	Indirect,
 	Immutable,
 	Dynamic_Update,
 	Stream_Update,
@@ -97,6 +104,118 @@ View_Kind :: enum {
 	Storage_Buffer,
 	Color_Attachment,
 	Depth_Stencil_Attachment,
+}
+
+// Resource_Usage names the GPU role a Buffer or Image subresource is in at a
+// point in the command stream. It is the public vocabulary for the barrier
+// API (AAA roadmap item 18 / APE-14): pass attachment `initial_usage` /
+// `final_usage`, binding-group entry usage, and the `from` / `to` fields of
+// future explicit barrier verbs all use this enum. See
+// docs/private/gfx-barriers-note.md §2 and §9 for the model.
+//
+// One usage per subresource at a time. The hybrid barrier model picked in
+// APE-13 (auto inside a pass, explicit between passes/queues) keeps the user
+// writing usages while the runtime translates to backend states.
+//
+// Backend mapping per value:
+//
+//   None
+//     D3D12   D3D12_RESOURCE_STATE_COMMON.
+//     Vulkan  VK_IMAGE_LAYOUT_UNDEFINED, no access mask.
+//     Meaning: pre-first-use. The first transition out of None is auto-emitted
+//     by §9.1 attachments or by the first barrier that names the resource.
+//
+//   Sampled
+//     D3D12   SRV bind (informational).
+//     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+//             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.
+//     Vulkan  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+//             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT.
+//
+//   Storage_Read
+//     D3D12   SRV bind on a structured/byteaddress buffer or storage image
+//             (informational; D3D12 does not split UAV read from write).
+//     D3D12   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+//             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE on UAV-capable
+//             resources used read-only this pass.
+//     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+//             VK_ACCESS_2_SHADER_STORAGE_READ_BIT.
+//
+//   Storage_Write
+//     D3D12   UAV bind (informational).
+//     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
+//     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+//             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Repeating Storage_Write on
+//             the same view across two dispatches in one compute pass triggers
+//             an in-pass UAV barrier (gfx-barriers-note.md §9.1, case 4.5).
+//
+//   Storage_Read_Write
+//     D3D12   UAV bind (informational; common read/write storage path).
+//     D3D12   D3D12_RESOURCE_STATE_UNORDERED_ACCESS.
+//     Vulkan  VK_IMAGE_LAYOUT_GENERAL (images),
+//             VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+//             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT. Use this for storage
+//             resources a shader may both read and write in the same pass.
+//
+//   Color_Target
+//     D3D12   OMSetRenderTargets (informational).
+//     D3D12   D3D12_RESOURCE_STATE_RENDER_TARGET.
+//     Vulkan  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+//             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT.
+//
+//   Depth_Target_Read
+//     D3D12   OMSetRenderTargets with read-only DSV (informational).
+//     D3D12   D3D12_RESOURCE_STATE_DEPTH_READ.
+//     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+//             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT. Used for early-Z
+//             passes that bind the depth image as both attachment and sampled
+//             texture (gfx-barriers-note.md case 4.6).
+//
+//   Depth_Target_Write
+//     D3D12   OMSetRenderTargets with read/write DSV (informational).
+//     D3D12   D3D12_RESOURCE_STATE_DEPTH_WRITE.
+//     Vulkan  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+//             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT.
+//
+//   Copy_Source
+//     D3D12   CopyResource / CopySubresourceRegion source (informational).
+//     D3D12   D3D12_RESOURCE_STATE_COPY_SOURCE.
+//     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+//             VK_ACCESS_2_TRANSFER_READ_BIT.
+//
+//   Copy_Dest
+//     D3D12   CopyResource / CopySubresourceRegion destination, UpdateSubresource
+//             target (informational).
+//     D3D12   D3D12_RESOURCE_STATE_COPY_DEST.
+//     Vulkan  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+//             VK_ACCESS_2_TRANSFER_WRITE_BIT.
+//
+//   Indirect_Argument
+//     D3D12   ExecuteIndirect-style argument buffer bind (informational).
+//     D3D12   D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT.
+//     Vulkan  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT (buffers only — there is
+//             no image layout for this state). Read by draw_indirect /
+//             dispatch_indirect (AAA roadmap items 11-15).
+//
+//   Present
+//     D3D12   IDXGISwapChain::Present source (informational).
+//     D3D12   D3D12_RESOURCE_STATE_PRESENT (alias of COMMON).
+//     Vulkan  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR. Only valid on swapchain images;
+//             pass attachments use it as `initial_usage` / `final_usage` to
+//             ride the §9.4 auto-transition path.
+Resource_Usage :: enum {
+	None,
+	Sampled,
+	Storage_Read,
+	Storage_Write,
+	Storage_Read_Write,
+	Color_Target,
+	Depth_Target_Read,
+	Depth_Target_Write,
+	Copy_Source,
+	Copy_Dest,
+	Indirect_Argument,
+	Present,
 }
 
 // Error_Code classifies the most recent context error for programmatic handling.
@@ -360,6 +479,11 @@ Color :: struct {
 }
 
 // Color_Attachment_Action controls load/store behavior for one color attachment.
+//
+// A fully zero-init Color_Attachment_Action means "use the framework default":
+// clear to opaque black `{0, 0, 0, 1}`, store the result. Setting any field
+// (including `clear_value`) opts the slot out of defaulting and uses the
+// supplied values verbatim. See `pass_action_with_defaults`.
 Color_Attachment_Action :: struct {
 	load_action: Load_Action,
 	store_action: Store_Action,
@@ -367,6 +491,10 @@ Color_Attachment_Action :: struct {
 }
 
 // Depth_Attachment_Action controls load/store behavior for a depth attachment.
+//
+// A fully zero-init Depth_Attachment_Action means "use the framework default":
+// clear to `1.0`, store the result. Setting any field (including a
+// `clear_value` of 0) opts out of defaulting and uses the supplied values.
 Depth_Attachment_Action :: struct {
 	load_action: Load_Action,
 	store_action: Store_Action,
@@ -374,6 +502,10 @@ Depth_Attachment_Action :: struct {
 }
 
 // Stencil_Attachment_Action controls load/store behavior for a stencil attachment.
+//
+// The framework default is clear-to-zero, store. Because every default field
+// is the enum/integer zero value, the zero-init form already matches the
+// default; no explicit defaulting is needed.
 Stencil_Attachment_Action :: struct {
 	load_action: Load_Action,
 	store_action: Store_Action,
@@ -381,6 +513,17 @@ Stencil_Attachment_Action :: struct {
 }
 
 // Pass_Action groups all attachment load/store actions for begin_pass.
+//
+// Zero-init contract (AAA roadmap item 35): a fully zero-init `Pass_Action`
+// produces the same rendering as `default_pass_action()` — clear color to
+// opaque black, clear depth to 1.0, clear stencil to 0, store every
+// attachment. Defaults apply per attachment slot: any color slot whose
+// `Color_Attachment_Action` is fully zero is filled in with the color
+// default; the depth slot is filled in when its `Depth_Attachment_Action`
+// is fully zero. Slots with any field set (e.g. only `clear_value`) keep
+// the user-supplied values verbatim. Resolution happens at the descriptor
+// boundary in `begin_pass`; see `pass_action_with_defaults` for the same
+// transform exposed for inspection.
 Pass_Action :: struct {
 	colors: [MAX_COLOR_ATTACHMENTS]Color_Attachment_Action,
 	depth: Depth_Attachment_Action,
@@ -388,6 +531,11 @@ Pass_Action :: struct {
 }
 
 // Desc configures a graphics Context.
+//
+// `backend` selects the native implementation. `Backend.Auto` resolves at
+// `init` time to a platform-appropriate backend: `D3D12` on Windows, and
+// `Null` on every other platform until Vulkan/Metal land. Naming a concrete
+// backend (e.g. `.D3D12`) bypasses resolution and is used as-is.
 Desc :: struct {
 	backend: Backend,
 	width: i32,
@@ -422,17 +570,95 @@ Buffer_Read_Desc :: struct {
 	data: Range,
 }
 
+// Draw_Indirect_Args is the canonical layout one non-indexed indirect draw
+// command consumes from an indirect-capable buffer (AAA roadmap item 11).
+//
+// Field order and types match `D3D12_DRAW_ARGUMENTS`,
+// `VkDrawIndirectCommand`, and `MTLDrawPrimitivesIndirectArguments` so the
+// same byte image dispatches across all modern backends.
+Draw_Indirect_Args :: struct {
+	vertex_count:   u32,
+	instance_count: u32,
+	first_vertex:   u32,
+	first_instance: u32,
+}
+
+// Draw_Indexed_Indirect_Args is the canonical layout one indexed indirect
+// draw command consumes from an indirect-capable buffer (AAA roadmap item
+// 11).
+//
+// Field order matches `D3D12_DRAW_INDEXED_ARGUMENTS`,
+// `VkDrawIndexedIndirectCommand`, and
+// `MTLDrawIndexedPrimitivesIndirectArguments`. `base_vertex` is the signed
+// per-draw vertex offset added to each fetched index.
+Draw_Indexed_Indirect_Args :: struct {
+	index_count:    u32,
+	instance_count: u32,
+	first_index:    u32,
+	base_vertex:    i32,
+	first_instance: u32,
+}
+
+// Dispatch_Indirect_Args is the canonical layout one indirect dispatch
+// consumes from an indirect-capable buffer (AAA roadmap item 11).
+//
+// Field order matches `D3D12_DISPATCH_ARGUMENTS`,
+// `VkDispatchIndirectCommand`, and
+// `MTLDispatchThreadgroupsIndirectArguments`.
+Dispatch_Indirect_Args :: struct {
+	thread_group_count_x: u32,
+	thread_group_count_y: u32,
+	thread_group_count_z: u32,
+}
+
+// INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
+// `offset` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect` /
+// `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
+// planned backends, so a value that satisfies this constant is valid everywhere.
+INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
+
+// DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Draw_Indirect_Args` records in an indirect buffer.
+DRAW_INDIRECT_ARGS_STRIDE :: size_of(Draw_Indirect_Args)
+
+// DRAW_INDEXED_INDIRECT_ARGS_SIZE is the byte size of one indexed indirect
+// argument record before inter-record padding.
+DRAW_INDEXED_INDIRECT_ARGS_SIZE :: size_of(Draw_Indexed_Indirect_Args)
+
+// DRAW_INDEXED_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Draw_Indexed_Indirect_Args` records in an indirect buffer.
+// The record itself is 20 bytes, but multi-draw offsets must stay aligned to
+// `INDIRECT_ARGS_OFFSET_ALIGNMENT`, so consecutive records use a padded stride.
+DRAW_INDEXED_INDIRECT_ARGS_STRIDE :: ((DRAW_INDEXED_INDIRECT_ARGS_SIZE + INDIRECT_ARGS_OFFSET_ALIGNMENT - 1) / INDIRECT_ARGS_OFFSET_ALIGNMENT) * INDIRECT_ARGS_OFFSET_ALIGNMENT
+
+// DISPATCH_INDIRECT_ARGS_STRIDE is the canonical byte stride between
+// consecutive `Dispatch_Indirect_Args` records in an indirect buffer.
+DISPATCH_INDIRECT_ARGS_STRIDE :: size_of(Dispatch_Indirect_Args)
+
+// MAX_INDIRECT_DRAW_COUNT is the upper bound the validator enforces on the
+// `draw_count` argument to `gfx.draw_indirect` / `gfx.draw_indexed_indirect`.
+// A million records per call is several orders of magnitude beyond any
+// realistic GPU-driven workload; the cap exists to catch uninitialized or
+// negative-as-unsigned counts before they reach the backend.
+MAX_INDIRECT_DRAW_COUNT :: 1 << 20
+
 // Image_Desc creates an Image resource and optional immutable initial contents.
+//
+// Zero-count default (AAA roadmap item 34): leave `mip_count`, `array_count`,
+// `sample_count`, and `depth` at zero to mean "1". A descriptor that omits all
+// counts produces a single-mip, single-layer, single-sample image — the most
+// common shape — without forcing every call site to spell out the ones.
+// Negative values are rejected.
 Image_Desc :: struct {
 	label: string,
 	kind: Image_Kind,
 	usage: Image_Usage,
 	width: i32,
 	height: i32,
-	depth: i32,
-	mip_count: i32,
-	array_count: i32,
-	sample_count: i32,
+	depth: i32,        // 0 means 1.
+	mip_count: i32,    // 0 means 1.
+	array_count: i32,  // 0 means 1.
+	sample_count: i32, // 0 means 1.
 	format: Pixel_Format,
 	data: Range,
 	mips: [MAX_IMAGE_MIPS]Image_Subresource_Data,
@@ -517,11 +743,13 @@ View_Desc :: struct {
 }
 
 // Render_Target_Desc creates the common image/view bundle for one offscreen render target.
+//
+// `sample_count` follows the Image_Desc zero-count convention: 0 means 1.
 Render_Target_Desc :: struct {
 	label: string,
 	width: i32,
 	height: i32,
-	sample_count: i32,
+	sample_count: i32, // 0 means 1.
 	color_format: Pixel_Format,
 	depth_format: Pixel_Format,
 	sampled_color: bool,
@@ -562,6 +790,13 @@ Shader_Stage_Desc :: struct {
 }
 
 // Shader_Binding_Desc carries Slang-reflected binding metadata for runtime validation.
+//
+// `array_count` carries the descriptor-array element count reflected from
+// Slang (AAA roadmap item 28 / APE-24). `0` and `1` both mean "scalar
+// binding"; a value `> 1` declares a fixed-size descriptor array. The runtime
+// cross-checks this against the matching `Binding_Group_Layout_Entry_Desc`
+// when a pipeline binds against the layout. `unsized = true` reserves the
+// binding for the runtime / bindless `Binding_Heap` path.
 Shader_Binding_Desc :: struct {
 	active: bool,
 	stage: Shader_Stage,
@@ -570,6 +805,8 @@ Shader_Binding_Desc :: struct {
 	slot: u32,
 	native_slot: u32,
 	native_space: u32,
+	array_count: u32,
+	unsized: bool,
 	name: string,
 	size: u32,
 	view_kind: View_Kind,
@@ -592,11 +829,23 @@ Binding_Group_Resource_View_Layout_Desc :: struct {
 }
 
 // Binding_Group_Layout_Entry_Desc describes one logical entry in a generated binding group.
+//
+// `array_count` is the descriptor-array element count reflected from Slang
+// (AAA roadmap item 28 / APE-24). `0` and `1` both mean "scalar binding"; a
+// value `> 1` declares a fixed-size descriptor array that occupies the slot
+// range `[slot, slot + array_count)` in the entry's per-kind slot space.
+//
+// `unsized = true` reserves the entry for the runtime / bindless `Binding_Heap`
+// path (see `gfx/bindless.odin` and gfx-bindless-note.md §5.3). Item 28 ships
+// fixed arrays only; `unsized = true` is rejected at layout creation until the
+// `Binding_Heap` backend lands.
 Binding_Group_Layout_Entry_Desc :: struct {
 	active: bool,
 	stages: Shader_Stage_Set,
 	kind: Shader_Binding_Kind,
 	slot: u32,
+	array_count: u32,
+	unsized: bool,
 	name: string,
 	uniform_block: Binding_Group_Uniform_Block_Layout_Desc,
 	resource_view: Binding_Group_Resource_View_Layout_Desc,
@@ -633,6 +882,13 @@ Binding_Group_Desc :: struct {
 	layout: Binding_Group_Layout,
 	views: [MAX_RESOURCE_VIEWS]View,
 	samplers: [MAX_SAMPLERS]Sampler,
+	// arrays carries fixed-size descriptor-array payloads (see
+	// gfx/bindless.odin and gfx-bindless-note.md §5). Slot count is
+	// MAX_BINDING_GROUP_ARRAYS; entries with active = false are ignored.
+	// validate_binding_group_desc enforces the shape once item 28 lands;
+	// today the field is locked declaration-only and zero-init means
+	// "no fixed arrays", so existing literals stay valid.
+	arrays: [MAX_BINDING_GROUP_ARRAYS]Binding_Group_Array_Desc,
 }
 
 // Shader_Vertex_Input_Desc carries Slang-reflected vertex input metadata.
@@ -831,6 +1087,8 @@ Context :: struct {
 	binding_group_layout_pool: Resource_Pool,
 	pipeline_layout_pool: Resource_Pool,
 	binding_group_pool: Resource_Pool,
+	transient_allocator_pool: Resource_Pool,
+	transient_allocator_states: map[Transient_Allocator]Transient_Allocator_State,
 	shader_states: map[Shader]Shader_State,
 	pipeline_states: map[Pipeline]Pipeline_State,
 	compute_pipeline_states: map[Compute_Pipeline]Compute_Pipeline_State,
@@ -844,6 +1102,16 @@ Context :: struct {
 	compute_pass_resource_write_count: int,
 	pass_color_attachments: [MAX_COLOR_ATTACHMENTS]View,
 	pass_depth_stencil_attachment: View,
+	// Per-frame barrier tracker (APE-16). Populated only when desc.debug == true.
+	// Records the most recent declared usage of each resource within the current
+	// frame so cmd_barrier / barrier / apply_bindings / begin_pass can flag a
+	// declared `from` that does not match prior state (wrong barrier) or a
+	// binding that demands a transition the user did not write (missing
+	// barrier). Cleared at every frame boundary by `commit`. This is the
+	// "transient per-list state log" §9.5 of gfx-barriers-note.md permits — it
+	// never drives backend state, only validation.
+	image_last_usage: map[Image]Resource_Usage,
+	buffer_last_usage: map[Buffer]Resource_Usage,
 	backend_data: rawptr,
 	last_error: string,
 	last_error_code: Error_Code,
@@ -851,30 +1119,11 @@ Context :: struct {
 }
 
 // default_pass_action returns clear/store defaults for color, depth, and stencil attachments.
+//
+// Equivalent to `pass_action_with_defaults({})`. A zero-init `Pass_Action` passed
+// to `begin_pass` produces the same rendering — see the `Pass_Action` doc.
 default_pass_action :: proc() -> Pass_Action {
-	action: Pass_Action
-
-	for i in 0..<MAX_COLOR_ATTACHMENTS {
-		action.colors[i] = Color_Attachment_Action {
-			load_action = .Clear,
-			store_action = .Store,
-			clear_value = Color{r = 0, g = 0, b = 0, a = 1},
-		}
-	}
-
-	action.depth = Depth_Attachment_Action {
-		load_action = .Clear,
-		store_action = .Store,
-		clear_value = 1,
-	}
-
-	action.stencil = Stencil_Attachment_Action {
-		load_action = .Clear,
-		store_action = .Store,
-		clear_value = 0,
-	}
-
-	return action
+	return pass_action_with_defaults({})
 }
 
 // backend_name returns a stable lowercase display name for a Backend.
@@ -884,8 +1133,8 @@ backend_name :: proc(backend: Backend) -> string {
 		return "auto"
 	case .Null:
 		return "null"
-	case .D3D11:
-		return "d3d11"
+	case .D3D12:
+		return "d3d12"
 	case .Vulkan:
 		return "vulkan"
 	}

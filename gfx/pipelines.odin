@@ -2,6 +2,15 @@ package gfx
 
 // create_pipeline creates an immutable graphics pipeline state object.
 // On failure, the returned handle is Pipeline_Invalid and last_error explains why.
+//
+// example:
+//   pipeline, ok := gfx.create_pipeline(&ctx, {
+//       label           = "triangle",
+//       shader          = shader,
+//       pipeline_layout = pipeline_layout,
+//       primitive_type  = .Triangles,
+//       layout          = triangle_shader.layout_desc(),
+//   })
 create_pipeline :: proc(ctx: ^Context, desc: Pipeline_Desc) -> (Pipeline, bool) {
 	if !require_initialized(ctx, "gfx.create_pipeline") {
 		return Pipeline_Invalid, false
@@ -41,6 +50,10 @@ destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {
 	if !require_resource(ctx, &ctx.pipeline_pool, u64(pipeline), "gfx.destroy_pipeline", "pipeline") {
 		return
 	}
+	if ctx.current_pipeline == pipeline {
+		set_validation_error(ctx, "gfx.destroy_pipeline: pipeline is currently bound")
+		return
+	}
 
 	backend_destroy_pipeline(ctx, pipeline)
 	untrack_pipeline_state(ctx, pipeline)
@@ -49,6 +62,13 @@ destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {
 
 // create_compute_pipeline creates an immutable compute pipeline state object.
 // On failure, the returned handle is Compute_Pipeline_Invalid and last_error explains why.
+//
+// example:
+//   pipeline, ok := gfx.create_compute_pipeline(&ctx, {
+//       label           = "simulate",
+//       shader          = compute_shader,
+//       pipeline_layout = pipeline_layout,
+//   })
 create_compute_pipeline :: proc(ctx: ^Context, desc: Compute_Pipeline_Desc) -> (Compute_Pipeline, bool) {
 	if !require_initialized(ctx, "gfx.create_compute_pipeline") {
 		return Compute_Pipeline_Invalid, false
@@ -89,6 +109,10 @@ destroy_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) {
 		return
 	}
 	if !require_resource(ctx, &ctx.compute_pipeline_pool, u64(pipeline), "gfx.destroy_compute_pipeline", "compute pipeline") {
+		return
+	}
+	if ctx.current_compute_pipeline == pipeline {
+		set_validation_error(ctx, "gfx.destroy_compute_pipeline: compute pipeline is currently bound")
 		return
 	}
 

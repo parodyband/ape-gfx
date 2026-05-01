@@ -33,6 +33,10 @@ destroy_sampler :: proc(ctx: ^Context, sampler: Sampler) {
 	if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), "gfx.destroy_sampler", "sampler") {
 		return
 	}
+	if message := sampler_blocked_from_destroy(ctx, sampler); message != "" {
+		set_validation_error(ctx, message)
+		return
+	}
 
 	backend_destroy_sampler(ctx, sampler)
 	release_resource_id(&ctx.sampler_pool, u64(sampler))

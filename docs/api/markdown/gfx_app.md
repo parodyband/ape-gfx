@@ -182,6 +182,14 @@ reloadable_shader_program_poll :: proc(ctx: ^gfx.Context, reloadable: ^Reloadabl
 resize_swapchain :: proc(ctx: ^gfx.Context, window: ^app.Window, current_width, current_height: ^i32) -> (: Resize_Result, : bool) {...}
 ```
 
+### `run`
+
+```odin
+run :: proc(desc: Run_Desc) -> bool {...}
+```
+
+run hosts a sample's main loop. Returns true on clean exit.
+
 ### `shader_program_binding_group_layout`
 
 ```odin
@@ -238,6 +246,17 @@ unload_texture_asset :: proc(asset: ^Texture_Asset) {...}
 
 ## Types
 
+### `Frame_Info`
+
+```odin
+Frame_Info :: struct {index: int, width: i32, height: i32, resized: bool}
+```
+
+Frame_Info is passed to a Run_Desc.frame callback.
+`resized` is true on the first frame after the swapchain dimensions changed,
+so callers can rebuild size-dependent resources. `width` / `height` are the
+current render-target dimensions in pixels.
+
 ### `Reloadable_Shader_Program`
 
 ```odin
@@ -249,6 +268,21 @@ Reloadable_Shader_Program :: struct {desc: Shader_Program_Desc, program: Shader_
 ```odin
 Resize_Result :: struct {active: bool, resized: bool, width: i32, height: i32}
 ```
+
+### `Run_Desc`
+
+```odin
+Run_Desc :: struct {title: cstring, width: i32, height: i32, gfx_label: string, backend: gfx.Backend, swapchain_format: gfx.Pixel_Format, vsync: bool, debug: bool, max_frames: int, user_data: rawptr, init: proc(ctx: ^gfx.Context, window: ^app.Window, user_data: rawptr) -> bool, frame: proc(ctx: ^gfx.Context, window: ^app.Window, info: Frame_Info, user_data: rawptr) -> bool, shutdown: proc(ctx: ^gfx.Context, user_data: rawptr)}
+```
+
+Run_Desc configures the gfx_app.run sample harness.
+The harness owns app.init/shutdown, window creation, gfx.init/shutdown, and
+the swapchain-resize / event-poll loop. It does NOT touch the recording
+model â€” callers still issue begin_pass / apply_pipeline / draw / end_pass /
+commit explicitly inside `frame`.
+This package is deliberately separate from `gfx`: production code is
+expected to drive gfx directly. The harness exists only to keep one-question
+samples from drowning in identical setup boilerplate.
 
 ### `Shader_Program`
 

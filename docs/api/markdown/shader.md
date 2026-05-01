@@ -6,9 +6,71 @@ Package: `shader`
 
 ## Constants
 
-_No public constants._
+### `MAX_PERMUTATION_AXES`
+
+```odin
+MAX_PERMUTATION_AXES :: 16
+```
+
+MAX_PERMUTATION_AXES caps the number of permutation axes a single shader
+identity may declare. Matches the design ceiling in
+docs/private/gfx-permutations-note.md; broader keys are a refactor signal.
+
+### `Shader_Id_Invalid`
+
+```odin
+Shader_Id_Invalid :: Shader_Id(0)
+```
+
+Shader_Id_Invalid is returned when registration fails.
 
 ## Procedures
+
+### `canonical_key_hash`
+
+```odin
+canonical_key_hash :: proc(pairs: []Permutation_Key_Pair) -> u64 {...}
+```
+
+canonical_key_hash hashes a canonical run of (axis, value) pairs. Pairs
+must be sorted by axis index — callers should canonicalize before hashing.
+Uses 64-bit FNV-1a so writer and reader agree without pulling in xxhash.
+
+### `find_variant`
+
+```odin
+find_variant :: proc(pkg: ^Package, key_hash: u64) -> (: int, : bool) {...}
+```
+
+find_variant locates the variant matching `key_hash`. Variants are stored
+sorted by hash, so this runs in O(log n). Returns the index and ok=true on
+hit. APE-28 will wrap this with a typed-key lookup that fills defaults.
+
+### `install_subprocess_compiler`
+
+```odin
+install_subprocess_compiler :: proc(lib: ^Library, options: ^Subprocess_Compiler_Options) {...}
+```
+
+install_subprocess_compiler wires the default `ape_shaderc.exe` invoker
+into a Library. The pointer to `options` must outlive the library.
+
+### `library_destroy`
+
+```odin
+library_destroy :: proc(lib: ^Library, ctx: ^gfx.Context) {...}
+```
+
+library_destroy releases every cached gfx handle and frees library-owned
+memory. Pass the same Context the library minted handles into.
+
+### `library_init`
+
+```odin
+library_init :: proc() -> Library {...}
+```
+
+library_init returns an empty Library. The returned value can be moved.
 
 ### `load`
 
@@ -18,6 +80,46 @@ load :: proc(path: string) -> (: Package, : bool) {...}
 
 load reads and parses an .ashader package from disk.
 
+### `make_test_package`
+
+```odin
+make_test_package :: proc(axes: []Permutation_Axis, variants: []Test_Package_Variant) -> (: Package, : bool) {...}
+```
+
+make_test_package fabricates a Package with the supplied axes and variants.
+The returned package owns its own byte buffer; pass it through `unload` (or
+hand it to `register_package` with `take_ownership = true`) to free it.
+Intended for runtime-library tests; production code should load packages
+emitted by `ape_shaderc`.
+
+### `permutation_key_clear`
+
+```odin
+permutation_key_clear :: proc(key: ^Permutation_Key) {...}
+```
+
+permutation_key_clear resets the key to the all-defaults state.
+
+### `permutation_key_hash`
+
+```odin
+permutation_key_hash :: proc(key: Permutation_Key) -> u64 {...}
+```
+
+permutation_key_hash returns the canonical FNV-1a hash matching the shader
+package writer. Defaults are filled in from the package only by `resolve`,
+so an empty key always hashes to the default-variant identity.
+
+### `permutation_key_set`
+
+```odin
+permutation_key_set :: proc(key: ^Permutation_Key, axis: u16, value: u16) -> bool {...}
+```
+
+permutation_key_set inserts or updates one (axis, value) pair, keeping the
+pair list sorted by axis index so `permutation_key_hash` is canonical.
+Returns false if the key is full or axis is out of range.
+
 ### `reflection_json`
 
 ```odin
@@ -26,6 +128,74 @@ reflection_json :: proc(pkg: ^Package, target: Backend_Target, stage: Stage) -> 
 
 reflection_json returns the embedded Slang reflection JSON for a target/stage pair.
 
+### `register_package`
+
+```odin
+register_package :: proc(lib: ^Library, name: string, pkg: Package, take_ownership: bool) -> (: Shader_Id, : bool) {...}
+```
+
+register_package registers an already-parsed Package. Useful for tests and
+for runtime-compiled variants. The library does not take ownership of `pkg`
+unless `take_ownership` is true.
+
+### `register_path`
+
+```odin
+register_path :: proc(lib: ^Library, name: string, package_path: string) -> (: Shader_Id, : bool) {...}
+```
+
+register_path registers a shader identity backed by an `.ashader` file at
+`package_path`. The file is loaded lazily on the first resolve.
+
+### `register_path_with_source`
+
+```odin
+register_path_with_source :: proc(lib: ^Library, name, package_path, source_path: string) -> (: Shader_Id, : bool) {...}
+```
+
+register_path_with_source binds a `.ashader` package path *and* a source
+path. If the package is missing on disk and a Library_Compiler is set, the
+runtime will invoke it to produce the package on first resolve.
+
+### `resolve`
+
+```odin
+resolve :: proc(lib: ^Library, ctx: ^gfx.Context, id: Shader_Id, key: Permutation_Key) -> (: gfx.Shader, : bool) {...}
+```
+
+resolve maps (id, key) to a backend gfx.Shader, materialising it on first
+use. Subsequent calls with the same key return the cached handle.
+On a miss, the library:
+  1. Loads the `.ashader` package if it has not been loaded yet.
+  2. If the package is missing on disk, invokes the source compiler.
+  3. Resolves the canonical key against the package variants, falling back
+     to variant 0 (defaults) when the key matches no declared variant.
+  4. Builds a gfx.Shader_Desc from the variant's stage and binding records
+     and creates a backend shader object.
+
+### `resolve_pipeline`
+
+```odin
+resolve_pipeline :: proc(lib: ^Library, ctx: ^gfx.Context, desc: Library_Pipeline_Desc) -> (: gfx.Pipeline, : bool) {...}
+```
+
+resolve_pipeline returns a cached gfx.Pipeline keyed by (id, key,
+state_hash). The first call creates the underlying shader (via `resolve`)
+and the pipeline; later calls re-use the same Pipeline handle so reflection
+bindings and pipeline state are not recomputed each frame.
+The caller is responsible for the state_hash — anything that affects the
+pipeline state (vertex layout, render formats, depth/raster/blend, label)
+must contribute. The library treats `state_hash` as opaque.
+
+### `set_source_compiler`
+
+```odin
+set_source_compiler :: proc(lib: ^Library, fn: Library_Compiler, user: rawptr) {...}
+```
+
+set_source_compiler installs the optional source-compile fallback. When
+`nil`, `resolve` returns false on a miss instead of trying to recompile.
+
 ### `shader_desc`
 
 ```odin
@@ -33,6 +203,23 @@ shader_desc :: proc(pkg: ^Package, target: Backend_Target, label: string) -> (: 
 ```
 
 shader_desc converts package bytecode and reflection metadata into a gfx.Shader_Desc.
+
+### `shader_id_for_name`
+
+```odin
+shader_id_for_name :: proc(lib: ^Library, name: string) -> (: Shader_Id, : bool) {...}
+```
+
+shader_id_for_name returns the id minted by a previous register call.
+
+### `target_for_backend`
+
+```odin
+target_for_backend :: proc(backend: gfx.Backend) -> (: Backend_Target, : bool) {...}
+```
+
+target_for_backend maps a gfx.Backend to the .ashader Backend_Target the
+runtime should fetch. Returns false for backends without a baked target.
 
 ### `unload`
 
@@ -47,18 +234,118 @@ unload frees package-owned slices created by load.
 ### `Backend_Target`
 
 ```odin
-Backend_Target :: enum {D3D11_DXBC, Vulkan_SPIRV}
+Backend_Target :: enum {D3D12_DXIL, Vulkan_SPIRV}
 ```
 
 Backend_Target selects which compiled backend payload to read from an .ashader package.
 
+### `Library`
+
+```odin
+Library :: struct {entries: [dynamic]Library_Entry, name_index: map[string]Shader_Id, pipelines: [dynamic]Pipeline_Cache_Entry, compile: Library_Compiler, compile_user: rawptr}
+```
+
+Library owns runtime caches mapping (Shader_Id, Permutation_Key) to a live
+gfx.Shader and (id, key, render_state_hash) to a gfx.Pipeline. Loaded
+`.ashader` packages and registration metadata live here too; destroying the
+library tears down all derived gfx handles in the supplied context.
+
+### `Library_Compiler`
+
+```odin
+Library_Compiler :: #type proc(name: string, source_path: string, out_path: string, user: rawptr) -> bool
+```
+
+Library_Compiler is the optional source-compile fallback. When `resolve`
+misses both the live cache and the on-disk `.ashader`, the library invokes
+the compiler to produce a fresh package at `out_path`. Returning false
+surfaces as a Library lookup failure.
+The default contract is one-shot: produce `out_path` synchronously. The
+runtime owns no policy about caching that file; the user controls where it
+lands and whether to retain it across runs.
+
+### `Library_Pipeline_Desc`
+
+```odin
+Library_Pipeline_Desc :: struct {id: Shader_Id, key: Permutation_Key, state_hash: u64, base: gfx.Pipeline_Desc}
+```
+
+Library_Pipeline_Desc is the pipeline-cache lookup key. `base` carries the
+non-shader pipeline state and is used to mint the eventual gfx.Pipeline.
+The `shader` field on `base` is filled in by the library after it resolves
+the variant — callers must leave it Shader_Invalid.
+
 ### `Package`
 
 ```odin
-Package :: struct {version: u32, bytes: []u8, stages: []Stage_Record, bindings: []Binding_Record, vertex_inputs: []Vertex_Input_Record}
+Package :: struct {version: u32, bytes: []u8, stages: []Stage_Record, bindings: []Binding_Record, vertex_inputs: []Vertex_Input_Record, axes: []Permutation_Axis, variants: []Permutation_Variant}
 ```
 
 Package owns bytes and parsed metadata loaded from one .ashader file.
+`axes` and `variants` describe the permutation key space declared by the
+shader package. v11 is the first D3D12/DXIL package version; older packages
+are intentionally rejected.
+
+### `Permutation_Axis`
+
+```odin
+Permutation_Axis :: struct {name: string, kind: Permutation_Axis_Kind, static_axis: bool, value_count: u32, default_index: u32}
+```
+
+Permutation_Axis describes one named axis declared by the shader package.
+Variants reference axes by index; values_offset/value_count point into the
+future values table that APE-28 will surface.
+
+### `Permutation_Axis_Kind`
+
+```odin
+Permutation_Axis_Kind :: enum u32 {Bool, Enum, Int, Type}
+```
+
+Permutation_Axis_Kind mirrors the design-note enum for
+shader-permutation axes. Bool axes have an implicit {0,1} value space; the
+rest carry an explicit values table the runtime does not yet read.
+
+### `Permutation_Key`
+
+```odin
+Permutation_Key :: struct {pair_count: u32, pairs: [MAX_PERMUTATION_AXES]Permutation_Key_Pair}
+```
+
+Permutation_Key is a runtime-side permutation selector. The pair count is
+bounded by MAX_PERMUTATION_AXES so the key fits in a fixed buffer; broader
+keys are a refactor signal per the design note.
+
+### `Permutation_Key_Pair`
+
+```odin
+Permutation_Key_Pair :: struct {axis: u16, value: u16}
+```
+
+Permutation_Key_Pair pairs an axis index with a value index. A canonical
+key is a flat run of pairs sorted by axis index; see the format spec.
+
+### `Permutation_Variant`
+
+```odin
+Permutation_Variant :: struct {key_hash: u64, pairs: []Permutation_Key_Pair, stage_first: u32, stage_count: u32, binding_first: u32, binding_count: u32, name: string}
+```
+
+Permutation_Variant points at the slice of stage and binding records that
+belong to one (identity, key) pair, plus the canonical key bytes used to
+reproduce the lookup hash. Variants in pkg.variants are sorted by
+`key_hash` so `find_variant` can binary-search.
+
+### `Shader_Id`
+
+```odin
+Shader_Id :: distinct u32
+```
+
+Shader_Id is a stable runtime identifier for a shader identity. It is minted
+by `register` and remains valid for the lifetime of the owning Library.
+AAA roadmap item 32: identity + permutation key are the runtime lookup
+inputs; everything backend-specific is cached behind this id.
 
 ### `Stage`
 
@@ -67,3 +354,43 @@ Stage :: enum {Vertex, Fragment, Compute}
 ```
 
 Stage selects a shader stage inside an .ashader package.
+
+### `Subprocess_Compiler_Options`
+
+```odin
+Subprocess_Compiler_Options :: struct {executable_path: string, build_dir: string, working_dir: string}
+```
+
+Subprocess_Compiler_Options configures the default Library_Compiler
+implementation that shells out to `ape_shaderc.exe`. Only `executable_path`
+is required; the rest pick up reasonable defaults relative to the source
+file the compiler is invoked for.
+This is the default APE-28 source-compile fallback path: when `resolve`
+misses both the in-memory cache and the on-disk `.ashader`, the runtime
+asks `ape_shaderc` to produce one. Production callers can substitute their
+own Library_Compiler if they want to drive Slang in-process.
+
+### `Test_Package_Variant`
+
+```odin
+Test_Package_Variant :: struct {axis_values: []u16, stages: []Test_Package_Variant_Stage}
+```
+
+Test_Package_Variant carries one variant's key and its full stage list.
+The first element of `axis_values` pairs with axis 0 in the supplied axes,
+and so on; pairs are sorted by axis index automatically.
+
+### `Test_Package_Variant_Stage`
+
+```odin
+Test_Package_Variant_Stage :: struct {target: Backend_Target, stage: Stage, entry: string, bytecode: []u8, reflection_json: string}
+```
+
+Test_Package_Variant_Stage describes one stage of one variant for the
+synthetic fixture builder used by the runtime-library test harness. Each
+stage is built into the resulting Package as if it had been packaged from
+disk, so it survives the same `byte_range` validation real packages do.
+This API exists so the runtime-lookup test can exercise multi-variant
+resolution without depending on `ape_shaderc` to emit a permutation-bearing
+package. It is intentionally narrow and not part of the production
+surface.

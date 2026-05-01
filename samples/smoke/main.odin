@@ -19,12 +19,9 @@ main :: proc() {
 	}
 	defer gfx.shutdown(&ctx)
 
-	action := gfx.default_pass_action()
-	action.colors[0].clear_value = gfx.Color{r = 0.06, g = 0.08, b = 0.11, a = 1}
-
 	pass := gfx.Pass_Desc {
 		label = "smoke clear",
-		action = action,
+		action = {colors = {0 = {clear_value = {r = 0.06, g = 0.08, b = 0.11, a = 1}}}},
 	}
 
 	if !gfx.begin_pass(&ctx, pass) {

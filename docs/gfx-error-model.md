@@ -1,4 +1,4 @@
-# Ape GFX Error Model
+﻿# Ape GFX Error Model
 
 Date: 2026-04-28
 
@@ -22,12 +22,12 @@ This document records the v0.1 `gfx.Error_Code` contract. Human-readable message
 | `Invalid_Handle` | A required handle is the zero invalid sentinel. | `tools/test_gfx_error_codes.ps1` |
 | `Wrong_Context` | A live handle belongs to another `gfx.Context`. | `tools/test_gfx_error_codes.ps1` |
 | `Stale_Handle` | A handle names a destroyed resource or an old generation. | `tools/test_gfx_error_codes.ps1` |
-| `Backend` | The native backend returned a failure that is not classified as validation, unsupported, or device loss. | `tools/test_d3d11_error_codes.ps1` |
-| `Device_Lost` | The native backend reports device removal, reset, hang, or internal driver loss. | D3D11 HRESULT mapping in `gfx/backend_d3d11.odin`; deterministic runtime trigger is deferred |
+| `Backend` | The native backend returned a failure that is not classified as validation, unsupported, or device loss. | `tools/test_gfx_error_codes.ps1` plus D3D12 sample runtime coverage |
+| `Device_Lost` | The native backend reports device removal, reset, hang, or internal driver loss. | D3D12 HRESULT mapping in `gfx/backend_d3d12.odin`; deterministic runtime trigger is deferred |
 | `Resource_Leak` | `shutdown` found live resources still owned by the context. | `tools/test_gfx_error_codes.ps1` |
 
-## D3D11 Device Loss
+## D3D12 Device Loss
 
-D3D11 maps `DXGI_ERROR_DEVICE_HUNG`, `DXGI_ERROR_DEVICE_REMOVED`, `DXGI_ERROR_DEVICE_RESET`, and `DXGI_ERROR_DRIVER_INTERNAL_ERROR` to `Device_Lost`. If `GetDeviceRemovedReason` reports a failed reason, that reason also forces `Device_Lost`.
+D3D12 maps `DXGI_ERROR_DEVICE_HUNG`, `DXGI_ERROR_DEVICE_REMOVED`, `DXGI_ERROR_DEVICE_RESET`, and `DXGI_ERROR_DRIVER_INTERNAL_ERROR` to `Device_Lost`. If `GetDeviceRemovedReason` reports a failed reason, that reason also forces `Device_Lost`.
 
 The validation suite does not currently force a real device removal because doing so is not deterministic or appropriate for a normal local test run. A future backend test seam may cover this without destabilizing the suite.

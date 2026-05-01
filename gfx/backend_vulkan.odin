@@ -132,6 +132,11 @@ vulkan_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range)
 	return false
 }
 
+vulkan_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: apply_uniform_at is not implemented yet")
+	return false
+}
+
 vulkan_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: draw is not implemented yet")
 	return false
@@ -139,6 +144,21 @@ vulkan_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_ins
 
 vulkan_dispatch :: proc(ctx: ^Context, group_count_x, group_count_y, group_count_z: u32) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: dispatch is not implemented yet")
+	return false
+}
+
+vulkan_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: draw_indirect is not implemented yet")
+	return false
+}
+
+vulkan_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: draw_indexed_indirect is not implemented yet")
+	return false
+}
+
+vulkan_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: dispatch_indirect is not implemented yet")
 	return false
 }
 
@@ -152,7 +172,29 @@ vulkan_end_compute_pass :: proc(ctx: ^Context) -> bool {
 	return false
 }
 
+vulkan_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: barrier is not implemented yet")
+	return false
+}
+
 vulkan_commit :: proc(ctx: ^Context) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: commit is not implemented yet")
 	return false
+}
+
+vulkan_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capacity: int, label: string) -> (Buffer, rawptr, bool) {
+	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
+	return Buffer_Invalid, nil, false
+}
+
+vulkan_destroy_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) {}
+
+vulkan_reset_transient_chunk :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
+	return nil, false
+}
+
+vulkan_resolve_transient_chunk_mapped :: proc(ctx: ^Context, buffer: Buffer) -> (rawptr, bool) {
+	set_unsupported_error(ctx, "gfx.vulkan: transient allocator is not implemented yet")
+	return nil, false
 }

@@ -1,6 +1,17 @@
 package gfx
 
 // begin_pass starts a graphics render pass.
+//
+// A fully zero-init `Pass_Desc.action` defaults to the framework clear/store
+// behavior; see `Pass_Action`. Set only the fields you want to override.
+//
+// example:
+//   gfx.begin_pass(&ctx, {
+//       label  = "main",
+//       action = {colors = {0 = {clear_value = {r = 0.02, g = 0.02, b = 0.03, a = 1}}}},
+//   })
+//   // ...apply_pipeline / apply_bindings / draw...
+//   gfx.end_pass(&ctx)
 begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	if !require_initialized(ctx, "gfx.begin_pass") {
 		return false
@@ -11,15 +22,23 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 		return false
 	}
 
-	if !validate_pass_desc(ctx, desc) {
+	resolved := desc
+	resolved.action = pass_action_with_defaults(desc.action)
+
+	if !validate_pass_desc(ctx, resolved) {
 		return false
 	}
 
-	if !backend_begin_pass(ctx, desc) {
+	if !barrier_tracker_check_pass_attachments(ctx, resolved, "gfx.begin_pass") {
 		return false
 	}
 
-	capture_pass_attachments(ctx, desc)
+	if !backend_begin_pass(ctx, resolved) {
+		return false
+	}
+
+	barrier_tracker_record_pass_attachments(ctx, resolved)
+	capture_pass_attachments(ctx, resolved)
 	ctx.current_pipeline = Pipeline_Invalid
 	ctx.current_compute_pipeline = Compute_Pipeline_Invalid
 	ctx.current_bindings = {}
@@ -30,6 +49,9 @@ begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 }
 
 // apply_pipeline binds a graphics pipeline inside a render pass.
+//
+// example:
+//   gfx.apply_pipeline(&ctx, pipeline)
 apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 	if !require_render_pass(ctx, "gfx.apply_pipeline") {
 		return false
@@ -52,6 +74,12 @@ apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 }
 
 // begin_compute_pass starts a compute-only pass.
+//
+// example:
+//   gfx.begin_compute_pass(&ctx, {label = "simulate"})
+//   gfx.apply_compute_pipeline(&ctx, compute_pipeline)
+//   gfx.dispatch(&ctx, 64, 1, 1)
+//   gfx.end_compute_pass(&ctx)
 begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc = {}) -> bool {
 	if !require_initialized(ctx, "gfx.begin_compute_pass") {
 		return false
@@ -105,6 +133,12 @@ apply_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) -> boo
 }
 
 // apply_bindings binds transient buffers, views, and samplers for draw or dispatch.
+//
+// example:
+//   bindings: gfx.Bindings
+//   bindings.vertex_buffers[0] = {buffer = vertex_buffer}
+//   bindings.index_buffer = {buffer = index_buffer}
+//   gfx.apply_bindings(&ctx, bindings)
 apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	if !require_any_pass(ctx, "gfx.apply_bindings") {
 		return false
@@ -114,15 +148,24 @@ apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 		return false
 	}
 
+	if !barrier_tracker_check_bindings(ctx, bindings, "gfx.apply_bindings") {
+		return false
+	}
+
 	if !backend_apply_bindings(ctx, bindings) {
 		return false
 	}
 
+	barrier_tracker_record_bindings(ctx, bindings)
 	ctx.current_bindings = bindings
 	return true
 }
 
 // apply_uniforms uploads one reflected uniform block to the current pipeline.
+//
+// example:
+//   frame := FrameUniforms{view_proj = view_proj}
+//   gfx.apply_uniforms(&ctx, 0, 0, gfx.range_raw(&frame, size_of(frame)))
 apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> bool {
 	if !require_any_pass(ctx, "gfx.apply_uniforms") {
 		return false
@@ -145,7 +188,74 @@ apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) -> boo
 	return backend_apply_uniforms(ctx, group, slot, data)
 }
 
+// apply_uniform_at binds a `Transient_Slice` as a uniform/constant buffer at a slot.
+//
+// The caller is expected to have already written `byte_size` bytes through
+// `slice.mapped`. `byte_size` must match the reflected uniform block size;
+// `slice.size` is the slot's alignment-padded size and is at least `byte_size`.
+//
+// Composes with the transient allocator (APE-20): allocate a slice from a
+// `Transient_Allocator` with `Transient_Usage.Uniform`, write into
+// `slice.mapped`, then bind it here. The slot is rebound on every call, so the
+// usual draw-time required-uniform check is satisfied.
+//
+// example:
+//   slice, _ := gfx.transient_alloc(allocator, size_of(Frame_Uniforms), .Uniform)
+//   (^Frame_Uniforms)(slice.mapped)^ = uniforms
+//   gfx.apply_uniform_at(&ctx, 0, 0, slice, size_of(Frame_Uniforms))
+apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
+	if !require_any_pass(ctx, "gfx.apply_uniform_at") {
+		return false
+	}
+
+	if group >= MAX_BINDING_GROUPS {
+		set_validation_error(ctx, "gfx.apply_uniform_at: group is out of range")
+		return false
+	}
+	if slot < 0 || slot >= MAX_UNIFORM_BLOCKS {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slot is out of range")
+		return false
+	}
+	if !buffer_valid(slice.buffer) {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slice has no backing buffer")
+		return false
+	}
+	if !require_resource(ctx, &ctx.buffer_pool, u64(slice.buffer), "gfx.apply_uniform_at", "transient buffer") {
+		return false
+	}
+	if byte_size <= 0 {
+		set_validation_error(ctx, "gfx.apply_uniform_at: byte_size must be positive")
+		return false
+	}
+	if slice.offset < 0 || slice.size <= 0 || byte_size > slice.size {
+		set_validation_error(ctx, "gfx.apply_uniform_at: byte_size exceeds slice size")
+		return false
+	}
+	if slice.offset % TRANSIENT_UNIFORM_ALIGNMENT != 0 {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slice offset is not aligned to TRANSIENT_UNIFORM_ALIGNMENT")
+		return false
+	}
+
+	buffer_state := query_buffer_state(ctx, slice.buffer)
+	if !buffer_state.valid {
+		set_invalid_handle_error(ctx, "gfx.apply_uniform_at: slice buffer handle is invalid")
+		return false
+	}
+	if !(.Uniform in buffer_state.usage) {
+		set_validation_error(ctx, "gfx.apply_uniform_at: slice buffer is not uniform-capable")
+		return false
+	}
+
+	return backend_apply_uniform_at(ctx, group, slot, slice, byte_size)
+}
+
 // draw issues a non-indexed or indexed draw depending on the active pipeline.
+// When the active pipeline declares an index_type, base_element and num_elements
+// are indices; otherwise they are vertices.
+//
+// example:
+//   gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
+//   gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
 draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {
 	if !require_render_pass(ctx, "gfx.draw") {
 		return false
@@ -160,6 +270,11 @@ draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances:
 }
 
 // dispatch issues a compute dispatch with explicit thread-group counts.
+//
+// example:
+//   gfx.apply_compute_pipeline(&ctx, simulate_pipeline)
+//   gfx.apply_bindings(&ctx, sim_bindings)
+//   gfx.dispatch(&ctx, (count + 63) / 64, 1, 1)
 dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {
 	if !require_compute_pass(ctx, "gfx.dispatch") {
 		return false
@@ -179,6 +294,119 @@ dispatch :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, 
 	}
 
 	record_compute_dispatch_writes(ctx)
+	return true
+}
+
+// draw_indirect issues one or more non-indexed draws sourced from an
+// indirect-capable buffer (AAA roadmap item 11).
+//
+// `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
+// `offset` is the byte offset of the first `Draw_Indirect_Args` record;
+// `draw_count` records are read at `stride` bytes apart. `stride == 0`
+// uses `DRAW_INDIRECT_ARGS_STRIDE`.
+//
+draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDIRECT_ARGS_STRIDE) -> bool {
+	if !require_render_pass(ctx, "gfx.draw_indirect") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.draw_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDIRECT_ARGS_STRIDE, size_of(Draw_Indirect_Args)) {
+		return false
+	}
+
+	return backend_draw_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+}
+
+// draw_indexed_indirect issues one or more indexed draws sourced from an
+// indirect-capable buffer (AAA roadmap item 11).
+//
+// `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
+// `offset` is the byte offset of the first `Draw_Indexed_Indirect_Args`
+// record; `draw_count` records are read at `stride` bytes apart.
+// `stride == 0` uses `DRAW_INDEXED_INDIRECT_ARGS_STRIDE`, which includes
+// padding so each record offset stays aligned. The active
+// pipeline must declare an `index_type` and a valid index buffer must be
+// bound through `apply_bindings`.
+draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0, draw_count: u32 = 1, stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE) -> bool {
+	if !require_render_pass(ctx, "gfx.draw_indexed_indirect") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.draw_indexed_indirect", indirect_buffer, offset, draw_count, int(stride), DRAW_INDEXED_INDIRECT_ARGS_STRIDE, DRAW_INDEXED_INDIRECT_ARGS_SIZE) {
+		return false
+	}
+
+	return backend_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+}
+
+// dispatch_indirect issues one compute dispatch with thread-group counts
+// sourced from an indirect-capable buffer (AAA roadmap item 11).
+//
+// `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
+// `offset` is the byte offset of the `Dispatch_Indirect_Args` record.
+//
+dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int = 0) -> bool {
+	if !require_compute_pass(ctx, "gfx.dispatch_indirect") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.dispatch_indirect", indirect_buffer, offset, 1, DISPATCH_INDIRECT_ARGS_STRIDE, DISPATCH_INDIRECT_ARGS_STRIDE, size_of(Dispatch_Indirect_Args)) {
+		return false
+	}
+
+	return backend_dispatch_indirect(ctx, indirect_buffer, offset)
+}
+
+@(private)
+validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: int, default_stride: int, args_size: int) -> bool {
+	if !buffer_valid(indirect_buffer) {
+		set_validation_errorf(ctx, "%s: indirect buffer handle is invalid", op)
+		return false
+	}
+	if !require_resource(ctx, &ctx.buffer_pool, u64(indirect_buffer), op, "indirect buffer") {
+		return false
+	}
+	if offset < 0 {
+		set_validation_errorf(ctx, "%s: offset must be non-negative", op)
+		return false
+	}
+	if offset % INDIRECT_ARGS_OFFSET_ALIGNMENT != 0 {
+		set_validation_errorf(ctx, "%s: offset must be aligned to INDIRECT_ARGS_OFFSET_ALIGNMENT (%d bytes)", op, INDIRECT_ARGS_OFFSET_ALIGNMENT)
+		return false
+	}
+	if draw_count == 0 {
+		set_validation_errorf(ctx, "%s: draw_count must be positive", op)
+		return false
+	}
+	if draw_count > MAX_INDIRECT_DRAW_COUNT {
+		set_validation_errorf(ctx, "%s: draw_count %d exceeds MAX_INDIRECT_DRAW_COUNT (%d)", op, draw_count, MAX_INDIRECT_DRAW_COUNT)
+		return false
+	}
+	effective_stride := stride
+	if effective_stride == 0 {
+		effective_stride = default_stride
+	}
+	if effective_stride != default_stride {
+		set_validation_errorf(ctx, "%s: stride must be 0 or exactly %d bytes (the canonical args size)", op, default_stride)
+		return false
+	}
+	if draw_count > 1 && effective_stride % INDIRECT_ARGS_OFFSET_ALIGNMENT != 0 {
+		set_validation_errorf(ctx, "%s: stride must keep every indirect record aligned to INDIRECT_ARGS_OFFSET_ALIGNMENT (%d bytes)", op, INDIRECT_ARGS_OFFSET_ALIGNMENT)
+		return false
+	}
+
+	buffer_state := query_buffer_state(ctx, indirect_buffer)
+	if !buffer_state.valid {
+		set_invalid_handle_errorf(ctx, "%s: indirect buffer handle is invalid", op)
+		return false
+	}
+	if !(.Indirect in buffer_state.usage) {
+		set_validation_errorf(ctx, "%s: indirect buffer requires Buffer_Usage_Flag.Indirect", op)
+		return false
+	}
+	required := offset + args_size + effective_stride * (int(draw_count) - 1)
+	if required > buffer_state.size {
+		set_validation_errorf(ctx, "%s: indirect argument range (%d bytes) exceeds buffer size (%d)", op, required, buffer_state.size)
+		return false
+	}
+
 	return true
 }
 
@@ -249,6 +477,7 @@ commit :: proc(ctx: ^Context) -> bool {
 		return false
 	}
 
+	barrier_tracker_clear(ctx)
 	ctx.frame_index += 1
 	return true
 }
@@ -396,6 +625,38 @@ validate_pass_desc :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	}
 
 	return true
+}
+
+// pass_action_with_defaults applies the zero-init defaulting rule to a Pass_Action.
+//
+// `begin_pass` calls this internally before validation and dispatch; it is
+// exposed so that callers and tests can inspect the resolved action without
+// reaching into private helpers. See the `Pass_Action` doc for the contract.
+pass_action_with_defaults :: proc(action: Pass_Action) -> Pass_Action {
+	resolved := action
+
+	color_default := Color_Attachment_Action {
+		load_action  = .Clear,
+		store_action = .Store,
+		clear_value  = Color{r = 0, g = 0, b = 0, a = 1},
+	}
+	for i in 0..<MAX_COLOR_ATTACHMENTS {
+		if resolved.colors[i] == (Color_Attachment_Action{}) {
+			resolved.colors[i] = color_default
+		}
+	}
+
+	if resolved.depth == (Depth_Attachment_Action{}) {
+		resolved.depth = Depth_Attachment_Action {
+			load_action  = .Clear,
+			store_action = .Store,
+			clear_value  = 1,
+		}
+	}
+
+	// Stencil's framework default (Clear/Store/0) is bytewise zero, so the
+	// zero-init form already matches it; no explicit fill-in is required.
+	return resolved
 }
 
 @(private)

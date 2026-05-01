@@ -1,4 +1,4 @@
-param()
+﻿param()
 
 $ErrorActionPreference = "Stop"
 
@@ -61,16 +61,16 @@ main :: proc() {
 	}
 	expect_error_info(&vulkan_ctx, .Unsupported, "gfx.vulkan: backend scaffold exists, instance/device creation is not implemented yet")
 
-	d3d11_without_window_ctx, d3d11_without_window_ok := gfx.init({
-		backend = .D3D11,
+	d3d12_ctx, d3d12_ok := gfx.init({
+		backend = .D3D12,
 		width = 1,
 		height = 1,
 		swapchain_format = .BGRA8,
 	})
-	if d3d11_without_window_ok {
-		fail("D3D11 Desc without native_window unexpectedly succeeded")
+	if d3d12_ok {
+		fail("D3D12 without native window unexpectedly initialized")
 	}
-	expect_error_info(&d3d11_without_window_ctx, .Validation, "gfx.d3d11: native_window is required")
+	expect_error_info(&d3d12_ctx, .Validation, "gfx.d3d12: native_window is required")
 
 	ctx, ok := gfx.init({backend = .Null, label = "descriptor contracts"})
 	if !ok {
@@ -163,6 +163,76 @@ main :: proc() {
 	texture_state := gfx.query_image_state(&ctx, texture_image)
 	if !texture_state.valid || texture_state.kind != .Image_2D || texture_state.mip_count != 1 || texture_state.array_count != 1 || texture_state.sample_count != 1 {
 		fail("valid texture image did not report defaulted image state")
+	}
+
+	// AAA roadmap item 34: zero counts must default to 1, and explicit 1 must
+	// match. Verify all three count fields (mips / layers / samples) for the
+	// 0 / 1 / >1 cases.
+	explicit_one_image, explicit_one_image_ok := gfx.create_image(&ctx, {
+		label = "explicit one counts",
+		usage = {.Texture},
+		width = 16, height = 8,
+		mip_count = 1, array_count = 1, sample_count = 1,
+		format = .RGBA8,
+	})
+	if !explicit_one_image_ok || !gfx.image_valid(explicit_one_image) {
+		fmt.eprintln("explicit-one image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, explicit_one_image)
+	explicit_one_state := gfx.query_image_state(&ctx, explicit_one_image)
+	if explicit_one_state.mip_count != 1 || explicit_one_state.array_count != 1 || explicit_one_state.sample_count != 1 {
+		fail("explicit-one image did not match the zero-count default state")
+	}
+
+	mip_chain_image, mip_chain_image_ok := gfx.create_image(&ctx, {
+		label = "mip chain",
+		usage = {.Texture, .Dynamic_Update},
+		width = 16, height = 16,
+		mip_count = 4,
+		format = .RGBA8,
+	})
+	if !mip_chain_image_ok || !gfx.image_valid(mip_chain_image) {
+		fmt.eprintln("mip chain image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, mip_chain_image)
+	if gfx.query_image_state(&ctx, mip_chain_image).mip_count != 4 {
+		fail("mip chain image did not preserve mip_count")
+	}
+
+	array_image, array_image_ok := gfx.create_image(&ctx, {
+		label = "array image",
+		usage = {.Color_Attachment},
+		width = 8, height = 8,
+		array_count = 3,
+		format = .RGBA8,
+	})
+	if !array_image_ok || !gfx.image_valid(array_image) {
+		fmt.eprintln("array image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, array_image)
+	if gfx.query_image_state(&ctx, array_image).array_count != 3 {
+		fail("array image did not preserve array_count")
+	}
+
+	if gfx.query_features(&ctx).msaa_render_targets {
+		msaa_image, msaa_image_ok := gfx.create_image(&ctx, {
+			label = "msaa image",
+			usage = {.Color_Attachment},
+			width = 8, height = 8,
+			sample_count = 4,
+			format = .RGBA8,
+		})
+		if !msaa_image_ok || !gfx.image_valid(msaa_image) {
+			fmt.eprintln("msaa image failed: ", gfx.last_error(&ctx))
+			os.exit(1)
+		}
+		defer gfx.destroy(&ctx, msaa_image)
+		if gfx.query_image_state(&ctx, msaa_image).sample_count != 4 {
+			fail("msaa image did not preserve sample_count")
+		}
 	}
 
 	invalid_usage_image, invalid_usage_image_ok := gfx.create_image(&ctx, {
@@ -283,6 +353,75 @@ main :: proc() {
 	   pass_desc.depth_stencil_attachment != render_target.depth_stencil_attachment {
 		fail("render_target_pass_desc did not target expected attachment views")
 	}
+
+	// AAA roadmap item 35: a zero-init Pass_Action must resolve to the same
+	// load/store/clear values as default_pass_action(); a Pass_Action with any
+	// field set on a slot opts that slot out of defaulting; a fully-specified
+	// action passes through unchanged.
+	zero_resolved := gfx.pass_action_with_defaults(gfx.Pass_Action{})
+	expected_default := gfx.default_pass_action()
+	if zero_resolved != expected_default {
+		fail("pass_action_with_defaults({}) did not match default_pass_action()")
+	}
+
+	partial_action: gfx.Pass_Action
+	partial_action.colors[0].clear_value = gfx.Color{r = 0.25, g = 0.5, b = 0.75, a = 0.25}
+	partial_action.depth.clear_value = 0.5
+	partial_resolved := gfx.pass_action_with_defaults(partial_action)
+	if partial_resolved.colors[0].load_action != .Clear ||
+	   partial_resolved.colors[0].store_action != .Store ||
+	   partial_resolved.colors[0].clear_value != (gfx.Color{r = 0.25, g = 0.5, b = 0.75, a = 0.25}) {
+		fail("pass_action_with_defaults preserved partial color slot incorrectly")
+	}
+	if partial_resolved.depth.load_action != .Clear ||
+	   partial_resolved.depth.store_action != .Store ||
+	   partial_resolved.depth.clear_value != 0.5 {
+		fail("pass_action_with_defaults preserved partial depth slot incorrectly")
+	}
+	if partial_resolved.colors[1] != expected_default.colors[1] {
+		fail("pass_action_with_defaults did not default an untouched color slot")
+	}
+
+	full_action: gfx.Pass_Action
+	for i in 0..<gfx.MAX_COLOR_ATTACHMENTS {
+		full_action.colors[i] = gfx.Color_Attachment_Action {
+			load_action  = .Load,
+			store_action = .Dont_Care,
+			clear_value  = gfx.Color{r = 0.1, g = 0.2, b = 0.3, a = 0.4},
+		}
+	}
+	full_action.depth = gfx.Depth_Attachment_Action {
+		load_action  = .Dont_Care,
+		store_action = .Dont_Care,
+		clear_value  = 0.25,
+	}
+	full_action.stencil = gfx.Stencil_Attachment_Action {
+		load_action  = .Load,
+		store_action = .Dont_Care,
+		clear_value  = 7,
+	}
+	full_resolved := gfx.pass_action_with_defaults(full_action)
+	if full_resolved != full_action {
+		fail("pass_action_with_defaults mutated a fully-specified action")
+	}
+
+	// Drive begin_pass on the swapchain with each shape on the null backend.
+	// The null backend accepts any valid action, so success here proves the
+	// resolution + validation path agrees on each shape.
+	if !gfx.begin_pass(&ctx, gfx.Pass_Desc{label = "zero pass action"}) {
+		fail(fmt.tprintf("begin_pass with zero action failed: %s", gfx.last_error(&ctx)))
+	}
+	if !gfx.end_pass(&ctx) { fail("end_pass after zero action failed") }
+
+	if !gfx.begin_pass(&ctx, gfx.Pass_Desc{label = "partial pass action", action = partial_action}) {
+		fail(fmt.tprintf("begin_pass with partial action failed: %s", gfx.last_error(&ctx)))
+	}
+	if !gfx.end_pass(&ctx) { fail("end_pass after partial action failed") }
+
+	if !gfx.begin_pass(&ctx, gfx.Pass_Desc{label = "full pass action", action = full_action}) {
+		fail(fmt.tprintf("begin_pass with full action failed: %s", gfx.last_error(&ctx)))
+	}
+	if !gfx.end_pass(&ctx) { fail("end_pass after full action failed") }
 
 	gfx.destroy_render_target(&ctx, &render_target)
 	if gfx.image_valid(render_target.color_image) ||

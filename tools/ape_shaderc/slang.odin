@@ -22,7 +22,7 @@ SlangSessionFlags :: u32
 SLANG_API_VERSION :: u32(0)
 SLANG_LANGUAGE_VERSION_2025 :: u32(2025)
 SLANG_PROFILE_UNKNOWN :: SlangProfileID(0)
-SLANG_TARGET_DXBC :: SlangCompileTarget(8)
+SLANG_TARGET_DXIL :: SlangCompileTarget(10)
 SLANG_TARGET_SPIRV :: SlangCompileTarget(6)
 SLANG_STAGE_VERTEX :: SlangStage(1)
 SLANG_STAGE_FRAGMENT :: SlangStage(5)
@@ -485,9 +485,9 @@ probe_modern_slang_api :: proc(api: ^Slang_API) -> bool {
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)global_session)
 
-	dxbc_profile := global_session.vtable.findProfile(global_session, cstring("sm_5_0"))
-	if dxbc_profile == SLANG_PROFILE_UNKNOWN {
-		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_5_0")
+	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_0"))
+	if dxil_profile == SLANG_PROFILE_UNKNOWN {
+		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_6_0")
 		return false
 	}
 
@@ -500,8 +500,8 @@ probe_modern_slang_api :: proc(api: ^Slang_API) -> bool {
 	targets := [?]Slang_Target_Desc {
 		{
 			structureSize = uint(size_of(Slang_Target_Desc)),
-			format = SLANG_TARGET_DXBC,
-			profile = dxbc_profile,
+			format = SLANG_TARGET_DXIL,
+			profile = dxil_profile,
 		},
 		{
 			structureSize = uint(size_of(Slang_Target_Desc)),
@@ -577,12 +577,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
 		source_c,
 		&diagnostics,
 	)
-	if diagnostics != nil {
-		if module == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-	}
+	release_slang_diagnostics(&diagnostics, module == nil)
 	if module == nil {
 		fmt.eprintln("ape_shaderc: failed to load Slang reflection probe module")
 		return false
@@ -607,73 +602,16 @@ probe_slang_entry_layout :: proc(
 	stage: SlangStage,
 	expected_thread_group: [3]u32,
 ) -> bool {
-	entry_name_c, entry_name_err := strings.clone_to_cstring(entry_name, context.temp_allocator)
-	if entry_name_err != nil {
-		fmt.eprintln("ape_shaderc: failed to prepare Slang reflection entry name")
+	linked_entry, linked_entry_ok := create_slang_linked_entry(session, module, entry_name, stage, "Slang reflection probe")
+	if !linked_entry_ok {
 		return false
 	}
+	defer delete_slang_linked_entry(&linked_entry)
+	linked := linked_entry.linked
 
 	diagnostics: ^ISlangBlob
-	entry_point: ^ISlangEntryPoint
-	result := module.vtable.findAndCheckEntryPoint(module, entry_name_c, stage, &entry_point, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || entry_point == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || entry_point == nil {
-		fmt.eprintln("ape_shaderc: failed to find Slang reflection probe entry point: ", entry_name)
-		return false
-	}
-	defer release_slang_unknown(cast(^ISlangUnknown)entry_point)
-
-	component_types := [?]^ISlangComponentType {
-		cast(^ISlangComponentType)module,
-		cast(^ISlangComponentType)entry_point,
-	}
-
-	composite: ^ISlangComponentType
-	result = session.vtable.createCompositeComponentType(session, raw_data(component_types[:]), SlangInt(len(component_types)), &composite, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || composite == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || composite == nil {
-		fmt.eprintln("ape_shaderc: failed to create Slang reflection probe composite: ", entry_name)
-		return false
-	}
-	// Match the production compile path: the linked component keeps internal
-	// ownership tied to the composite, so keep a defensive reference alive.
-	_ = (cast(^ISlangUnknown)composite).vtable.addRef(cast(^ISlangUnknown)composite)
-	defer release_slang_unknown(cast(^ISlangUnknown)composite)
-
-	linked: ^ISlangComponentType
-	result = composite.vtable.link(composite, &linked, &diagnostics)
-	if diagnostics != nil {
-		if slang_failed(result) || linked == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-		diagnostics = nil
-	}
-	if slang_failed(result) || linked == nil {
-		fmt.eprintln("ape_shaderc: failed to link Slang reflection probe component: ", entry_name)
-		return false
-	}
-	defer release_slang_unknown(cast(^ISlangUnknown)linked)
-
 	layout := linked.vtable.getLayout(linked, 0, &diagnostics)
-	if diagnostics != nil {
-		if layout == nil {
-			print_slang_blob_diagnostics(diagnostics)
-		}
-		release_slang_unknown(cast(^ISlangUnknown)diagnostics)
-	}
+	release_slang_diagnostics(&diagnostics, layout == nil)
 	if layout == nil {
 		fmt.eprintln("ape_shaderc: Slang reflection probe returned no layout: ", entry_name)
 		return false

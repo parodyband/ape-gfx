@@ -167,17 +167,13 @@ normalize_raw_doc_text :: proc(text: string, root: string, collapse_context: boo
 	replaced, _ := strings.replace_all(text, root_slashes, "<repo>", context.temp_allocator)
 	replaced, _ = strings.replace_all(replaced, root, "<repo>", context.temp_allocator)
 
-	if !collapse_context {
-		return replaced
-	}
-
 	lines := strings.split_lines(replaced, context.temp_allocator)
 	out: [dynamic]byte
 	for line in lines {
-		normalized_line := line
-		if strings.has_prefix(strings.trim_left(normalized_line, "\t "), "Context :: struct {") {
-			leading_len := len(normalized_line) - len(strings.trim_left(normalized_line, "\t "))
-			prefix := normalized_line[:leading_len]
+		normalized_line := strings.trim_right(line, " \t")
+		if collapse_context && strings.has_prefix(strings.trim_left(line, "\t "), "Context :: struct {") {
+			leading_len := len(line) - len(strings.trim_left(line, "\t "))
+			prefix := line[:leading_len]
 			append_doc_text(&out, prefix)
 			append_doc_line(&out, "Context :: struct {...}")
 			continue

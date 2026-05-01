@@ -38,6 +38,10 @@ destroy_binding_group_layout :: proc(ctx: ^Context, layout: Binding_Group_Layout
 		set_validation_error(ctx, "gfx.destroy_binding_group_layout: layout is still used by a binding group")
 		return
 	}
+	if binding_group_layout_used_by_pipeline_layout(ctx, layout) {
+		set_validation_error(ctx, "gfx.destroy_binding_group_layout: layout is still used by a pipeline layout")
+		return
+	}
 
 	if ctx.binding_group_layout_states != nil {
 		delete_key(&ctx.binding_group_layout_states, layout)
@@ -205,16 +209,32 @@ validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_La
 			return false
 		}
 
+		entry_first, entry_count := binding_group_layout_entry_slot_range(entry)
 		for other, other_index in desc.entries {
 			if other_index >= index || !other.active {
 				continue
 			}
-			if other.kind == entry.kind && other.slot == entry.slot {
+			if other.kind != entry.kind {
+				continue
+			}
+			other_first, other_count := binding_group_layout_entry_slot_range(other)
+			if entry_first == other_first && entry_count == 1 && other_count == 1 {
 				set_validation_errorf(
 					ctx,
 					"gfx.validate_binding_group_layout_desc: duplicate %s entry at slot %d",
 					shader_binding_kind_name(entry.kind),
 					entry.slot,
+				)
+				return false
+			}
+			if entry_first < other_first + other_count && other_first < entry_first + entry_count {
+				set_validation_errorf(
+					ctx,
+					"gfx.validate_binding_group_layout_desc: %s slot range [%d, %d) overlaps existing entry at slot %d",
+					shader_binding_kind_name(entry.kind),
+					entry_first,
+					entry_first + entry_count,
+					other_first,
 				)
 				return false
 			}
@@ -278,7 +298,7 @@ query_binding_group_state :: proc(ctx: ^Context, group: Binding_Group) -> (Bindi
 @(private)
 binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout) -> bool {
 	if ctx == nil || ctx.binding_group_states == nil {
-		return binding_group_layout_used_by_pipeline_layout(ctx, layout)
+		return false
 	}
 
 	for _, group_state in ctx.binding_group_states {
@@ -287,7 +307,7 @@ binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout)
 		}
 	}
 
-	return binding_group_layout_used_by_pipeline_layout(ctx, layout)
+	return false
 }
 
 @(private)
@@ -401,6 +421,38 @@ validate_binding_group_entry_against_shader :: proc(ctx: ^Context, shader_state:
 
 @(private)
 binding_group_entry_payload_matches_shader :: proc(ctx: ^Context, entry: Binding_Group_Layout_Entry_Desc, binding: Shader_Binding_Desc, op: string) -> bool {
+	entry_array_count := entry.array_count
+	if entry_array_count == 0 {
+		entry_array_count = 1
+	}
+	binding_array_count := binding.array_count
+	if binding_array_count == 0 {
+		binding_array_count = 1
+	}
+	if entry_array_count != binding_array_count {
+		set_validation_errorf(
+			ctx,
+			"%s: %s slot %d fixed-array count %d does not match current pipeline (%d)",
+			op,
+			shader_binding_kind_name(entry.kind),
+			entry.slot,
+			entry_array_count,
+			binding_array_count,
+		)
+		return false
+	}
+	if entry.unsized != binding.unsized {
+		set_validation_errorf(
+			ctx,
+			"%s: %s slot %d unsized=%v does not match current pipeline (unsized=%v)",
+			op,
+			shader_binding_kind_name(entry.kind),
+			entry.slot,
+			entry.unsized,
+			binding.unsized,
+		)
+		return false
+	}
 	switch entry.kind {
 	case .Uniform_Block:
 		if entry.uniform_block.size != binding.size {
@@ -485,7 +537,11 @@ binding_group_layout_find_entry :: proc(
 	slot: u32,
 ) -> (Binding_Group_Layout_Entry_Desc, bool) {
 	for entry in layout.entries {
-		if entry.active && entry.kind == kind && entry.slot == slot {
+		if !entry.active || entry.kind != kind {
+			continue
+		}
+		first, count := binding_group_layout_entry_slot_range(entry)
+		if slot >= first && slot < first + count {
 			return entry, true
 		}
 	}
@@ -535,9 +591,16 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 			continue
 		}
 
-	switch entry.kind {
-	case .Uniform_Block:
-		// Uniform block data flows through apply_uniforms because it is per-draw mutable.
+		if binding_group_layout_entry_is_array(entry) {
+			if !validate_binding_group_array_entry(ctx, layout, entry, group, op) {
+				return false
+			}
+			continue
+		}
+
+		switch entry.kind {
+		case .Uniform_Block:
+			// Uniform block data flows through apply_uniforms because it is per-draw mutable.
 		case .Resource_View:
 			view := group.views[entry.slot]
 			if !view_valid(view) {
@@ -563,8 +626,12 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 		if !view_valid(view) {
 			continue
 		}
-		if !binding_group_layout_has_entry(layout, .Resource_View, u32(slot)) {
+		if !binding_group_layout_slot_in_entry(layout, .Resource_View, u32(slot)) {
 			set_validation_errorf(ctx, "%s: resource view slot %d is not declared by layout", op, slot)
+			return false
+		}
+		if binding_group_layout_slot_in_array(layout, .Resource_View, u32(slot)) {
+			set_validation_errorf(ctx, "%s: resource view slot %d is declared as a fixed array; populate Binding_Group_Desc.arrays instead", op, slot)
 			return false
 		}
 	}
@@ -572,13 +639,239 @@ validate_binding_group_desc :: proc(ctx: ^Context, layout: Binding_Group_Layout_
 		if !sampler_valid(sampler) {
 			continue
 		}
-		if !binding_group_layout_has_entry(layout, .Sampler, u32(slot)) {
+		if !binding_group_layout_slot_in_entry(layout, .Sampler, u32(slot)) {
 			set_validation_errorf(ctx, "%s: sampler slot %d is not declared by layout", op, slot)
+			return false
+		}
+		if binding_group_layout_slot_in_array(layout, .Sampler, u32(slot)) {
+			set_validation_errorf(ctx, "%s: sampler slot %d is declared as a fixed array; populate Binding_Group_Desc.arrays instead", op, slot)
+			return false
+		}
+	}
+
+	for array, array_index in group.arrays {
+		if !array.active {
+			continue
+		}
+		if !validate_binding_group_array_payload_orphan(ctx, layout, array, array_index, op) {
 			return false
 		}
 	}
 
 	return true
+}
+
+@(private)
+binding_group_layout_entry_is_array :: proc(entry: Binding_Group_Layout_Entry_Desc) -> bool {
+	return entry.array_count > 1
+}
+
+@(private)
+binding_group_layout_entry_slot_range :: proc(entry: Binding_Group_Layout_Entry_Desc) -> (u32, u32) {
+	count := entry.array_count
+	if count == 0 {
+		count = 1
+	}
+	return entry.slot, count
+}
+
+@(private)
+binding_group_layout_slot_in_entry :: proc(layout: Binding_Group_Layout_Desc, kind: Shader_Binding_Kind, slot: u32) -> bool {
+	for entry in layout.entries {
+		if !entry.active || entry.kind != kind {
+			continue
+		}
+		first, count := binding_group_layout_entry_slot_range(entry)
+		if slot >= first && slot < first + count {
+			return true
+		}
+	}
+	return false
+}
+
+@(private)
+binding_group_layout_slot_in_array :: proc(layout: Binding_Group_Layout_Desc, kind: Shader_Binding_Kind, slot: u32) -> bool {
+	for entry in layout.entries {
+		if !entry.active || entry.kind != kind || !binding_group_layout_entry_is_array(entry) {
+			continue
+		}
+		first, count := binding_group_layout_entry_slot_range(entry)
+		if slot >= first && slot < first + count {
+			return true
+		}
+	}
+	return false
+}
+
+@(private)
+validate_binding_group_array_entry :: proc(
+	ctx: ^Context,
+	layout: Binding_Group_Layout_Desc,
+	entry: Binding_Group_Layout_Entry_Desc,
+	group: Binding_Group_Desc,
+	op: string,
+) -> bool {
+	matched := false
+	matched_index := -1
+	for array, array_index in group.arrays {
+		if !array.active {
+			continue
+		}
+		if array.kind != entry.kind || array.slot != entry.slot {
+			continue
+		}
+		if matched {
+			set_validation_errorf(
+				ctx,
+				"%s: duplicate fixed-array payload for %s slot %d (arrays index %d and %d)",
+				op,
+				shader_binding_kind_name(entry.kind),
+				entry.slot,
+				matched_index,
+				array_index,
+			)
+			return false
+		}
+		matched = true
+		matched_index = array_index
+
+		if array.count != entry.array_count {
+			set_validation_errorf(
+				ctx,
+				"%s: %s slot %d fixed-array count %d does not match layout count %d",
+				op,
+				shader_binding_kind_name(entry.kind),
+				entry.slot,
+				array.count,
+				entry.array_count,
+			)
+			return false
+		}
+		if array.first_index != 0 {
+			set_validation_errorf(
+				ctx,
+				"%s: %s slot %d fixed-array first_index must be 0 for create-time payload (got %d)",
+				op,
+				shader_binding_kind_name(entry.kind),
+				entry.slot,
+				array.first_index,
+			)
+			return false
+		}
+
+		switch entry.kind {
+		case .Resource_View:
+			if len(array.samplers) != 0 {
+				set_validation_errorf(ctx, "%s: resource view fixed-array at slot %d must not set samplers payload", op, entry.slot)
+				return false
+			}
+			if u32(len(array.views)) != entry.array_count {
+				set_validation_errorf(
+					ctx,
+					"%s: resource view fixed-array at slot %d expects %d views, got %d",
+					op,
+					entry.slot,
+					entry.array_count,
+					len(array.views),
+				)
+				return false
+			}
+			for view, element_index in array.views {
+				if !view_valid(view) {
+					set_validation_errorf(
+						ctx,
+						"%s: resource view fixed-array at slot %d element %d requires a view",
+						op,
+						entry.slot,
+						element_index,
+					)
+					return false
+				}
+				if !validate_binding_group_view(ctx, entry, view, op) {
+					return false
+				}
+			}
+		case .Sampler:
+			if len(array.views) != 0 {
+				set_validation_errorf(ctx, "%s: sampler fixed-array at slot %d must not set views payload", op, entry.slot)
+				return false
+			}
+			if u32(len(array.samplers)) != entry.array_count {
+				set_validation_errorf(
+					ctx,
+					"%s: sampler fixed-array at slot %d expects %d samplers, got %d",
+					op,
+					entry.slot,
+					entry.array_count,
+					len(array.samplers),
+				)
+				return false
+			}
+			for sampler, element_index in array.samplers {
+				if !sampler_valid(sampler) {
+					set_validation_errorf(
+						ctx,
+						"%s: sampler fixed-array at slot %d element %d requires a sampler",
+						op,
+						entry.slot,
+						element_index,
+					)
+					return false
+				}
+				if !require_resource(ctx, &ctx.sampler_pool, u64(sampler), op, "sampler") {
+					return false
+				}
+			}
+		case .Uniform_Block:
+			set_validation_errorf(ctx, "%s: uniform block at slot %d cannot be a fixed array", op, entry.slot)
+			return false
+		}
+	}
+
+	if !matched {
+		set_validation_errorf(
+			ctx,
+			"%s: %s slot %d declares a fixed array of size %d but no Binding_Group_Desc.arrays entry populates it",
+			op,
+			shader_binding_kind_name(entry.kind),
+			entry.slot,
+			entry.array_count,
+		)
+		return false
+	}
+
+	return true
+}
+
+@(private)
+validate_binding_group_array_payload_orphan :: proc(
+	ctx: ^Context,
+	layout: Binding_Group_Layout_Desc,
+	array: Binding_Group_Array_Desc,
+	array_index: int,
+	op: string,
+) -> bool {
+	if !shader_binding_kind_valid(array.kind) {
+		set_validation_errorf(ctx, "%s: arrays[%d] has an invalid kind", op, array_index)
+		return false
+	}
+	for entry in layout.entries {
+		if !entry.active {
+			continue
+		}
+		if entry.kind == array.kind && entry.slot == array.slot && binding_group_layout_entry_is_array(entry) {
+			return true
+		}
+	}
+	set_validation_errorf(
+		ctx,
+		"%s: arrays[%d] %s slot %d is not declared as a fixed array by the layout",
+		op,
+		array_index,
+		shader_binding_kind_name(array.kind),
+		array.slot,
+	)
+	return false
 }
 
 @(private)
@@ -624,9 +917,31 @@ merge_binding_group :: proc(bindings: ^Bindings, layout: Binding_Group_Layout_De
 		switch entry.kind {
 		case .Uniform_Block:
 		case .Resource_View:
-			bindings.views[layout.group][entry.slot] = group.views[entry.slot]
+			if binding_group_layout_entry_is_array(entry) {
+				for array in group.arrays {
+					if !array.active || array.kind != .Resource_View || array.slot != entry.slot {
+						continue
+					}
+					for view, element_index in array.views {
+						bindings.views[layout.group][int(entry.slot) + element_index] = view
+					}
+				}
+			} else {
+				bindings.views[layout.group][entry.slot] = group.views[entry.slot]
+			}
 		case .Sampler:
-			bindings.samplers[layout.group][entry.slot] = group.samplers[entry.slot]
+			if binding_group_layout_entry_is_array(entry) {
+				for array in group.arrays {
+					if !array.active || array.kind != .Sampler || array.slot != entry.slot {
+						continue
+					}
+					for sampler, element_index in array.samplers {
+						bindings.samplers[layout.group][int(entry.slot) + element_index] = sampler
+					}
+				}
+			} else {
+				bindings.samplers[layout.group][entry.slot] = group.samplers[entry.slot]
+			}
 		}
 	}
 }
@@ -667,6 +982,31 @@ validate_binding_group_layout_entry :: proc(ctx: ^Context, entry: Binding_Group_
 	}
 	if !validate_binding_group_slot(ctx, entry.kind, entry.slot, "entry", index) {
 		return false
+	}
+	if entry.unsized {
+		set_validation_errorf(ctx, "gfx.validate_binding_group_layout_desc: entry %d declares an unsized array; runtime / bindless arrays use Binding_Heap (item 28 ships fixed arrays only)", index)
+		return false
+	}
+	if entry.array_count > 1 {
+		switch entry.kind {
+		case .Resource_View, .Sampler:
+		case .Uniform_Block:
+			set_validation_errorf(ctx, "gfx.validate_binding_group_layout_desc: entry %d uniform blocks do not support fixed arrays", index)
+			return false
+		}
+		limit := binding_group_slot_limit(entry.kind)
+		if u64(entry.slot) + u64(entry.array_count) > u64(limit) {
+			set_validation_errorf(
+				ctx,
+				"gfx.validate_binding_group_layout_desc: entry %d %s fixed array [%d, %d) exceeds slot limit %d",
+				index,
+				shader_binding_kind_name(entry.kind),
+				entry.slot,
+				entry.slot + entry.array_count,
+				limit,
+			)
+			return false
+		}
 	}
 
 	switch entry.kind {
@@ -716,7 +1056,7 @@ validate_binding_group_native_binding :: proc(
 	index: int,
 ) -> bool {
 	switch native.target {
-	case .D3D11, .Vulkan:
+	case .D3D12, .Vulkan:
 	case .Auto, .Null:
 		set_validation_errorf(ctx, "gfx.validate_binding_group_layout_desc: native binding %d has an invalid backend target", index)
 		return false

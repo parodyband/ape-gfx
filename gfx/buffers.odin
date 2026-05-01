@@ -2,6 +2,14 @@ package gfx
 
 // create_buffer creates a GPU buffer and reports whether creation succeeded.
 // On failure, the returned handle is Buffer_Invalid and last_error explains why.
+//
+// example:
+//   vertices := [?]Vertex{ ... }
+//   vbuf, ok := gfx.create_buffer(&ctx, {
+//       label = "triangle vertices",
+//       usage = {.Vertex, .Immutable},
+//       data  = gfx.range(vertices[:]),
+//   })
 create_buffer :: proc(ctx: ^Context, desc: Buffer_Desc) -> (Buffer, bool) {
 	if !require_initialized(ctx, "gfx.create_buffer") {
 		return Buffer_Invalid, false
@@ -32,6 +40,10 @@ destroy_buffer :: proc(ctx: ^Context, buffer: Buffer) {
 		return
 	}
 	if !require_resource(ctx, &ctx.buffer_pool, u64(buffer), "gfx.destroy_buffer", "buffer") {
+		return
+	}
+	if message := buffer_blocked_from_destroy(ctx, buffer); message != "" {
+		set_validation_error(ctx, message)
 		return
 	}
 
@@ -115,6 +127,10 @@ validate_buffer_desc :: proc(ctx: ^Context, desc: ^Buffer_Desc) -> bool {
 		set_validation_error(ctx, "gfx.create_buffer: storage buffers are GPU-only for now and must not use update/lifetime flags")
 		return false
 	}
+	if .Indirect in desc.usage && (.Dynamic_Update in desc.usage || .Stream_Update in desc.usage) {
+		set_unsupported_error(ctx, "gfx.create_buffer: CPU-updatable indirect buffers are not supported yet; use {.Indirect, .Immutable} with initial data or {.Indirect, .Storage} for GPU-produced args")
+		return false
+	}
 	if .Immutable in desc.usage && !range_has_data(desc.data) {
 		set_validation_error(ctx, "gfx.create_buffer: immutable buffers require initial data")
 		return false
@@ -135,6 +151,10 @@ validate_buffer_desc :: proc(ctx: ^Context, desc: ^Buffer_Desc) -> bool {
 		}
 		if desc.size % desc.storage_stride != 0 {
 			set_validation_error(ctx, "gfx.create_buffer: structured storage buffer size must be a multiple of storage_stride")
+			return false
+		}
+		if .Indirect in desc.usage {
+			set_validation_error(ctx, "gfx.create_buffer: Indirect cannot combine with structured Storage; use a raw storage buffer (storage_stride = 0)")
 			return false
 		}
 	} else if .Storage in desc.usage && desc.size % 4 != 0 {
@@ -158,6 +178,9 @@ buffer_usage_role_count :: proc(usage: Buffer_Usage) -> int {
 		count += 1
 	}
 	if .Storage in usage {
+		count += 1
+	}
+	if .Indirect in usage {
 		count += 1
 	}
 	return count

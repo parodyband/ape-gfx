@@ -1,4 +1,4 @@
-# Ape GFX Descriptor Contracts
+﻿# Ape GFX Descriptor Contracts
 
 Date: 2026-04-27
 
@@ -22,7 +22,7 @@ Ape GFX uses fixed-size arrays instead of count fields in several descriptors. T
 - `Bindings.vertex_buffers` is sparse. The active graphics pipeline determines which vertex buffer slots are required before draw.
 - `Bindings.views` and `Bindings.samplers` are sparse logical shader slots inside sparse logical groups. Generated shader helpers write the exact reflected group and slot. When an active pipeline has reflected binding metadata, `apply_bindings` rejects supplied transient views or samplers whose group, slot, view kind, or storage metadata is not declared by the active `Pipeline_Layout`. Missing required resources and uniforms remain draw or dispatch validation.
 
-The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, transient resource/sampler rejection for wrong groups, slots, view kinds, and storage metadata, plus D3D11 missing reflected binding checks when shader metadata is known.
+The validation suite covers packed attachment/format gaps, sparse vertex attributes, missing vertex-buffer strides, transient resource/sampler rejection for wrong groups, slots, view kinds, and storage metadata, plus D3D12 missing reflected binding checks when shader metadata is known.
 
 ## Desc
 
@@ -32,12 +32,12 @@ Fields:
 
 | Field | Contract |
 | --- | --- |
-| `backend` | Optional; `.Auto` defaults to `.Null` for v0.1. Use `.D3D11` for real rendering. `.Vulkan` is a visible placeholder and fails with `Error_Code.Unsupported`. |
-| `width`, `height` | Optional for `.Null`; `0` is accepted. For `.D3D11`, `0` asks the backend to use its startup default size. Negative values are rejected. After initialization, `resize` requires positive dimensions. |
-| `native_window` | Required for `.D3D11`. Ignored by `.Null`. |
-| `swapchain_format` | Optional. `.Invalid` maps to the D3D11 backend's native default swapchain format. Samples set `.BGRA8` explicitly so pipeline/pass color formats stay readable at the public API layer. |
+| `backend` | Optional; `.Auto` defaults to `.Null` for v0.1. Use `.D3D12` for real rendering. `.Vulkan` is a visible placeholder and fails with `Error_Code.Unsupported`. |
+| `width`, `height` | Optional for `.Null`; `0` is accepted. For `.D3D12`, `0` asks the backend to use its startup default size. Negative values are rejected. After initialization, `resize` requires positive dimensions. |
+| `native_window` | Required for `.D3D12`. Ignored by `.Null`. |
+| `swapchain_format` | Optional. `.Invalid` maps to the D3D12 backend's native default swapchain format. Samples set `.BGRA8` explicitly so pipeline/pass color formats stay readable at the public API layer. |
 | `vsync` | Optional. `false` presents immediately; `true` requests synchronized presentation when the backend supports it. |
-| `debug` | Optional. Requests backend diagnostics. D3D11 falls back to a non-debug device if debug device creation fails. |
+| `debug` | Optional. Requests backend diagnostics. D3D12 falls back to a non-debug device if debug device creation fails. |
 | `label` | Optional diagnostic label for the context. |
 
 Defaults:
@@ -45,12 +45,12 @@ Defaults:
 - A zeroed `Desc` is valid and creates a `.Null` context for smoke tests and validation.
 - `.Auto` resolves to `.Null` until there is more than one production backend.
 - `width = 0` and `height = 0` are accepted during initialization. `resize` uses stricter positive-size validation.
-- `swapchain_format = .Invalid` uses the backend default. Prefer `.BGRA8` in D3D11 samples and applications.
+- `swapchain_format = .Invalid` uses the backend default. Prefer `.BGRA8` in D3D12 samples and applications.
 
 Rejected or unsupported:
 
 - Negative `width` or `height`.
-- `.D3D11` without a native window.
+- `.D3D12` without a native window.
 - `.Vulkan`, which is intentionally deferred.
 
 Representative smoke-test callsite:
@@ -62,11 +62,11 @@ ctx, ok := gfx.init({
 })
 ```
 
-Representative D3D11 callsite:
+Representative D3D12 callsite:
 
 ```odin
 ctx, ok := gfx.init({
-	backend = .D3D11,
+	backend = .D3D12,
 	width = fb_width,
 	height = fb_height,
 	native_window = app.native_window_handle(&window),
@@ -115,6 +115,8 @@ vertex_buffer, ok := gfx.create_buffer(&ctx, {
 ## Image_Desc
 
 `Image_Desc` creates a texture, storage image, color attachment, or depth-stencil attachment.
+
+Zero-count default (AAA roadmap item 34): `mip_count`, `array_count`, `sample_count`, and `depth` all treat `0` as the obvious default `1`. Single-mip / single-layer / single-sample images can be described without spelling the ones out. Negative values are rejected.
 
 Fields:
 
@@ -350,7 +352,7 @@ Rules:
 Representative callsite:
 
 ```odin
-shader_desc, shader_desc_ok := shader_assets.shader_desc(&shader_package, .D3D11_DXBC, "triangle shader")
+shader_desc, shader_desc_ok := shader_assets.shader_desc(&shader_package, .D3D12_DXIL, "triangle shader")
 shader, shader_ok := gfx.create_shader(&ctx, shader_desc)
 ```
 
@@ -459,7 +461,7 @@ if !ok {
 
 `Binding_Group_Layout_Desc` records a generated Slang binding-group layout. `create_binding_group_layout` turns that descriptor into a `Binding_Group_Layout` handle. `Binding_Group_Desc` supplies resource handles for one `Binding_Group_Layout`, and `create_binding_group` turns it into a `Binding_Group` handle.
 
-On D3D11 these are CPU-side GFX objects that validate and flatten into native shader slots at apply time. Vulkan can later map the same public objects to descriptor set layouts and descriptor sets. Uniform block data still flows through `apply_uniforms` / generated `apply_uniform_*` helpers.
+On D3D12 these are CPU-side GFX objects that validate and flatten into native shader slots at apply time. Vulkan can later map the same public objects to descriptor set layouts and descriptor sets. Uniform block data still flows through `apply_uniforms` / generated `apply_uniform_*` helpers.
 
 Fields:
 
@@ -481,7 +483,7 @@ Rules:
 - Sampler entries currently have no payload.
 - Duplicate logical entries with the same kind and slot are rejected.
 - Native mappings must reference an existing logical entry whose stage set includes the native stage.
-- Native mappings are allowed only for concrete generated backend targets such as `.D3D11` and `.Vulkan`.
+- Native mappings are allowed only for concrete generated backend targets such as `.D3D12` and `.Vulkan`.
 - `apply_binding_group` requires an applied graphics or compute pipeline.
 - `apply_binding_groups` applies several object-backed groups in one call. This is the intended path when one shader uses separate Slang `ParameterBlock<>` groups.
 - The binding group's layout handle must match the active pipeline's `Pipeline_Layout` at the same logical group.
@@ -534,6 +536,8 @@ ok = gfx.apply_binding_groups(&ctx, groups[:], geometry)
 
 `Bindings` supplies transient buffers, resource views, and samplers for the currently active render or compute pass.
 
+`Bindings` is a fixed-size snapshot, not a compact builder. It contains storage for every public vertex buffer slot, logical binding group, resource-view slot, and sampler slot. Prefer creating it once per draw setup, mutating it as resources change, or reusing the geometry-only portion as `base_bindings` for object-backed binding groups. Avoid constructing fresh `Bindings{}` literals inside tight inner draw loops unless the cost is known to be irrelevant for that path.
+
 Fields:
 
 | Field | Contract |
@@ -552,7 +556,7 @@ Rules:
 - If supplied views or samplers are present and the active shader has binding metadata, `apply_bindings` requires an applied pipeline and an active `Pipeline_Layout`.
 - Supplied views and samplers must target declared logical groups and slots in the active pipeline layout.
 - Supplied view kinds must match reflected layout entries. Storage image format and storage buffer stride are checked when reflected metadata specifies them.
-- D3D11 additionally validates missing reflected required resources, sampler bindings, uniform sizes, and required vertex/index buffers at draw or dispatch time.
+- D3D12 additionally validates missing reflected required resources, sampler bindings, uniform sizes, and required vertex/index buffers at draw or dispatch time.
 
 Representative callsite:
 
@@ -576,7 +580,7 @@ Fields:
 | `label` | Optional diagnostic label. |
 | `color_attachments` | Optional. A contiguous set of color attachment views starting at slot 0. Empty means the implicit swapchain color target. |
 | `depth_stencil_attachment` | Optional. A depth-stencil attachment view. |
-| `action` | Optional load/store and clear behavior. Zeroed actions are valid, but `default_pass_action()` is the recommended starting point because it gives explicit clear/store defaults. |
+| `action` | Optional load/store and clear behavior. A fully zero-init `Pass_Action` produces the framework default (clear color to opaque black, clear depth to `1.0`, clear stencil to `0`, store every attachment) â€” identical to `default_pass_action()`. Defaulting is per attachment slot: any color slot with a fully zero `Color_Attachment_Action` is filled in; any slot with a field set (e.g. only `clear_value`) is kept verbatim. The same rule applies to `depth`. See `pass_action_with_defaults` for the resolved transform. |
 
 Targeting rules:
 
@@ -589,14 +593,17 @@ Targeting rules:
 Representative swapchain pass:
 
 ```odin
-action := gfx.default_pass_action()
-action.colors[0].clear_value = gfx.Color{r = 0.02, g = 0.02, b = 0.025, a = 1}
-
 ok := gfx.begin_pass(&ctx, {
 	label = "main swapchain pass",
-	action = action,
+	action = {colors = {0 = {clear_value = {r = 0.02, g = 0.02, b = 0.025, a = 1}}}},
 })
 ```
+
+The zero-init form above relies on the per-slot defaulting rule: every untouched
+field falls back to clear/store with the framework default clear value, while
+the explicit `clear_value` opts slot 0 out of defaulting and keeps the supplied
+color verbatim. To get all defaults (e.g. for a clear-to-black pass), omit
+`action` entirely or pass `{}`.
 
 ## Compute_Pass_Desc
 
@@ -626,4 +633,4 @@ Run:
 .\tools\test_gfx_state_descriptor_contracts.ps1
 ```
 
-These tests cover representative valid defaults and invalid shapes for `Desc`, `Buffer_Desc`, `Image_Desc`, `Image_Update_Desc`, `Image_Resolve_Desc`, `Render_Target_Desc`, `View_Desc`, `Sampler_Desc`, `Shader_Desc`, `Pipeline_Layout_Desc`, `Pipeline_Desc`, `Compute_Pipeline_Desc`, `Bindings`, and `Pass_Desc` on the null backend where possible, so most contract checks run without depending on D3D11 device setup.
+These tests cover representative valid defaults and invalid shapes for `Desc`, `Buffer_Desc`, `Image_Desc`, `Image_Update_Desc`, `Image_Resolve_Desc`, `Render_Target_Desc`, `View_Desc`, `Sampler_Desc`, `Shader_Desc`, `Pipeline_Layout_Desc`, `Pipeline_Desc`, `Compute_Pipeline_Desc`, `Bindings`, and `Pass_Desc` on the null backend where possible, so most contract checks run without depending on D3D12 device setup.

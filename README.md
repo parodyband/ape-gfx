@@ -2,81 +2,73 @@
 
 Ape GFX is a low-level graphics API for desktop games written in Odin.
 
-The API is Sokol-like on purpose. You create explicit resource handles, describe resources with Odin struct literals, issue immediate render commands, and keep resource lifetime under your control. The goal is not to clone Sokol, though. Sokol is designed as a broad portability layer where web, mobile, desktop, and multiple graphics APIs all matter. That is a good tradeoff for many tools, but it becomes limiting when the target is a high-end desktop renderer.
+The API is Sokol-like where that helps: explicit handles, small descriptors,
+immediate-mode draw calls, and user-controlled resource lifetime. It is not
+trying to copy Sokol wholesale. Sokol treats web, mobile, and older graphics
+APIs as first-class targets; Ape GFX is deliberately narrower. The goal is a
+modern desktop-native graphics substrate for engines that want WebGPU-style
+resource contracts, Slang reflection, and explicit backend concepts without
+browser or mobile constraints.
 
-Ape GFX takes a narrower position: desktop-native first, modern explicit graphics concepts, and no web or mobile constraints. The long-term direction is closer to a WebGPU-style contract for resource views, binding layouts, validation, and shader reflection, but aimed at native desktop development instead of the browser sandbox. Slang is the shader language and reflection source. D3D11 is the working backend. Vulkan is still a future pressure test, not current work.
+This repo is the graphics layer only. It is not a renderer, material system,
+scene graph, gameplay framework, or asset pipeline.
 
-This repo is not trying to be a full game engine yet. No renderer layer, no material system, no scene graph, no web or mobile targets.
+## Current Status
 
-## Current status
+Ape GFX is D3D12-first on Windows, with the public contract shaped around
+Slang reflection and modern explicit graphics APIs:
 
-`gfx` now has a `v0.1` graphics API contract:
+- `gfx.Backend.D3D12` is the Windows backend target.
+- `Backend.Auto` resolves to D3D12 when a native window is supplied.
+- Shader packages use `D3D12_DXIL` plus Vulkan SPIR-V metadata.
+- Generated shader bindings emit D3D12 native-slot constants.
+- Samples are backend-neutral folders under `samples/`.
+- The D3D12 runtime backend runs the current sample suite, including render
+  targets, depth, MSAA, transient uniforms, compute, and indirect dispatch/draw.
 
-- explicit handles for `Buffer`, `Image`, `View`, `Sampler`, `Shader`, `Pipeline`, `Compute_Pipeline`, `Binding_Group_Layout`, and `Binding_Group`
-- `Render_Target` aggregates for common offscreen color/depth image and view bundles
-- Odin-style `create_*` procedures that return `(handle, ok)`
-- `destroy` overloads for public resource handles
-- descriptor literals and `bit_set` usage flags
-- one public `View` handle for sampled textures, storage images, storage buffers, color attachments, and depth-stencil attachments
-- render passes, compute passes, offscreen targets, depth, MRT, MSAA resolve, dynamic texture updates, storage views, and buffer readback on D3D11
-- Slang-generated bindings for resource slots, `ParameterBlock<>` binding groups, uniform helpers, simple vertex layouts, storage metadata, and compute dispatch sizing
-- typed error reporting through `gfx.last_error_code` and `gfx.last_error_info`
-- generated API docs and a full validation script
-
-The current contract lives in `docs/gfx-v0.1-contract.md`. The release notes live in `docs/gfx-v0.1-release-notes.md`.
+The Vulkan backend remains a design pressure target, not current runtime work.
 
 ## Requirements
 
 - Odin on `PATH`
-- Windows PowerShell for convenience scripts and D3D11 sample validation
-- Windows with Direct3D 11 for GPU samples
 - Slang shared libraries available to `tools/ape_shaderc`
+- Windows for the D3D12 backend work
+- PowerShell only for repo-level convenience wrappers
 
-Shader compilation uses the Slang API through `tools/ape_shaderc`. `tools/ape` is the Odin task runner for repo workflows. PowerShell scripts are convenience wrappers where they still exist.
+## Quick Start
 
-## Quick start
-
-Run the null-backend smoke check:
-
-```powershell
-.\tools\build_smoke.ps1
-```
-
-Run the realistic D3D11 API sample for five frames:
+Build the repo task runner:
 
 ```powershell
-.\tools\run_d3d11_gfx_lab.ps1 -AutoExitFrames 5
+odin build .\tools\ape
 ```
 
-Run the full validation gate:
+Compile all sample shaders:
 
 ```powershell
-odin run .\tools\ape -- validate full
+odin run .\tools\ape -- shader compile -all
 ```
 
-The Windows wrapper delegates to the same Odin validation path:
-
-```powershell
-.\tools\validate_all.ps1
-```
-
-`validate_all.ps1` compiles shaders, regenerates/checks public API docs, runs contract tests, builds every D3D11 sample, runs every D3D11 sample with `-AutoExitFrames 5`, and finishes with `git diff --check`.
-
-Run the core/tooling gate without D3D11 runtime tests:
+Run the core validation gate:
 
 ```powershell
 odin run .\tools\ape -- validate core
 ```
 
-The Windows wrapper delegates to the same Odin validation path:
+Build every sample:
 
 ```powershell
-.\tools\validate_core.ps1
+odin run .\tools\ape -- sample build all
 ```
 
-`validate_core.ps1` compiles shaders, checks generated docs, runs null/core contract tests, runs shaderc reflection tests, checks shader hot reload tooling, and finishes with `git diff --check`. It does not create a D3D11 device or build/run D3D11 samples.
+`validate full` compiles shaders, runs public contract/tooling tests, builds
+every sample, and runs every sample with the auto-exit guard:
 
-## API shape
+```powershell
+odin run .\tools\ape -- validate full
+```
+
+## API Shape
 
 The render loop is intentionally small:
 
@@ -93,16 +85,6 @@ gfx.draw(&ctx, 0, vertex_count)
 
 gfx.end_pass(&ctx)
 gfx.commit(&ctx)
-```
-
-The compute path uses the same binding model:
-
-```odin
-gfx.begin_compute_pass(&ctx, {label = "compute"})
-gfx.apply_compute_pipeline(&ctx, compute_pipeline)
-gfx.apply_bindings(&ctx, bindings)
-compute_shader.dispatch_threads(&ctx, width, height)
-gfx.end_compute_pass(&ctx)
 ```
 
 Resource creation is explicit:
@@ -124,13 +106,13 @@ defer gfx.destroy(&ctx, vertex_buffer)
 
 - `gfx`: public graphics API, validation, and backend dispatch
 - `shader`: `.ashader` loading and conversion to `gfx.Shader_Desc`
-- `gfx_app`: app-facing helpers for resize handling, shader-program setup, binding layout ownership, fail-fast sample calls, texture sample assets, and shader reload
+- `gfx_app`: sample/application helpers for resize, shader setup, textures,
+  and hot reload
 - `app`: small window/event layer used by samples
-- `tools/ape`: Odin repo task runner for shader compilation and future platform-neutral validation
+- `tools/ape`: Odin task runner for shader compilation, docs, validation, and
+  sample builds
 - `tools/ape_shaderc`: Slang compiler/package tool
 - `samples/ape_math`: sample-only matrix helpers
-
-`gfx`, `shader`, `gfx_app`, and the sample-grade `app` package are the current framework boundary. `gfx` stays the explicit recoverable API; `gfx_app` is the practical helper path used by samples and early applications.
 
 ## Shaders
 
@@ -142,74 +124,68 @@ Compile one shader package:
 odin run .\tools\ape -- shader compile -shader-name textured_quad
 ```
 
-The Windows wrapper delegates to the same Odin tool:
+Compile all checked-in sample shaders:
 
 ```powershell
-.\tools\compile_shaders.ps1 -ShaderName textured_quad
-```
-
-Compile a compute shader package:
-
-```powershell
-odin run .\tools\ape -- shader compile -shader-name my_compute_shader -kind compute
-```
-
-Or through the wrapper:
-
-```powershell
-.\tools\compile_shaders.ps1 -ShaderName my_compute_shader -Kind compute
-```
-
-Run the shader reflection validation suite:
-
-```powershell
-odin run .\tools\ape -- shader test -all
+odin run .\tools\ape -- shader compile -all
 ```
 
 Each compile writes:
 
-- D3D11 DXBC bytecode
+- D3D12 DXIL bytecode
 - Vulkan SPIR-V bytecode for later backend work
 - `build/shaders/<name>.ashader`
 - generated Odin bindings in `assets/shaders/generated/<name>/bindings.odin`
 
-Generated bindings are the preferred way to use shader slots, `ParameterBlock<>` resource groups, uniforms, simple vertex layouts, and compute dispatch helpers. Manual `Pipeline_Desc.layout` overrides still exist for compact vertex formats, instancing, multiple streams, and other engine-level layouts.
+Generated bindings are the preferred way to use shader slots,
+`ParameterBlock<>` resource groups, uniforms, simple vertex layouts, storage
+metadata, and compute dispatch helpers. Manual `Pipeline_Desc.layout`
+overrides still exist for compact vertex formats, instancing, multiple
+streams, and other engine-level layouts.
 
 ## Samples
 
-Each D3D11 sample has a build script and a run script. Run scripts accept `-AutoExitFrames 5`.
+Samples are backend-neutral and build through `tools/ape`:
 
-| Sample | Script | What it proves |
-| --- | --- | --- |
-| Clear | `tools/run_d3d11_clear.ps1` | Window, swapchain, clear, present |
-| Minimal Triangle | `tools/run_d3d11_triangle_minimal.ps1` | Smallest D3D11 triangle path |
-| Triangle | `tools/run_d3d11_triangle.ps1` | Vertex buffer, generated layout, uniforms |
-| Cube | `tools/run_d3d11_cube.ps1` | Indexed drawing, depth, resize-safe projection |
-| Textured Quad | `tools/run_d3d11_textured_quad.ps1` | Immutable mip texture, sampled view, sampler |
-| Textured Cube | `tools/run_d3d11_textured_cube.ps1` | Temporary JPG-to-APTX texture path plus 3D draw |
-| Dynamic Texture | `tools/run_d3d11_dynamic_texture.ps1` | `gfx.update_image` across mip levels |
-| Render To Texture | `tools/run_d3d11_render_to_texture.ps1` | Offscreen color attachment sampled later |
-| Depth Render To Texture | `tools/run_d3d11_depth_render_to_texture.ps1` | Offscreen depth/color pass and sampled depth |
-| MRT | `tools/run_d3d11_mrt.ps1` | Two color attachments in one pass |
-| MSAA Resolve | `tools/run_d3d11_msaa.ps1` | 4x MSAA target resolved into a sampled texture |
-| GFX Lab | `tools/run_d3d11_gfx_lab.ps1` | Non-trivial v0.1 usage path |
-| Improved Shadows | `tools/run_d3d11_improved_shadows.ps1` | Multi-pass depth shadow map with separate generated material and shadow-resource groups |
+```powershell
+odin run .\tools\ape -- sample build triangle_minimal
+odin run .\tools\ape -- sample build all
+```
 
-`d3d11_gfx_lab` is the main API ergonomics sample. It renders a depth-tested cube into offscreen color/depth targets, then samples the color target in a swapchain pass.
+Current samples:
+
+- `clear`
+- `triangle_minimal`
+- `triangle`
+- `cube`
+- `textured_quad`
+- `textured_cube`
+- `dynamic_texture`
+- `render_to_texture`
+- `depth_render_to_texture`
+- `mrt`
+- `msaa`
+- `gfx_lab`
+- `improved_shadows`
+- `transient_uniforms`
+- `triangle_indirect`
+- `dispatch_indirect`
+- `gpu_driven_indirect`
+
+`gfx_lab` remains the main API ergonomics sample.
 
 ## Docs
-
-Use these as the active docs:
-
-- `docs/gfx-v0.1-contract.md`: what is stable, provisional, and unsupported
-- `docs/gfx-v0.1-release-notes.md`: current v0.1 release snapshot
-- `docs/gfx-descriptor-contracts.md`: descriptor defaults, required fields, and rejected shapes
-- `docs/gfx-error-model.md`: stable typed error codes
-- `docs/gfx-public-api-audit.md`: public symbol inventory and status
-- `docs/api/README.md`: generated API docs index
 
 Regenerate the checked-in API docs with:
 
 ```powershell
 odin run .\tools\ape -- docs generate
 ```
+
+Useful public docs:
+
+- `docs/gfx-descriptor-contracts.md`
+- `docs/gfx-error-model.md`
+- `docs/gfx-public-api-audit.md`
+- `docs/gfx-slang-reflection-contract.md`
+- `docs/api/README.md`

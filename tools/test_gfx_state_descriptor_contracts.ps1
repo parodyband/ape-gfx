@@ -1,4 +1,4 @@
-param()
+﻿param()
 
 $ErrorActionPreference = "Stop"
 
@@ -130,7 +130,7 @@ main :: proc() {
 	}
 	group_layout.native_bindings[0] = {
 		active = true,
-		target = .D3D11,
+		target = .D3D12,
 		stage = .Fragment,
 		kind = .Resource_View,
 		slot = 0,
@@ -139,7 +139,7 @@ main :: proc() {
 	}
 	group_layout.native_bindings[1] = {
 		active = true,
-		target = .D3D11,
+		target = .D3D12,
 		stage = .Fragment,
 		kind = .Sampler,
 		slot = 0,
@@ -161,7 +161,7 @@ main :: proc() {
 	missing_entry_layout := group_layout
 	missing_entry_layout.native_bindings[2] = {
 		active = true,
-		target = .D3D11,
+		target = .D3D12,
 		stage = .Fragment,
 		kind = .Resource_View,
 		slot = 4,

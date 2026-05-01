@@ -44,8 +44,8 @@ layout_desc :: proc(buffer_slot: u32 = 0, stride: u32 = VERTEX_STRIDE, step_func
 }
 
 GROUP_0 :: 0
-D3D11_VS_UB_ObjectUniforms :: 0
-D3D11_VS_UB_ObjectUniforms_SPACE :: 0
+D3D12_VS_UB_ObjectUniforms :: 0
+D3D12_VS_UB_ObjectUniforms_SPACE :: 0
 UB_ObjectUniforms :: 0
 VK_VS_UB_ObjectUniforms :: 0
 VK_VS_UB_ObjectUniforms_SPACE :: 0
@@ -79,7 +79,7 @@ Binding_Record_Desc :: struct {
 binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 	records: [BINDING_RECORD_COUNT]Binding_Record_Desc
 	records[0] = {
-		target = gfx.Backend.D3D11,
+		target = gfx.Backend.D3D12,
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
 		name = cstring("ObjectUniforms"),
@@ -126,7 +126,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 	if group == 0 {
 		desc.native_bindings[0] = {
 			active = true,
-			target = gfx.Backend.D3D11,
+			target = gfx.Backend.D3D12,
 			stage = gfx.Shader_Stage.Vertex,
 			kind = gfx.Shader_Binding_Kind.Uniform_Block,
 			slot = 0,

@@ -6,15 +6,19 @@ import gfx "ape:gfx"
 @(private)
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
 @(private)
-PACKAGE_VERSION_MIN :: u32(1)
+PACKAGE_VERSION_MIN :: u32(11)
 @(private)
-PACKAGE_VERSION :: u32(9)
+PACKAGE_VERSION :: u32(11)
 @(private)
 PACKAGE_HEADER_SIZE_V1 :: 16
 @(private)
 PACKAGE_HEADER_SIZE_V3 :: 20
 @(private)
-PACKAGE_STAGE_RECORD_SIZE :: 48
+PACKAGE_HEADER_SIZE_V10 :: 28
+@(private)
+PACKAGE_STAGE_RECORD_SIZE_V1 :: 48
+@(private)
+PACKAGE_STAGE_RECORD_SIZE_V10 :: 52
 @(private)
 PACKAGE_BINDING_RECORD_SIZE_V2 :: 32
 @(private)
@@ -28,11 +32,26 @@ PACKAGE_BINDING_RECORD_SIZE_V8 :: 56
 @(private)
 PACKAGE_BINDING_RECORD_SIZE_V9 :: 60
 @(private)
+PACKAGE_BINDING_RECORD_SIZE_V10 :: 64
+@(private)
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
+@(private)
+PACKAGE_PERMUTATION_AXIS_RECORD_SIZE :: 24
+@(private)
+PACKAGE_VARIANT_RECORD_SIZE :: 40
+@(private)
+PACKAGE_KEY_PAIR_SIZE :: 4
+
+// MAX_PERMUTATION_AXES caps the number of permutation axes a single shader
+// identity may declare. Matches the design ceiling in
+// docs/private/gfx-permutations-note.md; broader keys are a refactor signal.
+MAX_PERMUTATION_AXES :: 16
+@(private)
+MAX_PERMUTATION_VARIANTS :: 4096
 
 // Backend_Target selects which compiled backend payload to read from an .ashader package.
 Backend_Target :: enum {
-	D3D11_DXBC,
+	D3D12_DXIL,
 	Vulkan_SPIRV,
 }
 
@@ -68,6 +87,7 @@ Stage_Record :: struct {
 	bytecode_size: u64,
 	reflection_offset: u64,
 	reflection_size: u64,
+	variant: u32,
 }
 
 @(private)
@@ -94,6 +114,49 @@ Binding_Record :: struct {
 	access: gfx.Shader_Resource_Access,
 	storage_image_format: gfx.Pixel_Format,
 	storage_buffer_stride: u32,
+	variant: u32,
+}
+
+// Permutation_Axis_Kind mirrors the design-note enum for
+// shader-permutation axes. Bool axes have an implicit {0,1} value space; the
+// rest carry an explicit values table the runtime does not yet read.
+Permutation_Axis_Kind :: enum u32 {
+	Bool,
+	Enum,
+	Int,
+	Type,
+}
+
+// Permutation_Axis describes one named axis declared by the shader package.
+// Variants reference axes by index; values_offset/value_count point into the
+// future values table that APE-28 will surface.
+Permutation_Axis :: struct {
+	name: string,
+	kind: Permutation_Axis_Kind,
+	static_axis: bool,
+	value_count: u32,
+	default_index: u32,
+}
+
+// Permutation_Key_Pair pairs an axis index with a value index. A canonical
+// key is a flat run of pairs sorted by axis index; see the format spec.
+Permutation_Key_Pair :: struct {
+	axis: u16,
+	value: u16,
+}
+
+// Permutation_Variant points at the slice of stage and binding records that
+// belong to one (identity, key) pair, plus the canonical key bytes used to
+// reproduce the lookup hash. Variants in pkg.variants are sorted by
+// `key_hash` so `find_variant` can binary-search.
+Permutation_Variant :: struct {
+	key_hash: u64,
+	pairs: []Permutation_Key_Pair,
+	stage_first: u32,
+	stage_count: u32,
+	binding_first: u32,
+	binding_count: u32,
+	name: string,
 }
 
 @(private)
@@ -106,12 +169,18 @@ Vertex_Input_Record :: struct {
 }
 
 // Package owns bytes and parsed metadata loaded from one .ashader file.
+//
+// `axes` and `variants` describe the permutation key space declared by the
+// shader package. v11 is the first D3D12/DXIL package version; older packages
+// are intentionally rejected.
 Package :: struct {
 	version: u32,
 	bytes: []u8,
 	stages: []Stage_Record,
 	bindings: []Binding_Record,
 	vertex_inputs: []Vertex_Input_Record,
+	axes: []Permutation_Axis,
+	variants: []Permutation_Variant,
 }
 
 // load reads and parses an .ashader package from disk.
@@ -148,10 +217,67 @@ unload :: proc(pkg: ^Package) {
 		delete(pkg.vertex_inputs)
 		pkg.vertex_inputs = nil
 	}
+	if pkg.axes != nil {
+		delete(pkg.axes)
+		pkg.axes = nil
+	}
+	if pkg.variants != nil {
+		for variant in pkg.variants {
+			if variant.pairs != nil {
+				delete(variant.pairs)
+			}
+		}
+		delete(pkg.variants)
+		pkg.variants = nil
+	}
 	if pkg.bytes != nil {
 		delete(pkg.bytes)
 		pkg.bytes = nil
 	}
+}
+
+// canonical_key_hash hashes a canonical run of (axis, value) pairs. Pairs
+// must be sorted by axis index — callers should canonicalize before hashing.
+// Uses 64-bit FNV-1a so writer and reader agree without pulling in xxhash.
+canonical_key_hash :: proc(pairs: []Permutation_Key_Pair) -> u64 {
+	hash := u64(0xcbf29ce484222325)
+	for pair in pairs {
+		bytes := [4]u8 {
+			u8(pair.axis & 0xff),
+			u8((pair.axis >> 8) & 0xff),
+			u8(pair.value & 0xff),
+			u8((pair.value >> 8) & 0xff),
+		}
+		for b in bytes {
+			hash = (hash ~ u64(b)) * 0x100000001b3
+		}
+	}
+	return hash
+}
+
+// find_variant locates the variant matching `key_hash`. Variants are stored
+// sorted by hash, so this runs in O(log n). Returns the index and ok=true on
+// hit. APE-28 will wrap this with a typed-key lookup that fills defaults.
+find_variant :: proc(pkg: ^Package, key_hash: u64) -> (int, bool) {
+	if pkg == nil {
+		return 0, false
+	}
+
+	lo := 0
+	hi := len(pkg.variants)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		hash := pkg.variants[mid].key_hash
+		switch {
+		case hash == key_hash:
+			return mid, true
+		case hash < key_hash:
+			lo = mid + 1
+		case:
+			hi = mid
+		}
+	}
+	return 0, false
 }
 
 // shader_desc converts package bytecode and reflection metadata into a gfx.Shader_Desc.
@@ -324,17 +450,35 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 		}
 	}
 
+	axis_count := u32(0)
+	variant_count := u32(0)
+	if version >= 10 {
+		axis_count = read_u32(bytes, 20)
+		variant_count = read_u32(bytes, 24)
+		if axis_count > MAX_PERMUTATION_AXES {
+			return {}, false
+		}
+		if variant_count == 0 || variant_count > MAX_PERMUTATION_VARIANTS {
+			return {}, false
+		}
+	}
+
+	stage_record_size := package_stage_record_size(version)
+	binding_record_size := package_binding_record_size(version)
+
 	record_bytes := header_size +
-	                int(stage_count) * PACKAGE_STAGE_RECORD_SIZE +
-	                int(binding_count) * package_binding_record_size(version) +
-	                int(vertex_input_count) * PACKAGE_VERTEX_INPUT_RECORD_SIZE
+	                int(stage_count) * stage_record_size +
+	                int(binding_count) * binding_record_size +
+	                int(vertex_input_count) * PACKAGE_VERTEX_INPUT_RECORD_SIZE +
+	                int(axis_count) * PACKAGE_PERMUTATION_AXIS_RECORD_SIZE +
+	                int(variant_count) * PACKAGE_VARIANT_RECORD_SIZE
 	if record_bytes > len(bytes) {
 		return {}, false
 	}
 
 	stages := make([]Stage_Record, int(stage_count))
 	for i in 0..<int(stage_count) {
-		offset := header_size + i * PACKAGE_STAGE_RECORD_SIZE
+		offset := header_size + i * stage_record_size
 		record := Stage_Record {
 			target = Backend_Target(read_u32(bytes, offset + 0)),
 			stage = Stage(read_u32(bytes, offset + 4)),
@@ -344,6 +488,9 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 			bytecode_size = read_u64(bytes, offset + 24),
 			reflection_offset = read_u64(bytes, offset + 32),
 			reflection_size = read_u64(bytes, offset + 40),
+		}
+		if version >= 10 {
+			record.variant = read_u32(bytes, offset + 48)
 		}
 
 		if !range_valid(bytes, u64(record.entry_offset), u64(record.entry_size)) ||
@@ -359,8 +506,7 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 	bindings: []Binding_Record
 	if binding_count > 0 {
 		bindings = make([]Binding_Record, int(binding_count))
-		binding_records_offset := header_size + int(stage_count) * PACKAGE_STAGE_RECORD_SIZE
-		binding_record_size := package_binding_record_size(version)
+		binding_records_offset := header_size + int(stage_count) * stage_record_size
 
 		for i in 0..<int(binding_count) {
 			offset := binding_records_offset + i * binding_record_size
@@ -398,6 +544,9 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 			if version >= 9 {
 				record.group = read_u32(bytes, offset + 56)
 			}
+			if version >= 10 {
+				record.variant = read_u32(bytes, offset + 60)
+			}
 
 			if !range_valid(bytes, u64(record.name_offset), u64(record.name_size)) ||
 			   !binding_record_metadata_valid(record) {
@@ -414,8 +563,8 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 	if vertex_input_count > 0 {
 		vertex_inputs = make([]Vertex_Input_Record, int(vertex_input_count))
 		vertex_records_offset := header_size +
-		                         int(stage_count) * PACKAGE_STAGE_RECORD_SIZE +
-		                         int(binding_count) * package_binding_record_size(version)
+		                         int(stage_count) * stage_record_size +
+		                         int(binding_count) * binding_record_size
 
 		for i in 0..<int(vertex_input_count) {
 			offset := vertex_records_offset + i * PACKAGE_VERTEX_INPUT_RECORD_SIZE
@@ -441,11 +590,191 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 		}
 	}
 
-	return Package{version = version, bytes = bytes, stages = stages, bindings = bindings, vertex_inputs = vertex_inputs}, true
+	axes: []Permutation_Axis
+	variants: []Permutation_Variant
+
+	if version >= 10 {
+		axes_offset := header_size +
+		               int(stage_count) * stage_record_size +
+		               int(binding_count) * binding_record_size +
+		               int(vertex_input_count) * PACKAGE_VERTEX_INPUT_RECORD_SIZE
+		variants_offset := axes_offset + int(axis_count) * PACKAGE_PERMUTATION_AXIS_RECORD_SIZE
+
+		if axis_count > 0 {
+			axes = make([]Permutation_Axis, int(axis_count))
+			for i in 0..<int(axis_count) {
+				offset := axes_offset + i * PACKAGE_PERMUTATION_AXIS_RECORD_SIZE
+				name_offset := read_u32(bytes, offset + 0)
+				name_size := read_u32(bytes, offset + 4)
+				kind_raw := read_u32(bytes, offset + 8)
+				static_axis := read_u32(bytes, offset + 12) != 0
+				value_count := read_u32(bytes, offset + 16)
+				default_index := read_u32(bytes, offset + 20)
+
+				if !range_valid(bytes, u64(name_offset), u64(name_size)) ||
+				   !permutation_axis_kind_valid(kind_raw) ||
+				   (value_count > 0 && default_index >= value_count) {
+					parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+					return {}, false
+				}
+
+				axes[i] = Permutation_Axis {
+					name = string(bytes[int(name_offset):int(name_offset) + int(name_size)]),
+					kind = Permutation_Axis_Kind(kind_raw),
+					static_axis = static_axis,
+					value_count = value_count,
+					default_index = default_index,
+				}
+			}
+		}
+
+		variants = make([]Permutation_Variant, int(variant_count))
+		previous_hash := u64(0)
+		for i in 0..<int(variant_count) {
+			offset := variants_offset + i * PACKAGE_VARIANT_RECORD_SIZE
+			record := Permutation_Variant {
+				key_hash = read_u64(bytes, offset + 0),
+				stage_first = read_u32(bytes, offset + 16),
+				stage_count = read_u32(bytes, offset + 20),
+				binding_first = read_u32(bytes, offset + 24),
+				binding_count = read_u32(bytes, offset + 28),
+			}
+			key_offset := read_u32(bytes, offset + 8)
+			key_pair_count := read_u32(bytes, offset + 12)
+			name_offset := read_u32(bytes, offset + 32)
+			name_size := read_u32(bytes, offset + 36)
+
+			if i > 0 && record.key_hash <= previous_hash {
+				parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+				return {}, false
+			}
+			previous_hash = record.key_hash
+
+			if record.stage_first + record.stage_count > stage_count ||
+			   record.binding_first + record.binding_count > binding_count ||
+			   key_pair_count > axis_count ||
+			   !range_valid(bytes, u64(key_offset), u64(key_pair_count) * u64(PACKAGE_KEY_PAIR_SIZE)) ||
+			   !range_valid(bytes, u64(name_offset), u64(name_size)) {
+				parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+				return {}, false
+			}
+
+			pairs: []Permutation_Key_Pair
+			if key_pair_count > 0 {
+				pairs = make([]Permutation_Key_Pair, int(key_pair_count))
+				previous_axis := i32(-1)
+				for j in 0..<int(key_pair_count) {
+					pair_off := int(key_offset) + j * PACKAGE_KEY_PAIR_SIZE
+					axis := u16(bytes[pair_off + 0]) | (u16(bytes[pair_off + 1]) << 8)
+					value := u16(bytes[pair_off + 2]) | (u16(bytes[pair_off + 3]) << 8)
+					if u32(axis) >= axis_count || i32(axis) <= previous_axis ||
+					   (axes != nil && axes[int(axis)].value_count != 0 && u32(value) >= axes[int(axis)].value_count) {
+						delete(pairs)
+						parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+						return {}, false
+					}
+					previous_axis = i32(axis)
+					pairs[j] = Permutation_Key_Pair { axis = axis, value = value }
+				}
+				if record.key_hash != canonical_key_hash(pairs) {
+					delete(pairs)
+					parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+					return {}, false
+				}
+			} else if record.key_hash != canonical_key_hash(nil) {
+				parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+				return {}, false
+			}
+
+			record.pairs = pairs
+			if name_size > 0 {
+				record.name = string(bytes[int(name_offset):int(name_offset) + int(name_size)])
+			}
+			variants[i] = record
+		}
+
+		for record in stages {
+			if record.variant >= variant_count {
+				parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+				return {}, false
+			}
+		}
+		for record in bindings {
+			if record.variant >= variant_count {
+				parse_cleanup(stages, bindings, vertex_inputs, axes, variants)
+				return {}, false
+			}
+		}
+	} else {
+		variants = make([]Permutation_Variant, 1)
+		variants[0] = Permutation_Variant {
+			key_hash = canonical_key_hash(nil),
+			stage_first = 0,
+			stage_count = stage_count,
+			binding_first = 0,
+			binding_count = binding_count,
+		}
+	}
+
+	return Package {
+		version = version,
+		bytes = bytes,
+		stages = stages,
+		bindings = bindings,
+		vertex_inputs = vertex_inputs,
+		axes = axes,
+		variants = variants,
+	}, true
+}
+
+@(private)
+parse_cleanup :: proc(
+	stages: []Stage_Record,
+	bindings: []Binding_Record,
+	vertex_inputs: []Vertex_Input_Record,
+	axes: []Permutation_Axis,
+	variants: []Permutation_Variant,
+) {
+	if stages != nil {
+		delete(stages)
+	}
+	if bindings != nil {
+		delete(bindings)
+	}
+	if vertex_inputs != nil {
+		delete(vertex_inputs)
+	}
+	if axes != nil {
+		delete(axes)
+	}
+	if variants != nil {
+		for variant in variants {
+			if variant.pairs != nil {
+				delete(variant.pairs)
+			}
+		}
+		delete(variants)
+	}
+}
+
+@(private)
+permutation_axis_kind_valid :: proc(raw: u32) -> bool {
+	return raw <= u32(Permutation_Axis_Kind.Type)
+}
+
+@(private)
+package_stage_record_size :: proc(version: u32) -> int {
+	if version >= 10 {
+		return PACKAGE_STAGE_RECORD_SIZE_V10
+	}
+	return PACKAGE_STAGE_RECORD_SIZE_V1
 }
 
 @(private)
 package_header_size :: proc(version: u32) -> int {
+	if version >= 10 {
+		return PACKAGE_HEADER_SIZE_V10
+	}
 	if version >= 3 {
 		return PACKAGE_HEADER_SIZE_V3
 	}
@@ -456,6 +785,9 @@ package_header_size :: proc(version: u32) -> int {
 @(private)
 package_binding_record_size :: proc(version: u32) -> int {
 	if version >= 5 {
+		if version >= 10 {
+			return PACKAGE_BINDING_RECORD_SIZE_V10
+		}
 		if version >= 9 {
 			return PACKAGE_BINDING_RECORD_SIZE_V9
 		}
