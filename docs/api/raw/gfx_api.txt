@@ -1680,6 +1680,7 @@ package gfx
 		pipelines.odin
 		queue.odin
 		render_targets.odin
+		resource_guards.odin
 		samplers.odin
 		shaders.odin
 		transient_allocator.odin

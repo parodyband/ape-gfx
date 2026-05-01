@@ -39,6 +39,10 @@ destroy_shader :: proc(ctx: ^Context, shader: Shader) {
 	if !require_resource(ctx, &ctx.shader_pool, u64(shader), "gfx.destroy_shader", "shader") {
 		return
 	}
+	if message := shader_blocked_from_destroy(ctx, shader); message != "" {
+		set_validation_error(ctx, message)
+		return
+	}
 
 	backend_destroy_shader(ctx, shader)
 	untrack_shader_state(ctx, shader)

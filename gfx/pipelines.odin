@@ -50,6 +50,10 @@ destroy_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) {
 	if !require_resource(ctx, &ctx.pipeline_pool, u64(pipeline), "gfx.destroy_pipeline", "pipeline") {
 		return
 	}
+	if ctx.current_pipeline == pipeline {
+		set_validation_error(ctx, "gfx.destroy_pipeline: pipeline is currently bound")
+		return
+	}
 
 	backend_destroy_pipeline(ctx, pipeline)
 	untrack_pipeline_state(ctx, pipeline)
@@ -105,6 +109,10 @@ destroy_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) {
 		return
 	}
 	if !require_resource(ctx, &ctx.compute_pipeline_pool, u64(pipeline), "gfx.destroy_compute_pipeline", "compute pipeline") {
+		return
+	}
+	if ctx.current_compute_pipeline == pipeline {
+		set_validation_error(ctx, "gfx.destroy_compute_pipeline: compute pipeline is currently bound")
 		return
 	}
 

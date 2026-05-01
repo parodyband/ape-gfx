@@ -38,6 +38,10 @@ destroy_binding_group_layout :: proc(ctx: ^Context, layout: Binding_Group_Layout
 		set_validation_error(ctx, "gfx.destroy_binding_group_layout: layout is still used by a binding group")
 		return
 	}
+	if binding_group_layout_used_by_pipeline_layout(ctx, layout) {
+		set_validation_error(ctx, "gfx.destroy_binding_group_layout: layout is still used by a pipeline layout")
+		return
+	}
 
 	if ctx.binding_group_layout_states != nil {
 		delete_key(&ctx.binding_group_layout_states, layout)
@@ -294,7 +298,7 @@ query_binding_group_state :: proc(ctx: ^Context, group: Binding_Group) -> (Bindi
 @(private)
 binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout) -> bool {
 	if ctx == nil || ctx.binding_group_states == nil {
-		return binding_group_layout_used_by_pipeline_layout(ctx, layout)
+		return false
 	}
 
 	for _, group_state in ctx.binding_group_states {
@@ -303,7 +307,7 @@ binding_group_layout_in_use :: proc(ctx: ^Context, layout: Binding_Group_Layout)
 		}
 	}
 
-	return binding_group_layout_used_by_pipeline_layout(ctx, layout)
+	return false
 }
 
 @(private)

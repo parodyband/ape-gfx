@@ -42,6 +42,10 @@ destroy_buffer :: proc(ctx: ^Context, buffer: Buffer) {
 	if !require_resource(ctx, &ctx.buffer_pool, u64(buffer), "gfx.destroy_buffer", "buffer") {
 		return
 	}
+	if message := buffer_blocked_from_destroy(ctx, buffer); message != "" {
+		set_validation_error(ctx, message)
+		return
+	}
 
 	backend_destroy_buffer(ctx, buffer)
 	release_resource_id(&ctx.buffer_pool, u64(buffer))

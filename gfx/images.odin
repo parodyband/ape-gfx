@@ -94,6 +94,10 @@ destroy_image :: proc(ctx: ^Context, image: Image) {
 	if !require_resource(ctx, &ctx.image_pool, u64(image), "gfx.destroy_image", "image") {
 		return
 	}
+	if message := image_blocked_from_destroy(ctx, image); message != "" {
+		set_validation_error(ctx, message)
+		return
+	}
 
 	backend_destroy_image(ctx, image)
 	release_resource_id(&ctx.image_pool, u64(image))
