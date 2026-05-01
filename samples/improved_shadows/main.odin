@@ -11,7 +11,7 @@ import shadow_depth_shader "ape:assets/shaders/generated/shadow_depth"
 
 AUTO_EXIT_FRAMES :: #config(AUTO_EXIT_FRAMES, 0)
 SHADOW_MAP_SIZE :: 1024
-CAMERA_BASE_FOV :: f32(60)
+CAMERA_BASE_FOV :: f32(45)
 
 Scene_Pass :: enum {
 	Shadow,
@@ -213,7 +213,7 @@ main :: proc() {
 
 	render_width := fb_width
 	render_height := fb_height
-	camera := make_camera_controller(scene.camera_pos, ape_math.Vec3{0, 0.45, 0.35})
+	camera := make_camera_controller(scene.camera_pos, scene.camera_target)
 	last_tick := time.tick_now()
 	frame := 0
 	for !app.should_close(&window) {

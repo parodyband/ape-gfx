@@ -18,6 +18,7 @@ D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES :: 0xffffffff
 D3D12_DESCRIPTOR_OFFSET_APPEND :: 0xffffffff
 D3D12_TEXTURE_DATA_PITCH_ALIGNMENT :: 256
 D3D12_CONSTANT_BUFFER_ALIGNMENT :: 256
+D3D12_IMMEDIATE_UNIFORM_CAPACITY :: 4 * 1024 * 1024
 D3D12_DEFAULT_2D_IMAGE_LIMIT :: 16384
 D3D12_MAX_SAMPLE_COUNT :: 8
 D3D12_DEBUG_NAME_MAX_UTF16 :: 256
@@ -230,7 +231,8 @@ D3D12_State :: struct {
 	shaders:          map[Shader]D3D12_Shader,
 	pipelines:        map[Pipeline]D3D12_Pipeline,
 	compute_pipelines: map[Compute_Pipeline]D3D12_Compute_Pipeline,
-	uniform_uploads:  [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D12_Buffer,
+	uniform_upload:   D3D12_Buffer,
+	uniform_upload_cursor: int,
 	uniform_bindings: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D12_Uniform_Binding,
 	current_pipeline:         Pipeline,
 	current_compute_pipeline: Compute_Pipeline,
@@ -1351,18 +1353,65 @@ d3d12_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) 
 		return false
 	}
 	aligned_size := align_up(data.size, D3D12_CONSTANT_BUFFER_ALIGNMENT)
-	upload := &state.uniform_uploads[group][slot]
-	if upload.resource == nil || upload.size < u64(aligned_size) {
-		d3d12_release_buffer(upload)
-		if !d3d12_create_upload_buffer(ctx, state, upload, aligned_size, fmt.tprintf("uniform g%d s%d", group, slot)) {
-			return false
-		}
+	offset, ok := d3d12_alloc_immediate_uniform(ctx, state, aligned_size)
+	if !ok {
+		return false
 	}
-	mem.copy(upload.mapped, data.ptr, data.size)
-	gpu_va := upload.resource.GetGPUVirtualAddress(upload.resource)
-	state.uniform_bindings[group][slot] = {resource = upload.resource, gpu_va = gpu_va, size = u32(aligned_size)}
+
+	dst := rawptr(uintptr(state.uniform_upload.mapped) + uintptr(offset))
+	mem.copy(dst, data.ptr, data.size)
+	gpu_va := state.uniform_upload.resource.GetGPUVirtualAddress(state.uniform_upload.resource) + u64(offset)
+	state.uniform_bindings[group][slot] = {resource = state.uniform_upload.resource, gpu_va = gpu_va, size = u32(aligned_size)}
 	d3d12_mark_uniform_bound(state, group, u32(slot))
 	return true
+}
+
+d3d12_alloc_immediate_uniform :: proc(ctx: ^Context, state: ^D3D12_State, aligned_size: int) -> (int, bool) {
+	if aligned_size <= 0 {
+		set_backend_error(ctx, "gfx.d3d12: immediate uniform allocation size must be positive")
+		return 0, false
+	}
+
+	capacity := D3D12_IMMEDIATE_UNIFORM_CAPACITY
+	if aligned_size > capacity {
+		capacity = aligned_size
+	}
+
+	if state.uniform_upload.resource == nil {
+		if !d3d12_create_upload_buffer(ctx, state, &state.uniform_upload, capacity, "immediate uniforms") {
+			return 0, false
+		}
+	} else if aligned_size > int(state.uniform_upload.size) {
+		if state.uniform_upload_cursor != 0 {
+			set_backend_errorf(
+				ctx,
+				"gfx.d3d12: immediate uniform upload buffer exhausted; requested %d bytes with %d bytes already used",
+				aligned_size,
+				state.uniform_upload_cursor,
+			)
+			return 0, false
+		}
+		d3d12_release_buffer(&state.uniform_upload)
+		if !d3d12_create_upload_buffer(ctx, state, &state.uniform_upload, capacity, "immediate uniforms") {
+			return 0, false
+		}
+	}
+
+	offset := align_up(state.uniform_upload_cursor, D3D12_CONSTANT_BUFFER_ALIGNMENT)
+	size := int(state.uniform_upload.size)
+	if offset > size || aligned_size > size - offset {
+		set_backend_errorf(
+			ctx,
+			"gfx.d3d12: immediate uniform upload buffer exhausted; requested %d bytes at offset %d of %d",
+			aligned_size,
+			offset,
+			size,
+		)
+		return 0, false
+	}
+
+	state.uniform_upload_cursor = offset + aligned_size
+	return offset, true
 }
 
 d3d12_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_Slice, byte_size: int) -> bool {
@@ -1895,6 +1944,7 @@ d3d12_begin_commands :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
 	state.command_open = true
 	state.gpu_cbv_srv_uav.next = 0
 	state.gpu_samplers.next = 0
+	state.uniform_upload_cursor = 0
 	return true
 }
 
@@ -2365,11 +2415,7 @@ d3d12_release_state :: proc(state: ^D3D12_State) {
 	for _, &image in state.images {
 		d3d12_release_image(&image)
 	}
-	for group in 0..<MAX_BINDING_GROUPS {
-		for slot in 0..<MAX_UNIFORM_BLOCKS {
-			d3d12_release_buffer(&state.uniform_uploads[group][slot])
-		}
-	}
+	d3d12_release_buffer(&state.uniform_upload)
 	delete(state.pipelines)
 	delete(state.compute_pipelines)
 	delete(state.shaders)

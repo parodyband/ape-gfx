@@ -12,6 +12,7 @@ Scene_Vertex :: struct {
 Scene :: struct {
 	light_pos:       ape_math.Vec3,
 	camera_pos:      ape_math.Vec3,
+	camera_target:   ape_math.Vec3,
 	light_view_proj: ape_math.Mat4,
 	cube_models:     [3]ape_math.Mat4,
 	cube_vertices:   [36]Scene_Vertex,
@@ -25,7 +26,8 @@ make_scene :: proc() -> Scene {
 
 	return {
 		light_pos = light_pos,
-		camera_pos = {0, 3.2, -7.2},
+		camera_pos = {0, 3.0, -7.0},
+		camera_target = {0, 0.4, 0.35},
 		light_view_proj = ape_math.mul(light_projection, light_view),
 		cube_models = {
 			ape_math.mul(ape_math.translation(0, 1.5, 0), ape_math.scale(0.5, 0.5, 0.5)),

@@ -107,8 +107,9 @@ float4 fs_main(VS_Output input) : SV_Target
 	float specular_amount = pow(max(dot(normal, halfway_dir), 0.0), 64.0);
 	float shadow = shadow_factor(input);
 
-	float3 ambient = 0.25 * albedo;
-	float3 direct = (diffuse_amount * 0.9 * albedo) + (specular_amount * 0.22);
-	float3 color = ambient + (1.0 - shadow) * direct;
-	return float4(color, 1.0);
+	float3 ambient = 0.18 * albedo;
+	float3 diffuse = diffuse_amount * 1.10 * albedo;
+	float3 specular = float3(specular_amount * 0.25, specular_amount * 0.25, specular_amount * 0.25);
+	float3 color = ambient + (1.0 - shadow) * (diffuse + specular);
+	return float4(saturate(color), 1.0);
 }

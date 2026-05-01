@@ -169,6 +169,7 @@ validate_core :: proc(options: Validate_Core_Options) -> bool {
 		"test_gfx_binding_group_arrays.ps1",
 		"test_gfx_range_helpers.ps1",
 		"test_gfx_handle_lifecycle.ps1",
+		"test_d3d12_uniform_upload_lifetime.ps1",
 	}
 	for script in power_shell_scripts {
 		step_started_at := validation_step_start(script)
@@ -256,6 +257,7 @@ validate_full :: proc(options: Validate_Full_Options) -> bool {
 		"test_gfx_binding_group_arrays.ps1",
 		"test_gfx_range_helpers.ps1",
 		"test_gfx_handle_lifecycle.ps1",
+		"test_d3d12_uniform_upload_lifetime.ps1",
 		"test_shader_hot_reload.ps1",
 	}
 	for script in public_scripts {
