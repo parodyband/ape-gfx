@@ -8,10 +8,10 @@ import "core:path/filepath"
 import "core:strings"
 
 PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
-PACKAGE_VERSION :: u32(11)
+PACKAGE_VERSION :: u32(12)
 PACKAGE_HEADER_SIZE :: 28
 PACKAGE_STAGE_RECORD_SIZE :: 52
-PACKAGE_BINDING_RECORD_SIZE :: 64
+PACKAGE_BINDING_RECORD_SIZE :: 76
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
 PACKAGE_PERMUTATION_AXIS_RECORD_SIZE :: 24
 PACKAGE_VARIANT_RECORD_SIZE :: 40
@@ -102,6 +102,8 @@ Binding_Record :: struct {
 	access: Resource_Access,
 	storage_image_format: Storage_Image_Format,
 	storage_buffer_stride: u32,
+	array_count: u32,
+	unsized: bool,
 }
 
 Binding_Group_Layout_Entry :: struct {
@@ -115,6 +117,8 @@ Binding_Group_Layout_Entry :: struct {
 	access: Resource_Access,
 	storage_image_format: Storage_Image_Format,
 	storage_buffer_stride: u32,
+	array_count: u32,
+	unsized: bool,
 }
 
 Reflection_Parameter :: struct {
@@ -655,11 +659,6 @@ compile_modern_component_stage :: proc(
 		return {}, false
 	}
 	defer delete_reflection_model(&reflection_model)
-	if !validate_no_top_level_resource_arrays(reflection_model) {
-		delete(reflection)
-		return {}, false
-	}
-
 	layout_info: Slang_Program_Layout_Info
 	if !collect_slang_program_layout_info(slang, layout, &layout_info) {
 		delete(reflection)
@@ -922,12 +921,6 @@ collect_bindings_from_reflection :: proc(
 			name = cloned_name
 		}
 
-		if parameter, parameter_ok := reflection_parameter_by_name_slot(reflection_model, name, slot); parameter_ok &&
-		   json_type_kind_is(parameter.type_value, "array") {
-			fmt.eprintln("ape_shaderc: resource arrays are not supported yet; descriptor arrays and bindless resources need a separate binding contract: ", name)
-			return false
-		}
-
 		kind, kind_ok := binding_kind_from_category(category)
 		if !kind_ok && category == .Descriptor_Table_Slot {
 			kind, kind_ok = binding_kind_from_json_descriptor_parameter(reflection_model, name, slot)
@@ -941,7 +934,16 @@ collect_bindings_from_reflection :: proc(
 		access := Resource_Access.Unknown
 		storage_image_format := Storage_Image_Format.Invalid
 		storage_buffer_stride: u32
+		array_count := u32(1)
+		unsized := false
+		if parameter, parameter_ok := reflection_parameter_by_name_slot(reflection_model, name, slot); parameter_ok {
+			array_count, unsized = descriptor_array_shape_from_type_json(parameter.type_value)
+		}
 		if kind == .Uniform_Block {
+			if array_count > 1 || unsized {
+				fmt.eprintln("ape_shaderc: uniform block arrays are not supported yet: ", name)
+				return false
+			}
 			block_size, block_ok := collect_uniform_block(slang, type_layout, name, uniform_blocks)
 			if !block_ok {
 				return false
@@ -962,6 +964,9 @@ collect_bindings_from_reflection :: proc(
 			access = metadata_access
 			storage_image_format = metadata_format
 			storage_buffer_stride = metadata_stride
+		} else if kind == .Sampler && unsized {
+			fmt.eprintln("ape_shaderc: unsized sampler arrays are not supported yet: ", name)
+			return false
 		}
 
 		append(bindings, Binding_Record {
@@ -976,6 +981,8 @@ collect_bindings_from_reflection :: proc(
 			access = access,
 			storage_image_format = storage_image_format,
 			storage_buffer_stride = storage_buffer_stride,
+			array_count = array_count,
+			unsized = unsized,
 		})
 	}
 
@@ -1230,6 +1237,8 @@ append_parameter_block_field_binding :: proc(
 	access := Resource_Access.Unknown
 	storage_image_format := Storage_Image_Format.Invalid
 	storage_buffer_stride: u32
+	array_count := u32(1)
+	unsized := false
 	if kind == .Resource_View {
 		metadata_kind, metadata_access, metadata_format, metadata_stride, metadata_ok := resource_view_metadata_from_type_json(field_type_value, binding_kind)
 		if !metadata_ok {
@@ -1256,6 +1265,8 @@ append_parameter_block_field_binding :: proc(
 		access = access,
 		storage_image_format = storage_image_format,
 		storage_buffer_stride = storage_buffer_stride,
+		array_count = array_count,
+		unsized = unsized,
 	})
 
 	return true
@@ -1325,6 +1336,43 @@ json_type_kind_is :: proc(type_value: json.Value, expected: string) -> bool {
 	return kind_ok && kind == expected
 }
 
+descriptor_array_shape_from_type_json :: proc(type_value: json.Value) -> (u32, bool) {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return 1, false
+	}
+	kind, kind_ok := json_string_field(type_object, "kind")
+	if !kind_ok || kind != "array" {
+		return 1, false
+	}
+	if count, count_ok := json_u32_field(type_object, "elementCount"); count_ok && count > 0 {
+		return count, false
+	}
+	return 0, true
+}
+
+array_element_type_json :: proc(type_value: json.Value) -> (json.Value, bool) {
+	type_object, type_object_ok := json_object(type_value)
+	if !type_object_ok {
+		return type_value, false
+	}
+	kind, kind_ok := json_string_field(type_object, "kind")
+	if !kind_ok || kind != "array" {
+		return type_value, true
+	}
+	if element_type_value, element_type_ok := json_field(type_object, "elementType"); element_type_ok {
+		return element_type_value, true
+	}
+	if element_layout_value, element_layout_ok := json_field(type_object, "elementVarLayout"); element_layout_ok {
+		if element_layout, element_layout_object_ok := json_object(element_layout_value); element_layout_object_ok {
+			if element_type_value, element_type_ok := json_field(element_layout, "type"); element_type_ok {
+				return element_type_value, true
+			}
+		}
+	}
+	return type_value, false
+}
+
 json_binding_category :: proc(binding_kind: string, kind: Binding_Kind) -> (Slang_Parameter_Category, bool) {
 	switch binding_kind {
 	case "shaderResource":
@@ -1365,13 +1413,14 @@ assign_logical_binding_slots :: proc(bindings: ^[dynamic]Binding_Record) -> bool
 			fmt.eprintln("ape_shaderc: reflected binding group is out of range: ", binding.group)
 			return false
 		}
-		if next_slots[kind_index][group_index] >= binding_kind_limit(binding.kind) {
+		slot_count := binding_array_count(binding^)
+		if next_slots[kind_index][group_index] + slot_count > binding_kind_limit(binding.kind) {
 			fmt.eprintln("ape_shaderc: too many reflected ", binding_prefix(binding.kind), " bindings")
 			return false
 		}
 
 		binding.logical_slot = next_slots[kind_index][group_index]
-		next_slots[kind_index][group_index] += 1
+		next_slots[kind_index][group_index] += slot_count
 	}
 
 	return true
@@ -1392,12 +1441,21 @@ binding_kind_limit :: proc(kind: Binding_Kind) -> u32 {
 	case .Uniform_Block:
 		return 16
 	case .Resource_View:
-		return 32
+		// Mirrors gfx.MAX_RESOURCE_VIEWS — 4× bindless arrays (240 each)
+		// for Bistro PBR materials don't fit at 256.
+		return 1024
 	case .Sampler:
 		return 16
 	}
 
 	return 0
+}
+
+binding_array_count :: proc(binding: Binding_Record) -> u32 {
+	if binding.array_count > 1 {
+		return binding.array_count
+	}
+	return 1
 }
 
 parse_reflection_model :: proc(options: Options, stage: Stage_Desc, reflection_json: []byte) -> (Reflection_Model, bool) {
@@ -1571,6 +1629,9 @@ collect_vertex_attributes_from_slang_parameter :: proc(
 	if parameter.semantic_name == "" {
 		fmt.eprintln("ape_shaderc: vertex input field is missing a semanticName: ", options.source_path, ":", stage.entry)
 		return false
+	}
+	if string_has_prefix(parameter.semantic_name, "SV_") {
+		return true
 	}
 
 	semantic, semantic_index, semantic_parse_ok := parse_vertex_semantic(parameter.semantic_name)
@@ -1905,6 +1966,14 @@ binding_kind_from_json_descriptor_parameter :: proc(reflection_model: Reflection
 }
 
 binding_kind_from_json_type :: proc(type_value: json.Value) -> (Binding_Kind, bool) {
+	if json_type_kind_is(type_value, "array") {
+		element_type, element_ok := array_element_type_json(type_value)
+		if !element_ok {
+			return .Uniform_Block, false
+		}
+		return binding_kind_from_json_type(element_type)
+	}
+
 	type_object, type_object_ok := json_object(type_value)
 	if !type_object_ok {
 		return .Uniform_Block, false
@@ -1959,6 +2028,14 @@ json_binding_kind_from_category :: proc(category: Slang_Parameter_Category) -> (
 }
 
 resource_view_metadata_from_type_json :: proc(type_value: json.Value, binding_kind: string) -> (Resource_View_Kind, Resource_Access, Storage_Image_Format, u32, bool) {
+	if json_type_kind_is(type_value, "array") {
+		element_type, element_ok := array_element_type_json(type_value)
+		if !element_ok {
+			return .Sampled, .Unknown, .Invalid, 0, false
+		}
+		return resource_view_metadata_from_type_json(element_type, binding_kind)
+	}
+
 	type_object, type_object_ok := json_object(type_value)
 	if !type_object_ok {
 		return .Sampled, .Unknown, .Invalid, 0, false
@@ -2706,6 +2783,9 @@ write_generated_bindings :: proc(
 		logical_key := fmt.tprintf("%s:%d:%d", logical_constant_name, binding.group, binding.logical_slot)
 		if !(logical_key in emitted_logical) {
 			append_string(&out, fmt.tprintf("%s :: %d\n", logical_constant_name, binding.logical_slot))
+			if binding.array_count > 1 {
+				append_string(&out, fmt.tprintf("%s_COUNT :: %d\n", logical_constant_name, binding.array_count))
+			}
 			emitted_logical[logical_key] = true
 		}
 
@@ -2808,6 +2888,8 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 	append_string(out, "\tlogical_slot: u32,\n")
 	append_string(out, "\tnative_slot: u32,\n")
 	append_string(out, "\tnative_space: u32,\n")
+	append_string(out, "\tarray_count: u32,\n")
+	append_string(out, "\tunsized: bool,\n")
 	append_string(out, "\tuniform_block: Binding_Uniform_Block_Desc,\n")
 	append_string(out, "\tresource_view: Binding_Resource_View_Desc,\n")
 	append_string(out, "}\n\n")
@@ -2825,6 +2907,8 @@ append_binding_contract_odin :: proc(out: ^[dynamic]byte, bindings: []Binding_Re
 		append_string(out, fmt.tprintf("\t\tlogical_slot = %d,\n", binding.logical_slot))
 		append_string(out, fmt.tprintf("\t\tnative_slot = %d,\n", binding.slot))
 		append_string(out, fmt.tprintf("\t\tnative_space = %d,\n", binding.space))
+		append_string(out, fmt.tprintf("\t\tarray_count = %d,\n", binding.array_count))
+		append_string(out, fmt.tprintf("\t\tunsized = %v,\n", binding.unsized))
 		switch binding.kind {
 		case .Uniform_Block:
 			append_string(out, "\t\tuniform_block = {\n")
@@ -2874,6 +2958,8 @@ append_binding_group_layout_odin :: proc(out: ^[dynamic]byte, bindings: []Bindin
 		append_string(out, ",\n")
 		append_string(out, fmt.tprintf("\t\t\tkind = gfx.Shader_Binding_Kind.%s,\n", binding_kind_odin(entry.kind)))
 		append_string(out, fmt.tprintf("\t\t\tslot = %d,\n", entry.logical_slot))
+		append_string(out, fmt.tprintf("\t\t\tarray_count = %d,\n", entry.array_count))
+		append_string(out, fmt.tprintf("\t\t\tunsized = %v,\n", entry.unsized))
 		append_string(out, fmt.tprintf("\t\t\tname = \"%s\",\n", entry.name))
 
 		switch entry.kind {
@@ -2910,6 +2996,8 @@ append_binding_group_layout_odin :: proc(out: ^[dynamic]byte, bindings: []Bindin
 		append_string(out, fmt.tprintf("\t\t\tslot = %d,\n", binding.logical_slot))
 		append_string(out, fmt.tprintf("\t\t\tnative_slot = %d,\n", binding.slot))
 		append_string(out, fmt.tprintf("\t\t\tnative_space = %d,\n", binding.space))
+		append_string(out, fmt.tprintf("\t\t\tarray_count = %d,\n", binding.array_count))
+		append_string(out, fmt.tprintf("\t\t\tunsized = %v,\n", binding.unsized))
 		append_string(out, "\t\t}\n")
 		append_string(out, "\t}\n")
 	}
@@ -2948,6 +3036,8 @@ collect_binding_group_layout_entries :: proc(entries: ^[dynamic]Binding_Group_La
 				access = binding.access,
 				storage_image_format = binding.storage_image_format,
 				storage_buffer_stride = binding.storage_buffer_stride,
+				array_count = binding.array_count,
+				unsized = binding.unsized,
 			}
 			entry.stages[int(binding.stage)] = true
 			append(entries, entry)
@@ -2985,14 +3075,19 @@ binding_group_layout_entry_payload_matches :: proc(entry: Binding_Group_Layout_E
 
 	switch binding.kind {
 	case .Uniform_Block:
-		return entry.size == binding.size
+		return entry.size == binding.size &&
+		       entry.array_count == binding.array_count &&
+		       entry.unsized == binding.unsized
 	case .Resource_View:
 		return entry.view_kind == binding.view_kind &&
 		       entry.access == binding.access &&
 		       entry.storage_image_format == binding.storage_image_format &&
-		       entry.storage_buffer_stride == binding.storage_buffer_stride
+		       entry.storage_buffer_stride == binding.storage_buffer_stride &&
+		       entry.array_count == binding.array_count &&
+		       entry.unsized == binding.unsized
 	case .Sampler:
-		return true
+		return entry.array_count == binding.array_count &&
+		       entry.unsized == binding.unsized
 	}
 
 	return false
@@ -3268,6 +3363,13 @@ write_package :: proc(
 		write_u32(&output, record.storage_buffer_stride)
 		write_u32(&output, record.space)
 		write_u32(&output, record.group)
+		write_u32(&output, 0)
+		write_u32(&output, record.array_count)
+		if record.unsized {
+			write_u32(&output, 1)
+		} else {
+			write_u32(&output, 0)
+		}
 		write_u32(&output, 0) // variant index — default-only package
 	}
 

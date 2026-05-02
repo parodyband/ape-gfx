@@ -311,6 +311,7 @@ Fields:
 | `label` | Optional diagnostic label. |
 | `min_filter`, `mag_filter`, `mip_filter` | Optional; zero defaults to `.Nearest`. Must be a valid `Filter` value. |
 | `wrap_u`, `wrap_v`, `wrap_w` | Optional; zero defaults to `.Repeat`. Must be a valid `Wrap` value. |
+| `compare` | Optional; zero defaults to `.Always` for regular samplers. Any other valid `Compare_Func` creates a comparison sampler for depth `SampleCmp`/PCF use. |
 
 Representative callsite:
 
@@ -323,6 +324,20 @@ sampler, ok := gfx.create_sampler(&ctx, {
 	wrap_u = .Clamp_To_Edge,
 	wrap_v = .Clamp_To_Edge,
 	wrap_w = .Clamp_To_Edge,
+})
+```
+
+Comparison sampler example:
+
+```odin
+shadow_sampler, ok := gfx.create_sampler(&ctx, {
+	label = "shadow comparison",
+	min_filter = .Linear,
+	mag_filter = .Linear,
+	wrap_u = .Clamp_To_Edge,
+	wrap_v = .Clamp_To_Edge,
+	wrap_w = .Clamp_To_Edge,
+	compare = .Less_Equal,
 })
 ```
 

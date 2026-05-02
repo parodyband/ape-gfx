@@ -3,13 +3,14 @@ package gfx
 MAX_VERTEX_BUFFERS :: 8
 MAX_VERTEX_ATTRIBUTES :: 16
 MAX_COLOR_ATTACHMENTS :: 8
-MAX_RESOURCE_VIEWS :: 32
+MAX_RESOURCE_VIEWS :: 1024
 MAX_SAMPLERS :: 16
 MAX_UNIFORM_BLOCKS :: 16
 MAX_BINDING_GROUPS :: 8
 MAX_SHADER_BINDINGS :: 64
 MAX_BINDING_GROUP_ENTRIES :: MAX_SHADER_BINDINGS
 MAX_IMAGE_MIPS :: 16
+MAX_GPU_TIMING_SAMPLES :: 64
 
 COLOR_MASK_R :: u8(1 << 0)
 COLOR_MASK_G :: u8(1 << 1)
@@ -237,6 +238,13 @@ Error_Info :: struct {
 	message: string,
 }
 
+// Gpu_Timing_Sample is one resolved GPU timestamp interval from the most
+// recently committed frame. Samples are emitted by render/compute pass labels.
+Gpu_Timing_Sample :: struct {
+	label:       string,
+	duration_ms: f32,
+}
+
 // Buffer_State is returned by query_buffer_state for validation and diagnostics.
 Buffer_State :: struct {
 	valid: bool,
@@ -320,6 +328,10 @@ Pixel_Format :: enum {
 	RGBA16F,
 	RGBA32F,
 	R32F,
+	BC1_RGBA,
+	BC3_RGBA,
+	BC5_RG,
+	BC7_RGBA,
 	D24S8,
 	D32F,
 }
@@ -390,6 +402,9 @@ Vertex_Format :: enum {
 	Float32x3,
 	Float32x4,
 	Uint8x4_Norm,
+	Uint16x4_Norm,
+	Sint16x2_Norm,
+	Float16x2,
 }
 
 // Vertex_Step_Function selects per-vertex or per-instance stepping for a vertex buffer.
@@ -616,6 +631,7 @@ Dispatch_Indirect_Args :: struct {
 // `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
 // planned backends, so a value that satisfies this constant is valid everywhere.
 INDIRECT_ARGS_OFFSET_ALIGNMENT :: 16
+INDIRECT_COUNT_OFFSET_ALIGNMENT :: 4
 
 // DRAW_INDIRECT_ARGS_STRIDE is the canonical byte stride between
 // consecutive `Draw_Indirect_Args` records in an indirect buffer.
@@ -771,7 +787,9 @@ Render_Target :: struct {
 	depth_sample: View,
 }
 
-// Sampler_Desc creates a texture sampler state.
+// Sampler_Desc creates a texture sampler state. `compare = .Always` creates a
+// regular sampler; any other Compare_Func creates a comparison sampler for
+// depth PCF / SampleCmp-style shader operations.
 Sampler_Desc :: struct {
 	label: string,
 	min_filter: Filter,
@@ -780,6 +798,7 @@ Sampler_Desc :: struct {
 	wrap_u: Wrap,
 	wrap_v: Wrap,
 	wrap_w: Wrap,
+	compare: Compare_Func,
 }
 
 // Shader_Stage_Desc provides backend bytecode for one shader stage.
@@ -860,6 +879,8 @@ Binding_Group_Native_Binding_Desc :: struct {
 	slot: u32,
 	native_slot: u32,
 	native_space: u32,
+	array_count: u32,
+	unsized: bool,
 }
 
 // Binding_Group_Layout_Desc is generated from Slang reflection and creates Binding_Group_Layout handles.
@@ -1000,11 +1021,16 @@ Bindings :: struct {
 }
 
 // Pass_Desc begins a render pass. With no explicit attachments, the pass targets the context's implicit window swapchain.
+//
+// `depth_only` opts the pass out of the swapchain color fallback so the pass binds only the
+// (explicit or default) depth attachment. Pair with a `Pipeline_Desc.depth_only` pipeline.
+// Setting `depth_only` together with any `color_attachments` slot is rejected by validation.
 Pass_Desc :: struct {
 	label: string,
 	color_attachments: [MAX_COLOR_ATTACHMENTS]View,
 	depth_stencil_attachment: View,
 	action: Pass_Action,
+	depth_only: bool,
 }
 
 // Compute_Pass_Desc begins a compute-only pass.
@@ -1098,7 +1124,7 @@ Context :: struct {
 	current_pipeline: Pipeline,
 	current_compute_pipeline: Compute_Pipeline,
 	current_bindings: Bindings,
-	compute_pass_resource_writes: [MAX_COMPUTE_PASS_RESOURCE_WRITES]View_State,
+	compute_pass_resource_writes: []View_State,
 	compute_pass_resource_write_count: int,
 	pass_color_attachments: [MAX_COLOR_ATTACHMENTS]View,
 	pass_depth_stencil_attachment: View,

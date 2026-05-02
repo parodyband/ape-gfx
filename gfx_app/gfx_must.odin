@@ -97,6 +97,6 @@ apply_bindings :: proc(ctx: ^gfx.Context, bindings: gfx.Bindings) {
 	must_gfx(ctx, gfx.apply_bindings(ctx, bindings), "apply_bindings failed")
 }
 
-draw :: proc(ctx: ^gfx.Context, base_element, element_count: i32) {
-	must_gfx(ctx, gfx.draw(ctx, base_element, element_count), "draw failed")
+draw :: proc(ctx: ^gfx.Context, base_element, element_count: i32, instance_count: i32 = 1, base_instance: i32 = 0, base_vertex: i32 = 0) {
+	must_gfx(ctx, gfx.draw(ctx, base_element, element_count, instance_count, base_instance, base_vertex), "draw failed")
 }

@@ -137,7 +137,7 @@ vulkan_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Tra
 	return false
 }
 
-vulkan_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
+vulkan_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32, base_instance: i32, base_vertex: i32) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: draw is not implemented yet")
 	return false
 }
@@ -154,6 +154,11 @@ vulkan_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int
 
 vulkan_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: draw_indexed_indirect is not implemented yet")
+	return false
+}
+
+vulkan_draw_indexed_indirect_count :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, count_buffer: Buffer, count_offset: int, max_draw_count: u32, stride: u32) -> bool {
+	set_unsupported_error(ctx, "gfx.vulkan: draw_indexed_indirect_count is not implemented yet")
 	return false
 }
 
@@ -180,6 +185,14 @@ vulkan_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
 vulkan_commit :: proc(ctx: ^Context) -> bool {
 	set_unsupported_error(ctx, "gfx.vulkan: commit is not implemented yet")
 	return false
+}
+
+vulkan_gpu_timing_supported :: proc(ctx: ^Context) -> bool {
+	return false
+}
+
+vulkan_copy_gpu_timing_samples :: proc(ctx: ^Context, out: []Gpu_Timing_Sample) -> int {
+	return 0
 }
 
 vulkan_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capacity: int, label: string) -> (Buffer, rawptr, bool) {

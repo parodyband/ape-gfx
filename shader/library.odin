@@ -539,6 +539,8 @@ variant_shader_desc :: proc(pkg: ^Package, target: Backend_Target, variant_index
 			slot = record.logical_slot,
 			native_slot = record.slot,
 			native_space = record.native_space,
+			array_count = record.array_count,
+			unsized = record.unsized,
 			name = name,
 			size = record.size,
 			view_kind = record.view_kind,

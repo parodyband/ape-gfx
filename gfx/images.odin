@@ -177,7 +177,7 @@ validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
 		set_validation_error(ctx, "gfx.create_image: format must be valid")
 		return false
 	}
-	if pixel_format_size(desc.format) == 0 {
+	if pixel_format_block_size(desc.format) == 0 {
 		set_unsupported_error(ctx, "gfx.create_image: unsupported image format")
 		return false
 	}
@@ -262,10 +262,14 @@ validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
 		set_validation_error(ctx, "gfx.create_image: depth-stencil images do not accept initial data yet")
 		return false
 	}
-	if has_immutable && !validate_initial_image_data(ctx, desc, mip_count, pixel_format_size(desc.format)) {
+	if has_immutable && !validate_initial_image_data(ctx, desc, mip_count) {
 		return false
 	}
 	if has_dynamic && range_has_data(desc.data) {
+		if pixel_format_is_compressed(desc.format) {
+			set_unsupported_error(ctx, "gfx.create_image: dynamic compressed texture data is not implemented yet")
+			return false
+		}
 		if !validate_image_data_range(
 			ctx,
 			"gfx.create_image",
@@ -273,7 +277,7 @@ validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
 			Image_Subresource_Data{data = desc.data},
 			u32(desc.width),
 			u32(desc.height),
-			pixel_format_size(desc.format),
+			desc.format,
 			"requires pixel data",
 		) {
 			return false
@@ -330,7 +334,7 @@ validate_image_usage :: proc(ctx: ^Context, usage: Image_Usage) -> bool {
 }
 
 @(private)
-validate_initial_image_data :: proc(ctx: ^Context, desc: Image_Desc, mip_count: i32, pixel_size: int) -> bool {
+validate_initial_image_data :: proc(ctx: ^Context, desc: Image_Desc, mip_count: i32) -> bool {
 	for mip in 0..<int(mip_count) {
 		mip_data := image_mip_data(desc, mip)
 		if !range_has_data(mip_data.data) {
@@ -340,14 +344,14 @@ validate_initial_image_data :: proc(ctx: ^Context, desc: Image_Desc, mip_count: 
 
 		mip_width := mip_dimension(u32(desc.width), u32(mip))
 		mip_height := mip_dimension(u32(desc.height), u32(mip))
-		row_pitch := image_mip_row_pitch(mip_data, mip_width, pixel_size)
-		min_row_pitch := mip_width * u32(pixel_size)
+		row_pitch := image_mip_row_pitch(mip_data, desc.format, mip_width)
+		min_row_pitch := pixel_format_row_pitch(desc.format, mip_width)
 		if row_pitch < min_row_pitch {
 			set_validation_errorf(ctx, "gfx.create_image: immutable image mip %d row pitch is too small", mip)
 			return false
 		}
 
-		required_size := int(row_pitch) * int(mip_height - 1) + int(min_row_pitch)
+		required_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(pixel_format_row_count(desc.format, mip_height)))
 		if mip_data.slice_pitch > 0 && int(mip_data.slice_pitch) < required_size {
 			set_validation_errorf(ctx, "gfx.create_image: immutable image mip %d slice pitch is too small", mip)
 			return false
@@ -429,7 +433,10 @@ validate_image_update_desc :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bo
 		return false
 	}
 
-	pixel_size := pixel_format_size(image_state.format)
+	if pixel_format_is_compressed(image_state.format) {
+		set_unsupported_error(ctx, "gfx.update_image: compressed texture updates are not implemented yet")
+		return false
+	}
 	mip_data := Image_Subresource_Data {
 		data = desc.data,
 		row_pitch = desc.row_pitch,
@@ -441,7 +448,7 @@ validate_image_update_desc :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bo
 		mip_data,
 		update_width,
 		update_height,
-		pixel_size,
+		image_state.format,
 		"requires pixel data",
 	)
 }
@@ -498,7 +505,7 @@ validate_image_data_range :: proc(
 	label: string,
 	mip_data: Image_Subresource_Data,
 	width, height: u32,
-	pixel_size: int,
+	format: Pixel_Format,
 	missing_data_message: string,
 ) -> bool {
 	if mip_data.row_pitch < 0 {
@@ -514,14 +521,14 @@ validate_image_data_range :: proc(
 		return false
 	}
 
-	row_pitch := image_mip_row_pitch(mip_data, width, pixel_size)
-	min_row_pitch := width * u32(pixel_size)
+	row_pitch := image_mip_row_pitch(mip_data, format, width)
+	min_row_pitch := pixel_format_row_pitch(format, width)
 	if row_pitch < min_row_pitch {
 		set_validation_errorf(ctx, "%s: %s row pitch is too small", op, label)
 		return false
 	}
 
-	required_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(height))
+	required_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(pixel_format_row_count(format, height)))
 	if mip_data.slice_pitch > 0 && int(mip_data.slice_pitch) < required_size {
 		set_validation_errorf(ctx, "%s: %s slice pitch is too small", op, label)
 		return false
@@ -593,11 +600,11 @@ image_mip_data :: proc(desc: Image_Desc, mip: int) -> Image_Subresource_Data {
 }
 
 @(private)
-image_mip_row_pitch :: proc(mip_data: Image_Subresource_Data, width: u32, pixel_size: int) -> u32 {
+image_mip_row_pitch :: proc(mip_data: Image_Subresource_Data, format: Pixel_Format, width: u32) -> u32 {
 	if mip_data.row_pitch > 0 {
 		return u32(mip_data.row_pitch)
 	}
-	return width * u32(pixel_size)
+	return pixel_format_row_pitch(format, width)
 }
 
 @(private)
@@ -628,7 +635,7 @@ pixel_format_size :: proc(format: Pixel_Format) -> int {
 		return 16
 	case .R32F, .D24S8, .D32F:
 		return 4
-	case .Invalid:
+	case .BC1_RGBA, .BC3_RGBA, .BC5_RG, .BC7_RGBA, .Invalid:
 		return 0
 	}
 
@@ -636,9 +643,57 @@ pixel_format_size :: proc(format: Pixel_Format) -> int {
 }
 
 @(private)
+pixel_format_block_size :: proc(format: Pixel_Format) -> int {
+	switch format {
+	case .BC1_RGBA:
+		return 8
+	case .BC3_RGBA, .BC5_RG, .BC7_RGBA:
+		return 16
+	case .Invalid, .RGBA8, .BGRA8, .RGBA16F, .RGBA32F, .R32F, .D24S8, .D32F:
+		return pixel_format_size(format)
+	}
+	return 0
+}
+
+@(private)
+pixel_format_block_extent :: proc(format: Pixel_Format) -> u32 {
+	switch format {
+	case .BC1_RGBA, .BC3_RGBA, .BC5_RG, .BC7_RGBA:
+		return 4
+	case .Invalid, .RGBA8, .BGRA8, .RGBA16F, .RGBA32F, .R32F, .D24S8, .D32F:
+		return 1
+	}
+	return 1
+}
+
+@(private)
+pixel_format_is_compressed :: proc(format: Pixel_Format) -> bool {
+	return pixel_format_block_extent(format) > 1
+}
+
+@(private)
+pixel_format_row_pitch :: proc(format: Pixel_Format, width: u32) -> u32 {
+	block_extent := pixel_format_block_extent(format)
+	block_size := u32(pixel_format_block_size(format))
+	if block_extent <= 1 {
+		return width * block_size
+	}
+	return ((width + block_extent - 1) / block_extent) * block_size
+}
+
+@(private)
+pixel_format_row_count :: proc(format: Pixel_Format, height: u32) -> u32 {
+	block_extent := pixel_format_block_extent(format)
+	if block_extent <= 1 {
+		return height
+	}
+	return (height + block_extent - 1) / block_extent
+}
+
+@(private)
 pixel_format_is_color :: proc(format: Pixel_Format) -> bool {
 	switch format {
-	case .RGBA8, .BGRA8, .RGBA16F, .RGBA32F, .R32F:
+	case .RGBA8, .BGRA8, .RGBA16F, .RGBA32F, .R32F, .BC1_RGBA, .BC3_RGBA, .BC5_RG, .BC7_RGBA:
 		return true
 	case .Invalid, .D24S8, .D32F:
 		return false
@@ -652,7 +707,7 @@ pixel_format_is_depth :: proc(format: Pixel_Format) -> bool {
 	switch format {
 	case .D24S8, .D32F:
 		return true
-	case .Invalid, .RGBA8, .BGRA8, .RGBA16F, .RGBA32F, .R32F:
+	case .Invalid, .RGBA8, .BGRA8, .RGBA16F, .RGBA32F, .R32F, .BC1_RGBA, .BC3_RGBA, .BC5_RG, .BC7_RGBA:
 		return false
 	}
 

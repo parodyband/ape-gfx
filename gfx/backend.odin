@@ -449,14 +449,14 @@ backend_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Tr
 	return false
 }
 
-backend_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
+backend_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32, base_instance: i32, base_vertex: i32) -> bool {
 	switch ctx.backend {
 	case .Null:
-		return null_draw(ctx, base_element, num_elements, num_instances)
+		return null_draw(ctx, base_element, num_elements, num_instances, base_instance, base_vertex)
 	case .D3D12:
-		return d3d12_draw(ctx, base_element, num_elements, num_instances)
+		return d3d12_draw(ctx, base_element, num_elements, num_instances, base_instance, base_vertex)
 	case .Vulkan:
-		return vulkan_draw(ctx, base_element, num_elements, num_instances)
+		return vulkan_draw(ctx, base_element, num_elements, num_instances, base_instance, base_vertex)
 	case .Auto:
 	}
 
@@ -499,6 +499,20 @@ backend_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, of
 		return d3d12_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
 	case .Vulkan:
 		return vulkan_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+	case .Auto:
+	}
+
+	return false
+}
+
+backend_draw_indexed_indirect_count :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, count_buffer: Buffer, count_offset: int, max_draw_count: u32, stride: u32) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_draw_indexed_indirect_count(ctx, indirect_buffer, offset, count_buffer, count_offset, max_draw_count, stride)
+	case .D3D12:
+		return d3d12_draw_indexed_indirect_count(ctx, indirect_buffer, offset, count_buffer, count_offset, max_draw_count, stride)
+	case .Vulkan:
+		return vulkan_draw_indexed_indirect_count(ctx, indirect_buffer, offset, count_buffer, count_offset, max_draw_count, stride)
 	case .Auto:
 	}
 
@@ -627,4 +641,32 @@ backend_commit :: proc(ctx: ^Context) -> bool {
 	}
 
 	return false
+}
+
+backend_gpu_timing_supported :: proc(ctx: ^Context) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return null_gpu_timing_supported(ctx)
+	case .D3D12:
+		return d3d12_gpu_timing_supported(ctx)
+	case .Vulkan:
+		return vulkan_gpu_timing_supported(ctx)
+	case .Auto:
+	}
+
+	return false
+}
+
+backend_copy_gpu_timing_samples :: proc(ctx: ^Context, out: []Gpu_Timing_Sample) -> int {
+	switch ctx.backend {
+	case .Null:
+		return null_copy_gpu_timing_samples(ctx, out)
+	case .D3D12:
+		return d3d12_copy_gpu_timing_samples(ctx, out)
+	case .Vulkan:
+		return vulkan_copy_gpu_timing_samples(ctx, out)
+	case .Auto:
+	}
+
+	return 0
 }

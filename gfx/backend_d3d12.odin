@@ -10,7 +10,7 @@ import win32 "core:sys/windows"
 D3D12_FRAME_COUNT :: 2
 D3D12_CBV_SRV_UAV_CPU_CAPACITY :: 8192
 D3D12_SAMPLER_CPU_CAPACITY :: 1024
-D3D12_CBV_SRV_UAV_GPU_CAPACITY :: 8192
+D3D12_CBV_SRV_UAV_GPU_CAPACITY :: 65536
 D3D12_SAMPLER_GPU_CAPACITY :: 1024
 D3D12_RTV_CAPACITY :: 512
 D3D12_DSV_CAPACITY :: 256
@@ -22,6 +22,9 @@ D3D12_IMMEDIATE_UNIFORM_CAPACITY :: 4 * 1024 * 1024
 D3D12_DEFAULT_2D_IMAGE_LIMIT :: 16384
 D3D12_MAX_SAMPLE_COUNT :: 8
 D3D12_DEBUG_NAME_MAX_UTF16 :: 256
+D3D12_GPU_TIMESTAMP_QUERY_CAPACITY :: u32(MAX_GPU_TIMING_SAMPLES * 2)
+D3D12_GPU_TIMESTAMP_READBACK_BYTES :: u64(D3D12_GPU_TIMESTAMP_QUERY_CAPACITY * u32(size_of(u64)))
+D3D12_NO_GPU_TIMESTAMP_SAMPLE :: -1
 
 D3D12_Descriptor_Allocator :: struct {
 	heap:           ^d3d12.IDescriptorHeap,
@@ -80,9 +83,12 @@ D3D12_Sampler :: struct {
 	cpu_handle: d3d12.CPU_DESCRIPTOR_HANDLE,
 }
 
+D3D12_VIEW_MASK_WORD_BITS :: 64
+D3D12_VIEW_MASK_WORDS :: (MAX_RESOURCE_VIEWS + D3D12_VIEW_MASK_WORD_BITS - 1) / D3D12_VIEW_MASK_WORD_BITS
+
 D3D12_Binding_Masks :: struct {
 	uniforms: [MAX_BINDING_GROUPS]u32,
-	views:    [MAX_BINDING_GROUPS]u32,
+	views:    [MAX_BINDING_GROUPS][D3D12_VIEW_MASK_WORDS]u64,
 	samplers: [MAX_BINDING_GROUPS]u32,
 }
 
@@ -101,15 +107,18 @@ D3D12_Binding_Slot :: struct {
 D3D12_Uniform_Slots :: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D12_Binding_Slot
 D3D12_View_Slots :: [MAX_BINDING_GROUPS][MAX_RESOURCE_VIEWS]D3D12_Binding_Slot
 D3D12_Sampler_Slots :: [MAX_BINDING_GROUPS][MAX_SAMPLERS]D3D12_Binding_Slot
+D3D12_Stage_Uniform_Slots :: [3]D3D12_Uniform_Slots
+D3D12_Stage_View_Slots :: [3]D3D12_View_Slots
+D3D12_Stage_Sampler_Slots :: [3]D3D12_Sampler_Slots
 
 D3D12_Shader :: struct {
 	vertex_bytecode: []u8,
 	pixel_bytecode:  []u8,
 	compute_bytecode: []u8,
 	required:        [3]D3D12_Binding_Masks,
-	uniform_slots:   [3]D3D12_Uniform_Slots,
-	view_slots:      [3]D3D12_View_Slots,
-	sampler_slots:   [3]D3D12_Sampler_Slots,
+	uniform_slots:   ^D3D12_Stage_Uniform_Slots,
+	view_slots:      ^D3D12_Stage_View_Slots,
+	sampler_slots:   ^D3D12_Stage_Sampler_Slots,
 	has_binding_metadata:      bool,
 	has_vertex_input_metadata: bool,
 	vertex_inputs:             [MAX_VERTEX_ATTRIBUTES]Shader_Vertex_Input_Desc,
@@ -165,9 +174,9 @@ D3D12_Pipeline :: struct {
 	has_index_buffer:        bool,
 	required_vertex_buffers: u32,
 	required:                [3]D3D12_Binding_Masks,
-	uniform_slots:           [3]D3D12_Uniform_Slots,
-	view_slots:              [3]D3D12_View_Slots,
-	sampler_slots:           [3]D3D12_Sampler_Slots,
+	uniform_slots:           ^D3D12_Stage_Uniform_Slots,
+	view_slots:              ^D3D12_Stage_View_Slots,
+	sampler_slots:           ^D3D12_Stage_Sampler_Slots,
 	has_binding_metadata:    bool,
 	color_formats:           [MAX_COLOR_ATTACHMENTS]Pixel_Format,
 	depth_format:            Pixel_Format,
@@ -180,9 +189,9 @@ D3D12_Compute_Pipeline :: struct {
 	pso:                  ^d3d12.IPipelineState,
 	root:                 D3D12_Root_Info,
 	required:             [3]D3D12_Binding_Masks,
-	uniform_slots:        [3]D3D12_Uniform_Slots,
-	view_slots:           [3]D3D12_View_Slots,
-	sampler_slots:        [3]D3D12_Sampler_Slots,
+	uniform_slots:        ^D3D12_Stage_Uniform_Slots,
+	view_slots:           ^D3D12_Stage_View_Slots,
+	sampler_slots:        ^D3D12_Stage_Sampler_Slots,
 	has_binding_metadata: bool,
 }
 
@@ -196,13 +205,22 @@ D3D12_Frame_State :: struct {
 	backbuffer: ^d3d12.IResource,
 	rtv:        d3d12.CPU_DESCRIPTOR_HANDLE,
 	state:      d3d12.RESOURCE_STATES,
+	default_depth:       ^d3d12.IResource,
+	default_depth_dsv:   d3d12.CPU_DESCRIPTOR_HANDLE,
+	default_depth_state: d3d12.RESOURCE_STATES,
+	allocator:  ^d3d12.ICommandAllocator,
+	fence_value: u64,
+	uniform_upload:        D3D12_Buffer,
+	uniform_upload_cursor: int,
+	timestamp_sample_count: int,
+	timestamp_labels:       [MAX_GPU_TIMING_SAMPLES]string,
+	timestamp_resolved:     bool,
 }
 
 D3D12_State :: struct {
 	factory:          ^dxgi.IFactory2,
 	device:           ^d3d12.IDevice,
 	queue:            ^d3d12.ICommandQueue,
-	allocator:        ^d3d12.ICommandAllocator,
 	cmd:              ^d3d12.IGraphicsCommandList,
 	fence:            ^d3d12.IFence,
 	fence_event:      win32.HANDLE,
@@ -215,15 +233,14 @@ D3D12_State :: struct {
 	sync_interval:    u32,
 	command_open:     bool,
 	backbuffers:      [D3D12_FRAME_COUNT]D3D12_Frame_State,
-	default_depth:    ^d3d12.IResource,
-	default_depth_dsv: d3d12.CPU_DESCRIPTOR_HANDLE,
-	default_depth_state: d3d12.RESOURCE_STATES,
 	rtv_heap:         D3D12_Descriptor_Allocator,
 	dsv_heap:         D3D12_Descriptor_Allocator,
 	cpu_cbv_srv_uav:  D3D12_Descriptor_Allocator,
 	cpu_samplers:     D3D12_Descriptor_Allocator,
 	gpu_cbv_srv_uav:  D3D12_Descriptor_Allocator,
 	gpu_samplers:     D3D12_Descriptor_Allocator,
+	gpu_cbv_srv_uav_frame_end: u32,
+	gpu_samplers_frame_end:    u32,
 	buffers:          map[Buffer]D3D12_Buffer,
 	images:           map[Image]D3D12_Image,
 	views:            map[View]D3D12_View,
@@ -231,8 +248,6 @@ D3D12_State :: struct {
 	shaders:          map[Shader]D3D12_Shader,
 	pipelines:        map[Pipeline]D3D12_Pipeline,
 	compute_pipelines: map[Compute_Pipeline]D3D12_Compute_Pipeline,
-	uniform_upload:   D3D12_Buffer,
-	uniform_upload_cursor: int,
 	uniform_bindings: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D12_Uniform_Binding,
 	current_pipeline:         Pipeline,
 	current_compute_pipeline: Compute_Pipeline,
@@ -240,6 +255,15 @@ D3D12_State :: struct {
 	current_vertex_buffers:   u32,
 	current_index_buffer:     bool,
 	current_bindings:         [3]D3D12_Binding_Masks,
+	graphics_resource_table_valid: bool,
+	graphics_resource_table_start: u32,
+	graphics_resource_pipeline:    Pipeline,
+	graphics_resource_views:       [MAX_BINDING_GROUPS][MAX_RESOURCE_VIEWS]View,
+	graphics_resource_uniforms:    [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D12_Uniform_Binding,
+	graphics_sampler_table_valid: bool,
+	graphics_sampler_table_start: u32,
+	graphics_sampler_pipeline:    Pipeline,
+	graphics_sampler_bindings:    [MAX_BINDING_GROUPS][MAX_SAMPLERS]Sampler,
 	current_pass_color_formats: [MAX_COLOR_ATTACHMENTS]Pixel_Format,
 	current_pass_has_color:   bool,
 	current_pass_depth_format: Pixel_Format,
@@ -248,6 +272,15 @@ D3D12_State :: struct {
 	draw_indexed_signature:   ^d3d12.ICommandSignature,
 	dispatch_signature:       ^d3d12.ICommandSignature,
 	pending_uploads:          [dynamic]^d3d12.IResource,
+	timestamp_heap:           ^d3d12.IQueryHeap,
+	timestamp_readback:       ^d3d12.IResource,
+	timestamp_frequency:      u64,
+	timestamp_enabled:        bool,
+	timestamp_sample_count:   int,
+	timestamp_open_sample:    int,
+	timestamp_labels:         [MAX_GPU_TIMING_SAMPLES]string,
+	gpu_timing_samples:       [MAX_GPU_TIMING_SAMPLES]Gpu_Timing_Sample,
+	gpu_timing_sample_count:  int,
 }
 
 d3d12_init :: proc(ctx: ^Context) -> bool {
@@ -281,7 +314,8 @@ d3d12_init :: proc(ctx: ^Context) -> bool {
 	   !d3d12_create_swapchain(ctx, state) ||
 	   !d3d12_create_backbuffers(ctx, state) ||
 	   !d3d12_create_default_depth(ctx, state) ||
-	   !d3d12_create_command_signatures(ctx, state) {
+	   !d3d12_create_command_signatures(ctx, state) ||
+	   !d3d12_create_timestamp_resources(ctx, state) {
 		d3d12_release_state(state)
 		free(state)
 		ctx.backend_data = nil
@@ -417,8 +451,11 @@ d3d12_update_buffer :: proc(ctx: ^Context, desc: Buffer_Update_Desc) -> bool {
 		return false
 	}
 	if buffer_info.mapped == nil {
-		set_validation_error(ctx, "gfx.d3d12: update_buffer requires an upload-backed dynamic/stream buffer")
-		return false
+		if !(.Storage in buffer_info.usage) {
+			set_validation_error(ctx, "gfx.d3d12: update_buffer requires an upload-backed dynamic/stream buffer or a storage buffer")
+			return false
+		}
+		return d3d12_update_default_buffer(ctx, state, buffer_info, desc.offset, desc.data)
 	}
 	dst := rawptr(uintptr(buffer_info.mapped) + uintptr(desc.offset))
 	mem.copy(dst, desc.data.ptr, desc.data.size)
@@ -596,7 +633,7 @@ d3d12_update_image :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bool {
 	}
 	row_pitch := u32(desc.row_pitch)
 	if row_pitch == 0 {
-		row_pitch = update_width * u32(pixel_format_size(image_info.format))
+		row_pitch = pixel_format_row_pitch(image_info.format, update_width)
 	}
 	return d3d12_upload_image_region(ctx, state, image_info, u32(desc.mip_level), u32(desc.array_layer), u32(desc.x), u32(desc.y), update_width, update_height, desc.data, row_pitch)
 }
@@ -775,11 +812,11 @@ d3d12_create_sampler :: proc(ctx: ^Context, handle: Sampler, desc: Sampler_Desc)
 		cpu_handle = d3d12_alloc_descriptor(&state.cpu_samplers),
 	}
 	sampler_desc := d3d12.SAMPLER_DESC {
-		Filter = d3d12_filter(desc.min_filter, desc.mag_filter, desc.mip_filter),
+		Filter = d3d12_filter(desc.min_filter, desc.mag_filter, desc.mip_filter, desc.compare != .Always),
 		AddressU = d3d12_wrap(desc.wrap_u),
 		AddressV = d3d12_wrap(desc.wrap_v),
 		AddressW = d3d12_wrap(desc.wrap_w),
-		ComparisonFunc = .ALWAYS,
+		ComparisonFunc = d3d12_compare_func(desc.compare),
 		MinLOD = 0,
 		MaxLOD = 3.402823466e38,
 	}
@@ -797,11 +834,19 @@ d3d12_destroy_sampler :: proc(ctx: ^Context, handle: Sampler) {
 }
 
 d3d12_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) -> bool {
+	state := d3d12_state(ctx)
+	if state == nil {
+		set_backend_error(ctx, "gfx.d3d12: backend state is not initialized")
+		return false
+	}
 	shader_info := D3D12_Shader {
 		has_binding_metadata = desc.has_binding_metadata,
 		has_vertex_input_metadata = desc.has_vertex_input_metadata,
 		vertex_inputs = desc.vertex_inputs,
 	}
+	shader_info.uniform_slots = new(D3D12_Stage_Uniform_Slots)
+	shader_info.view_slots = new(D3D12_Stage_View_Slots)
+	shader_info.sampler_slots = new(D3D12_Stage_Sampler_Slots)
 
 	for stage_desc in desc.stages {
 		if !range_has_data(stage_desc.bytecode) {
@@ -834,7 +879,7 @@ d3d12_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				array_count = slot_count,
 				size = binding.size,
 			}
-			shader_info.uniform_slots[stage][binding.group][binding.slot] = info
+			shader_info.uniform_slots^[stage][binding.group][binding.slot] = info
 			shader_info.required[stage].uniforms[binding.group] |= d3d12_slot_mask(binding.slot)
 		case .Resource_View:
 			info := D3D12_Binding_Slot {
@@ -848,8 +893,8 @@ d3d12_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				storage_buffer_stride = binding.storage_buffer_stride,
 			}
 			for i: u32 = 0; i < slot_count; i += 1 {
-				shader_info.view_slots[stage][binding.group][binding.slot + i] = info
-				shader_info.required[stage].views[binding.group] |= d3d12_slot_mask(binding.slot + i)
+				shader_info.view_slots^[stage][binding.group][binding.slot + i] = info
+				d3d12_mark_view_bound(&shader_info.required[stage], binding.group, binding.slot + i)
 			}
 		case .Sampler:
 			info := D3D12_Binding_Slot {
@@ -859,17 +904,12 @@ d3d12_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 				array_count = slot_count,
 			}
 			for i: u32 = 0; i < slot_count; i += 1 {
-				shader_info.sampler_slots[stage][binding.group][binding.slot + i] = info
+				shader_info.sampler_slots^[stage][binding.group][binding.slot + i] = info
 				shader_info.required[stage].samplers[binding.group] |= d3d12_slot_mask(binding.slot + i)
 			}
 		}
 	}
 
-	state := d3d12_state(ctx)
-	if state == nil {
-		set_backend_error(ctx, "gfx.d3d12: backend state is not initialized")
-		return false
-	}
 	state.shaders[handle] = shader_info
 	return true
 }
@@ -880,9 +920,7 @@ d3d12_destroy_shader :: proc(ctx: ^Context, handle: Shader) {
 		return
 	}
 	if shader_info, ok := state.shaders[handle]; ok {
-		delete(shader_info.vertex_bytecode)
-		delete(shader_info.pixel_bytecode)
-		delete(shader_info.compute_bytecode)
+		d3d12_release_shader(&shader_info)
 		delete_key(&state.shaders, handle)
 	}
 }
@@ -924,7 +962,7 @@ d3d12_create_pipeline :: proc(ctx: ^Context, handle: Pipeline, desc: Pipeline_De
 		pipeline_info.color_formats[0] = ctx.desc.swapchain_format
 	}
 
-	if !d3d12_build_root_signature(ctx, state, shader_info, &pipeline_info.root, false) {
+	if !d3d12_build_root_signature(ctx, state, &shader_info, &pipeline_info.root, false) {
 		d3d12_release_pipeline(&pipeline_info)
 		return false
 	}
@@ -997,6 +1035,8 @@ d3d12_destroy_pipeline :: proc(ctx: ^Context, handle: Pipeline) {
 		delete_key(&state.pipelines, handle)
 		if state.current_pipeline == handle {
 			state.current_pipeline = Pipeline_Invalid
+			state.graphics_resource_table_valid = false
+			state.graphics_sampler_table_valid = false
 		}
 	}
 }
@@ -1020,7 +1060,7 @@ d3d12_create_compute_pipeline :: proc(ctx: ^Context, handle: Compute_Pipeline, d
 		sampler_slots = shader_info.sampler_slots,
 		has_binding_metadata = shader_info.has_binding_metadata,
 	}
-	if !d3d12_build_root_signature(ctx, state, shader_info, &pipeline_info.root, true) {
+	if !d3d12_build_root_signature(ctx, state, &shader_info, &pipeline_info.root, true) {
 		return false
 	}
 	pso_desc := d3d12.COMPUTE_PIPELINE_STATE_DESC {
@@ -1089,6 +1129,8 @@ d3d12_begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	state.current_vertex_buffers = 0
 	state.current_index_buffer = false
 	state.current_bindings = {}
+	state.graphics_resource_table_valid = false
+	state.graphics_sampler_table_valid = false
 	state.current_pass_color_formats = {}
 	state.current_pass_has_color = false
 	state.current_pass_depth_format = .Invalid
@@ -1148,6 +1190,13 @@ d3d12_begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 		}
 	} else if has_custom_color {
 		dsv_ptr = nil
+	} else if desc.depth_only {
+		frame := &state.backbuffers[state.frame_index]
+		dsv = frame.default_depth_dsv
+		dsv_ptr = &dsv
+		d3d12_transition_resource(state, frame.default_depth, &frame.default_depth_state, {.DEPTH_WRITE})
+		state.current_pass_depth_format = .D32F
+		state.current_pass_has_depth = frame.default_depth != nil
 	} else {
 		frame := &state.backbuffers[state.frame_index]
 		d3d12_transition_resource(state, frame.backbuffer, &frame.state, {.RENDER_TARGET})
@@ -1155,11 +1204,11 @@ d3d12_begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 		color_count = 1
 		state.current_pass_color_formats[0] = ctx.desc.swapchain_format
 		state.current_pass_has_color = true
-		dsv = state.default_depth_dsv
+		dsv = frame.default_depth_dsv
 		dsv_ptr = &dsv
-		d3d12_transition_resource(state, state.default_depth, &state.default_depth_state, {.DEPTH_WRITE})
+		d3d12_transition_resource(state, frame.default_depth, &frame.default_depth_state, {.DEPTH_WRITE})
 		state.current_pass_depth_format = .D32F
-		state.current_pass_has_depth = state.default_depth != nil
+		state.current_pass_has_depth = frame.default_depth != nil
 	}
 
 	viewport := d3d12.VIEWPORT{TopLeftX = 0, TopLeftY = 0, Width = f32(pass_width), Height = f32(pass_height), MinDepth = 0, MaxDepth = 1}
@@ -1171,6 +1220,8 @@ d3d12_begin_pass :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	} else {
 		state.cmd.OMSetRenderTargets(state.cmd, 0, nil, win32.FALSE, dsv_ptr)
 	}
+
+	d3d12_begin_gpu_timestamp_sample(state, desc.label)
 
 	for slot in 0..<int(color_count) {
 		color_action := desc.action.colors[slot]
@@ -1211,10 +1262,13 @@ d3d12_begin_compute_pass :: proc(ctx: ^Context, desc: Compute_Pass_Desc) -> bool
 	state.current_vertex_buffers = 0
 	state.current_index_buffer = false
 	state.current_bindings = {}
+	state.graphics_resource_table_valid = false
+	state.graphics_sampler_table_valid = false
 	state.current_pass_color_formats = {}
 	state.current_pass_has_color = false
 	state.current_pass_depth_format = .Invalid
 	state.current_pass_has_depth = false
+	d3d12_begin_gpu_timestamp_sample(state, desc.label)
 	return true
 }
 
@@ -1242,6 +1296,8 @@ d3d12_apply_pipeline :: proc(ctx: ^Context, pipeline: Pipeline) -> bool {
 	state.current_vertex_buffers = 0
 	state.current_index_buffer = false
 	state.current_bindings = {}
+	state.graphics_resource_table_valid = false
+	state.graphics_sampler_table_valid = false
 	return true
 }
 
@@ -1265,6 +1321,8 @@ d3d12_apply_compute_pipeline :: proc(ctx: ^Context, pipeline: Compute_Pipeline) 
 	state.current_vertex_buffers = 0
 	state.current_index_buffer = false
 	state.current_bindings = {}
+	state.graphics_resource_table_valid = false
+	state.graphics_sampler_table_valid = false
 	return true
 }
 
@@ -1328,7 +1386,7 @@ d3d12_apply_bindings :: proc(ctx: ^Context, bindings: Bindings) -> bool {
 	}
 
 	state.current_user_bindings = bindings
-	d3d12_record_bound_resources_from_bindings(state, bindings)
+	d3d12_record_bound_masks(state, pipeline_info.required)
 	return true
 }
 
@@ -1339,7 +1397,7 @@ d3d12_apply_compute_bindings :: proc(ctx: ^Context, state: ^D3D12_State, binding
 		return false
 	}
 	state.current_user_bindings = bindings
-	d3d12_record_bound_resources_from_bindings(state, bindings)
+	d3d12_record_bound_masks(state, pipeline_info.required)
 	return true
 }
 
@@ -1358,10 +1416,11 @@ d3d12_apply_uniforms :: proc(ctx: ^Context, group: u32, slot: int, data: Range) 
 		return false
 	}
 
-	dst := rawptr(uintptr(state.uniform_upload.mapped) + uintptr(offset))
+	frame := &state.backbuffers[state.frame_index]
+	dst := rawptr(uintptr(frame.uniform_upload.mapped) + uintptr(offset))
 	mem.copy(dst, data.ptr, data.size)
-	gpu_va := state.uniform_upload.resource.GetGPUVirtualAddress(state.uniform_upload.resource) + u64(offset)
-	state.uniform_bindings[group][slot] = {resource = state.uniform_upload.resource, gpu_va = gpu_va, size = u32(aligned_size)}
+	gpu_va := frame.uniform_upload.resource.GetGPUVirtualAddress(frame.uniform_upload.resource) + u64(offset)
+	state.uniform_bindings[group][slot] = {resource = frame.uniform_upload.resource, gpu_va = gpu_va, size = u32(aligned_size)}
 	d3d12_mark_uniform_bound(state, group, u32(slot))
 	return true
 }
@@ -1377,28 +1436,29 @@ d3d12_alloc_immediate_uniform :: proc(ctx: ^Context, state: ^D3D12_State, aligne
 		capacity = aligned_size
 	}
 
-	if state.uniform_upload.resource == nil {
-		if !d3d12_create_upload_buffer(ctx, state, &state.uniform_upload, capacity, "immediate uniforms") {
+	frame := &state.backbuffers[state.frame_index]
+	if frame.uniform_upload.resource == nil {
+		if !d3d12_create_upload_buffer(ctx, state, &frame.uniform_upload, capacity, "immediate uniforms") {
 			return 0, false
 		}
-	} else if aligned_size > int(state.uniform_upload.size) {
-		if state.uniform_upload_cursor != 0 {
+	} else if aligned_size > int(frame.uniform_upload.size) {
+		if frame.uniform_upload_cursor != 0 {
 			set_backend_errorf(
 				ctx,
 				"gfx.d3d12: immediate uniform upload buffer exhausted; requested %d bytes with %d bytes already used",
 				aligned_size,
-				state.uniform_upload_cursor,
+				frame.uniform_upload_cursor,
 			)
 			return 0, false
 		}
-		d3d12_release_buffer(&state.uniform_upload)
-		if !d3d12_create_upload_buffer(ctx, state, &state.uniform_upload, capacity, "immediate uniforms") {
+		d3d12_release_buffer(&frame.uniform_upload)
+		if !d3d12_create_upload_buffer(ctx, state, &frame.uniform_upload, capacity, "immediate uniforms") {
 			return 0, false
 		}
 	}
 
-	offset := align_up(state.uniform_upload_cursor, D3D12_CONSTANT_BUFFER_ALIGNMENT)
-	size := int(state.uniform_upload.size)
+	offset := align_up(frame.uniform_upload_cursor, D3D12_CONSTANT_BUFFER_ALIGNMENT)
+	size := int(frame.uniform_upload.size)
 	if offset > size || aligned_size > size - offset {
 		set_backend_errorf(
 			ctx,
@@ -1410,7 +1470,7 @@ d3d12_alloc_immediate_uniform :: proc(ctx: ^Context, state: ^D3D12_State, aligne
 		return 0, false
 	}
 
-	state.uniform_upload_cursor = offset + aligned_size
+	frame.uniform_upload_cursor = offset + aligned_size
 	return offset, true
 }
 
@@ -1434,7 +1494,7 @@ d3d12_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Tran
 	return true
 }
 
-d3d12_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
+d3d12_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32, base_instance: i32, base_vertex: i32) -> bool {
 	state := d3d12_state(ctx)
 	if state == nil {
 		set_backend_error(ctx, "gfx.d3d12: backend state is not initialized")
@@ -1456,9 +1516,9 @@ d3d12_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_inst
 			set_validation_error(ctx, "gfx.d3d12: indexed draw requires an index buffer")
 			return false
 		}
-		state.cmd.DrawIndexedInstanced(state.cmd, u32(num_elements), u32(num_instances), u32(base_element), 0, 0)
+		state.cmd.DrawIndexedInstanced(state.cmd, u32(num_elements), u32(num_instances), u32(base_element), base_vertex, u32(base_instance))
 	} else {
-		state.cmd.DrawInstanced(state.cmd, u32(num_elements), u32(num_instances), u32(base_element), 0)
+		state.cmd.DrawInstanced(state.cmd, u32(num_elements), u32(num_instances), u32(base_element), u32(base_instance))
 	}
 	return true
 }
@@ -1536,6 +1596,40 @@ d3d12_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offs
 	return true
 }
 
+d3d12_draw_indexed_indirect_count :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, count_buffer: Buffer, count_offset: int, max_draw_count: u32, stride: u32) -> bool {
+	state := d3d12_state(ctx)
+	if state == nil {
+		set_backend_error(ctx, "gfx.d3d12: backend state is not initialized")
+		return false
+	}
+	pipeline_info, ok := state.pipelines[state.current_pipeline]
+	if !ok {
+		set_validation_error(ctx, "gfx.d3d12: draw_indexed_indirect_count requires an applied pipeline")
+		return false
+	}
+	if !pipeline_info.has_index_buffer || !state.current_index_buffer {
+		set_validation_error(ctx, "gfx.d3d12: draw_indexed_indirect_count requires indexed pipeline and index buffer")
+		return false
+	}
+	if !d3d12_validate_draw_bindings(ctx, state, &pipeline_info) || !d3d12_sync_graphics_root(ctx, state, &pipeline_info) {
+		return false
+	}
+	buffer_info, buffer_ok := &state.buffers[indirect_buffer]
+	if !buffer_ok || buffer_info.resource == nil {
+		set_invalid_handle_error(ctx, "gfx.d3d12: indirect buffer handle is unknown")
+		return false
+	}
+	count_info, count_ok := &state.buffers[count_buffer]
+	if !count_ok || count_info.resource == nil {
+		set_invalid_handle_error(ctx, "gfx.d3d12: indirect count buffer handle is unknown")
+		return false
+	}
+	d3d12_transition_buffer(state, buffer_info, {.INDIRECT_ARGUMENT})
+	d3d12_transition_buffer(state, count_info, {.INDIRECT_ARGUMENT})
+	state.cmd.ExecuteIndirect(state.cmd, state.draw_indexed_signature, max_draw_count, buffer_info.resource, u64(offset), count_info.resource, u64(count_offset))
+	return true
+}
+
 d3d12_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int) -> bool {
 	state := d3d12_state(ctx)
 	if state == nil {
@@ -1584,10 +1678,16 @@ d3d12_end_pass :: proc(ctx: ^Context) -> bool {
 			}
 		}
 	}
+	d3d12_end_gpu_timestamp_sample(state)
 	return true
 }
 
 d3d12_end_compute_pass :: proc(ctx: ^Context) -> bool {
+	state := d3d12_state(ctx)
+	if state == nil {
+		return false
+	}
+	d3d12_end_gpu_timestamp_sample(state)
 	return true
 }
 
@@ -1626,18 +1726,145 @@ d3d12_commit :: proc(ctx: ^Context) -> bool {
 	if frame.backbuffer != nil {
 		d3d12_transition_resource(state, frame.backbuffer, &frame.state, d3d12.RESOURCE_STATE_PRESENT)
 	}
+	d3d12_resolve_gpu_timestamps(state)
 	if !d3d12_submit_commands(ctx, state) {
 		return false
 	}
+	fence_value, fence_ok := d3d12_signal_queue(state)
+	if !fence_ok {
+		set_backend_error(ctx, "gfx.d3d12: queue signal failed")
+		return false
+	}
+	frame.fence_value = fence_value
 	hr := state.swapchain.Present(state.swapchain, state.sync_interval, {})
 	if d3d12_failed(hr) {
 		d3d12_set_error_hr(ctx, "gfx.d3d12: Present failed", hr)
 		return false
 	}
-	d3d12_wait_idle(state)
-	d3d12_release_pending_uploads(state)
+	d3d12_read_completed_gpu_timestamps(state)
 	state.frame_index = state.swapchain.GetCurrentBackBufferIndex(state.swapchain)
 	return true
+}
+
+d3d12_gpu_timing_supported :: proc(ctx: ^Context) -> bool {
+	state := d3d12_state(ctx)
+	return state != nil && state.timestamp_enabled
+}
+
+d3d12_copy_gpu_timing_samples :: proc(ctx: ^Context, out: []Gpu_Timing_Sample) -> int {
+	state := d3d12_state(ctx)
+	if state == nil || len(out) == 0 {
+		return 0
+	}
+	count := min(state.gpu_timing_sample_count, len(out))
+	for i in 0..<count {
+		out[i] = state.gpu_timing_samples[i]
+	}
+	return count
+}
+
+d3d12_begin_gpu_timestamp_sample :: proc(state: ^D3D12_State, label: string) {
+	if state == nil || !state.timestamp_enabled || state.timestamp_heap == nil || state.cmd == nil {
+		return
+	}
+	if state.timestamp_open_sample != D3D12_NO_GPU_TIMESTAMP_SAMPLE {
+		return
+	}
+	if state.timestamp_sample_count >= MAX_GPU_TIMING_SAMPLES {
+		return
+	}
+
+	sample_index := state.timestamp_sample_count
+	query_base := state.frame_index * D3D12_GPU_TIMESTAMP_QUERY_CAPACITY
+	query_index := query_base + u32(sample_index * 2)
+	state.timestamp_labels[sample_index] = label
+	state.cmd.EndQuery(state.cmd, state.timestamp_heap, .TIMESTAMP, query_index)
+	state.timestamp_open_sample = sample_index
+	state.timestamp_sample_count += 1
+}
+
+d3d12_end_gpu_timestamp_sample :: proc(state: ^D3D12_State) {
+	if state == nil || !state.timestamp_enabled || state.timestamp_heap == nil || state.cmd == nil {
+		return
+	}
+	if state.timestamp_open_sample == D3D12_NO_GPU_TIMESTAMP_SAMPLE {
+		return
+	}
+
+	query_base := state.frame_index * D3D12_GPU_TIMESTAMP_QUERY_CAPACITY
+	query_index := query_base + u32(state.timestamp_open_sample * 2 + 1)
+	state.cmd.EndQuery(state.cmd, state.timestamp_heap, .TIMESTAMP, query_index)
+	state.timestamp_open_sample = D3D12_NO_GPU_TIMESTAMP_SAMPLE
+}
+
+d3d12_resolve_gpu_timestamps :: proc(state: ^D3D12_State) {
+	if state == nil || !state.timestamp_enabled || state.timestamp_heap == nil || state.timestamp_readback == nil || state.cmd == nil {
+		return
+	}
+	if state.timestamp_open_sample != D3D12_NO_GPU_TIMESTAMP_SAMPLE {
+		d3d12_end_gpu_timestamp_sample(state)
+	}
+	if state.timestamp_sample_count <= 0 {
+		state.backbuffers[state.frame_index].timestamp_sample_count = 0
+		state.backbuffers[state.frame_index].timestamp_resolved = false
+		return
+	}
+
+	query_count := u32(state.timestamp_sample_count * 2)
+	query_base := state.frame_index * D3D12_GPU_TIMESTAMP_QUERY_CAPACITY
+	readback_offset := u64(state.frame_index) * D3D12_GPU_TIMESTAMP_READBACK_BYTES
+	state.cmd.ResolveQueryData(state.cmd, state.timestamp_heap, .TIMESTAMP, query_base, query_count, state.timestamp_readback, readback_offset)
+	frame := &state.backbuffers[state.frame_index]
+	frame.timestamp_sample_count = state.timestamp_sample_count
+	frame.timestamp_labels = state.timestamp_labels
+	frame.timestamp_resolved = true
+}
+
+d3d12_read_completed_gpu_timestamps :: proc(state: ^D3D12_State) {
+	if state == nil || !state.timestamp_enabled || state.timestamp_readback == nil || state.timestamp_frequency == 0 {
+		return
+	}
+	completed := state.fence.GetCompletedValue(state.fence)
+	for frame_index in 0..<D3D12_FRAME_COUNT {
+		frame := &state.backbuffers[frame_index]
+		if !frame.timestamp_resolved || frame.fence_value == 0 || completed < frame.fence_value {
+			continue
+		}
+		if frame.timestamp_sample_count <= 0 {
+			frame.timestamp_resolved = false
+			continue
+		}
+
+		query_count := frame.timestamp_sample_count * 2
+		read_bytes := query_count * size_of(u64)
+		readback_offset := int(u64(frame_index) * D3D12_GPU_TIMESTAMP_READBACK_BYTES)
+		mapped: rawptr
+		read_range := d3d12.RANGE{
+			Begin = d3d12.SIZE_T(readback_offset),
+			End = d3d12.SIZE_T(readback_offset + read_bytes),
+		}
+		hr := state.timestamp_readback.Map(state.timestamp_readback, 0, &read_range, &mapped)
+		if d3d12_failed(hr) || mapped == nil {
+			continue
+		}
+		ticks := cast([^]u64)(rawptr(uintptr(mapped) + uintptr(readback_offset)))
+		for i in 0..<frame.timestamp_sample_count {
+			start := ticks[i * 2]
+			stop := ticks[i * 2 + 1]
+			duration_ms := f32(0)
+			if stop >= start {
+				duration_ms = f32(f64(stop - start) * 1000.0 / f64(state.timestamp_frequency))
+			}
+			state.gpu_timing_samples[i] = {
+				label = frame.timestamp_labels[i],
+				duration_ms = duration_ms,
+			}
+		}
+		state.gpu_timing_sample_count = frame.timestamp_sample_count
+		write_range := d3d12.RANGE{}
+		state.timestamp_readback.Unmap(state.timestamp_readback, 0, &write_range)
+		frame.timestamp_resolved = false
+	}
 }
 
 d3d12_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capacity: int, label: string) -> (Buffer, rawptr, bool) {
@@ -1715,6 +1942,42 @@ d3d12_slot_mask :: proc(slot: u32) -> u32 {
 	return u32(1) << slot
 }
 
+d3d12_view_slot_word :: proc(slot: u32) -> int {
+	return int(slot / D3D12_VIEW_MASK_WORD_BITS)
+}
+
+d3d12_view_slot_mask :: proc(slot: u32) -> u64 {
+	return u64(1) << (slot % D3D12_VIEW_MASK_WORD_BITS)
+}
+
+d3d12_mark_view_bound :: proc(masks: ^D3D12_Binding_Masks, group, slot: u32) {
+	if masks == nil || group >= MAX_BINDING_GROUPS || slot >= MAX_RESOURCE_VIEWS {
+		return
+	}
+	masks.views[group][d3d12_view_slot_word(slot)] |= d3d12_view_slot_mask(slot)
+}
+
+d3d12_or_view_group_masks :: proc(dst: ^D3D12_Binding_Masks, src: D3D12_Binding_Masks, group: int) {
+	if dst == nil || group < 0 || group >= MAX_BINDING_GROUPS {
+		return
+	}
+	for word in 0..<D3D12_VIEW_MASK_WORDS {
+		dst.views[group][word] |= src.views[group][word]
+	}
+}
+
+d3d12_missing_view_group_mask :: proc(required, current: D3D12_Binding_Masks, group: int) -> bool {
+	if group < 0 || group >= MAX_BINDING_GROUPS {
+		return false
+	}
+	for word in 0..<D3D12_VIEW_MASK_WORDS {
+		if required.views[group][word] & ~current.views[group][word] != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 d3d12_create_device :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
 	factory_raw: rawptr
 	factory_flags: dxgi.CREATE_FACTORY
@@ -1743,16 +2006,18 @@ d3d12_create_device :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
 	}
 	state.queue = cast(^d3d12.ICommandQueue)queue_raw
 
-	allocator_raw: rawptr
-	hr = state.device.CreateCommandAllocator(state.device, .DIRECT, d3d12.ICommandAllocator_UUID, &allocator_raw)
-	if d3d12_failed(hr) || allocator_raw == nil {
-		d3d12_set_error_hr(ctx, "gfx.d3d12: CreateCommandAllocator failed", hr)
-		return false
+	for i in 0..<D3D12_FRAME_COUNT {
+		allocator_raw: rawptr
+		hr = state.device.CreateCommandAllocator(state.device, .DIRECT, d3d12.ICommandAllocator_UUID, &allocator_raw)
+		if d3d12_failed(hr) || allocator_raw == nil {
+			d3d12_set_error_hr(ctx, "gfx.d3d12: CreateCommandAllocator failed", hr)
+			return false
+		}
+		state.backbuffers[i].allocator = cast(^d3d12.ICommandAllocator)allocator_raw
 	}
-	state.allocator = cast(^d3d12.ICommandAllocator)allocator_raw
 
 	cmd_raw: rawptr
-	hr = state.device.CreateCommandList(state.device, 0, .DIRECT, state.allocator, nil, d3d12.IGraphicsCommandList_UUID, &cmd_raw)
+	hr = state.device.CreateCommandList(state.device, 0, .DIRECT, state.backbuffers[0].allocator, nil, d3d12.IGraphicsCommandList_UUID, &cmd_raw)
 	if d3d12_failed(hr) || cmd_raw == nil {
 		d3d12_set_error_hr(ctx, "gfx.d3d12: CreateCommandList failed", hr)
 		return false
@@ -1863,10 +2128,6 @@ d3d12_create_backbuffers :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
 }
 
 d3d12_create_default_depth :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
-	if state.default_depth != nil {
-		state.default_depth.Release(state.default_depth)
-		state.default_depth = nil
-	}
 	resource_desc := d3d12.RESOURCE_DESC {
 		Dimension = .TEXTURE2D,
 		Width = u64(state.width),
@@ -1881,16 +2142,23 @@ d3d12_create_default_depth :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
 	clear_value := d3d12.CLEAR_VALUE{Format = .D32_FLOAT}
 	clear_value.DepthStencil = {Depth = 1, Stencil = 0}
 	heap_props := d3d12_heap_properties(.DEFAULT)
-	resource_raw: rawptr
-	hr := state.device.CreateCommittedResource(state.device, &heap_props, d3d12.HEAP_FLAG_ALLOW_ALL_BUFFERS_AND_TEXTURES, &resource_desc, {.DEPTH_WRITE}, &clear_value, d3d12.IResource_UUID, &resource_raw)
-	if d3d12_failed(hr) || resource_raw == nil {
-		d3d12_set_error_hr(ctx, "gfx.d3d12: CreateCommittedResource(default depth) failed", hr)
-		return false
+	for i: u32 = 0; i < D3D12_FRAME_COUNT; i += 1 {
+		frame := &state.backbuffers[i]
+		if frame.default_depth != nil {
+			frame.default_depth.Release(frame.default_depth)
+			frame.default_depth = nil
+		}
+		resource_raw: rawptr
+		hr := state.device.CreateCommittedResource(state.device, &heap_props, d3d12.HEAP_FLAG_ALLOW_ALL_BUFFERS_AND_TEXTURES, &resource_desc, {.DEPTH_WRITE}, &clear_value, d3d12.IResource_UUID, &resource_raw)
+		if d3d12_failed(hr) || resource_raw == nil {
+			d3d12_set_error_hr(ctx, "gfx.d3d12: CreateCommittedResource(default depth) failed", hr)
+			return false
+		}
+		frame.default_depth = cast(^d3d12.IResource)resource_raw
+		frame.default_depth_state = {.DEPTH_WRITE}
+		frame.default_depth_dsv = d3d12_alloc_descriptor(&state.dsv_heap)
+		state.device.CreateDepthStencilView(state.device, frame.default_depth, nil, frame.default_depth_dsv)
 	}
-	state.default_depth = cast(^d3d12.IResource)resource_raw
-	state.default_depth_state = {.DEPTH_WRITE}
-	state.default_depth_dsv = d3d12_alloc_descriptor(&state.dsv_heap)
-	state.device.CreateDepthStencilView(state.device, state.default_depth, nil, state.default_depth_dsv)
 	return true
 }
 
@@ -1927,24 +2195,94 @@ d3d12_create_command_signatures :: proc(ctx: ^Context, state: ^D3D12_State) -> b
 	return true
 }
 
+d3d12_create_timestamp_resources :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
+	if state == nil || state.device == nil || state.queue == nil {
+		set_backend_error(ctx, "gfx.d3d12: backend state is not initialized")
+		return false
+	}
+
+	frequency: u64
+	hr := state.queue.GetTimestampFrequency(state.queue, &frequency)
+	if d3d12_failed(hr) || frequency == 0 {
+		d3d12_set_error_hr(ctx, "gfx.d3d12: GetTimestampFrequency failed", hr)
+		return false
+	}
+
+	heap_desc := d3d12.QUERY_HEAP_DESC {
+		Type = .TIMESTAMP,
+		Count = D3D12_GPU_TIMESTAMP_QUERY_CAPACITY * D3D12_FRAME_COUNT,
+		NodeMask = 0,
+	}
+	heap_raw: rawptr
+	hr = state.device.CreateQueryHeap(state.device, &heap_desc, d3d12.IQueryHeap_UUID, &heap_raw)
+	if d3d12_failed(hr) || heap_raw == nil {
+		d3d12_set_error_hr(ctx, "gfx.d3d12: CreateQueryHeap(timestamp) failed", hr)
+		return false
+	}
+
+	readback_desc := d3d12_buffer_resource_desc(D3D12_GPU_TIMESTAMP_READBACK_BYTES * D3D12_FRAME_COUNT, {})
+	heap_props := d3d12_heap_properties(.READBACK)
+	readback_raw: rawptr
+	hr = state.device.CreateCommittedResource(
+		state.device,
+		&heap_props,
+		d3d12.HEAP_FLAG_ALLOW_ALL_BUFFERS_AND_TEXTURES,
+		&readback_desc,
+		{.COPY_DEST},
+		nil,
+		d3d12.IResource_UUID,
+		&readback_raw,
+	)
+	if d3d12_failed(hr) || readback_raw == nil {
+		query_heap := cast(^d3d12.IQueryHeap)heap_raw
+		query_heap.Release(query_heap)
+		d3d12_set_error_hr(ctx, "gfx.d3d12: CreateCommittedResource(timestamp readback) failed", hr)
+		return false
+	}
+
+	state.timestamp_heap = cast(^d3d12.IQueryHeap)heap_raw
+	state.timestamp_readback = cast(^d3d12.IResource)readback_raw
+	state.timestamp_frequency = frequency
+	state.timestamp_enabled = true
+	state.timestamp_open_sample = D3D12_NO_GPU_TIMESTAMP_SAMPLE
+	return true
+}
+
 d3d12_begin_commands :: proc(ctx: ^Context, state: ^D3D12_State) -> bool {
 	if state.command_open {
 		return true
 	}
-	hr := state.allocator.Reset(state.allocator)
+	frame := &state.backbuffers[state.frame_index]
+	if frame.allocator == nil {
+		set_backend_error(ctx, "gfx.d3d12: frame command allocator is not initialized")
+		return false
+	}
+	d3d12_wait_for_frame(state, frame)
+	d3d12_read_completed_gpu_timestamps(state)
+	hr := frame.allocator.Reset(frame.allocator)
 	if d3d12_failed(hr) {
 		d3d12_set_error_hr(ctx, "gfx.d3d12: command allocator Reset failed", hr)
 		return false
 	}
-	hr = state.cmd.Reset(state.cmd, state.allocator, nil)
+	hr = state.cmd.Reset(state.cmd, frame.allocator, nil)
 	if d3d12_failed(hr) {
 		d3d12_set_error_hr(ctx, "gfx.d3d12: command list Reset failed", hr)
 		return false
 	}
 	state.command_open = true
-	state.gpu_cbv_srv_uav.next = 0
-	state.gpu_samplers.next = 0
-	state.uniform_upload_cursor = 0
+	cbv_frame_capacity := state.gpu_cbv_srv_uav.capacity / D3D12_FRAME_COUNT
+	cbv_frame_start := state.frame_index * cbv_frame_capacity
+	state.gpu_cbv_srv_uav.next = cbv_frame_start
+	state.gpu_cbv_srv_uav_frame_end = cbv_frame_start + cbv_frame_capacity
+	sampler_frame_capacity := state.gpu_samplers.capacity / D3D12_FRAME_COUNT
+	sampler_frame_start := state.frame_index * sampler_frame_capacity
+	state.gpu_samplers.next = sampler_frame_start
+	state.gpu_samplers_frame_end = sampler_frame_start + sampler_frame_capacity
+	frame.uniform_upload_cursor = 0
+	state.graphics_resource_table_valid = false
+	state.graphics_sampler_table_valid = false
+	state.timestamp_sample_count = 0
+	state.timestamp_open_sample = D3D12_NO_GPU_TIMESTAMP_SAMPLE
 	return true
 }
 
@@ -1980,6 +2318,36 @@ d3d12_wait_idle :: proc(state: ^D3D12_State) {
 	value := state.fence_value
 	hr := state.queue.Signal(state.queue, state.fence, value)
 	if d3d12_failed(hr) {
+		return
+	}
+	if state.fence.GetCompletedValue(state.fence) < value {
+		_ = state.fence.SetEventOnCompletion(state.fence, value, state.fence_event)
+		_ = win32.WaitForSingleObject(state.fence_event, win32.INFINITE)
+	}
+}
+
+d3d12_wait_for_frame :: proc(state: ^D3D12_State, frame: ^D3D12_Frame_State) {
+	if state == nil || frame == nil || state.fence == nil || frame.fence_value == 0 {
+		return
+	}
+	d3d12_wait_for_fence_value(state, frame.fence_value)
+}
+
+d3d12_signal_queue :: proc(state: ^D3D12_State) -> (u64, bool) {
+	if state == nil || state.queue == nil || state.fence == nil {
+		return 0, false
+	}
+	state.fence_value += 1
+	value := state.fence_value
+	hr := state.queue.Signal(state.queue, state.fence, value)
+	if d3d12_failed(hr) {
+		return 0, false
+	}
+	return value, true
+}
+
+d3d12_wait_for_fence_value :: proc(state: ^D3D12_State, value: u64) {
+	if state == nil || state.fence == nil || value == 0 {
 		return
 	}
 	if state.fence.GetCompletedValue(state.fence) < value {
@@ -2100,7 +2468,12 @@ d3d12_heap_type_for_buffer :: proc(usage: Buffer_Usage) -> d3d12.HEAP_TYPE {
 	if .Storage in usage {
 		return .DEFAULT
 	}
-	if .Indirect in usage && !(.Vertex in usage) && !(.Index in usage) && !(.Uniform in usage) {
+	if .Indirect in usage &&
+	   !(.Dynamic_Update in usage) &&
+	   !(.Stream_Update in usage) &&
+	   !(.Vertex in usage) &&
+	   !(.Index in usage) &&
+	   !(.Uniform in usage) {
 		return .DEFAULT
 	}
 	return .UPLOAD
@@ -2242,12 +2615,31 @@ d3d12_upload_to_default_buffer :: proc(ctx: ^Context, state: ^D3D12_State, dest:
 	return d3d12_submit_and_wait(ctx, state)
 }
 
+d3d12_update_default_buffer :: proc(ctx: ^Context, state: ^D3D12_State, dest: ^D3D12_Buffer, offset: int, data: Range) -> bool {
+	upload: D3D12_Buffer
+	if !d3d12_create_upload_buffer(ctx, state, &upload, data.size, "buffer update upload") {
+		return false
+	}
+	mem.copy(upload.mapped, data.ptr, data.size)
+	if !d3d12_begin_commands(ctx, state) {
+		d3d12_release_buffer(&upload)
+		return false
+	}
+	d3d12_transition_buffer(state, dest, {.COPY_DEST})
+	state.cmd.CopyBufferRegion(state.cmd, dest.resource, u64(offset), upload.resource, 0, u64(data.size))
+	d3d12_transition_buffer(state, dest, d3d12_initial_buffer_state(dest.usage, .DEFAULT))
+	append(&state.pending_uploads, upload.resource)
+	upload.resource = nil
+	d3d12_release_buffer(&upload)
+	return true
+}
+
 d3d12_upload_initial_image_data :: proc(ctx: ^Context, state: ^D3D12_State, image: ^D3D12_Image, desc: Image_Desc) -> bool {
 	for mip in 0..<int(image.mip_count) {
 		mip_data := image_mip_data(desc, mip)
 		width := mip_dimension(image.width, u32(mip))
 		height := mip_dimension(image.height, u32(mip))
-		row_pitch := image_mip_row_pitch(mip_data, width, pixel_format_size(image.format))
+		row_pitch := image_mip_row_pitch(mip_data, image.format, width)
 		if !d3d12_upload_image_region(ctx, state, image, u32(mip), 0, 0, 0, width, height, mip_data.data, row_pitch) {
 			return false
 		}
@@ -2260,14 +2652,15 @@ d3d12_upload_image_region :: proc(ctx: ^Context, state: ^D3D12_State, image: ^D3
 		return false
 	}
 	aligned_row_pitch := u32(align_up(int(row_pitch), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT))
-	upload_size := int(aligned_row_pitch) * int(height)
+	copy_rows := pixel_format_row_count(image.format, height)
+	upload_size := int(aligned_row_pitch) * int(copy_rows)
 	upload: D3D12_Buffer
 	if !d3d12_create_upload_buffer(ctx, state, &upload, upload_size, "image upload") {
 		return false
 	}
 	dst := cast([^]u8)upload.mapped
 	src := cast([^]u8)data.ptr
-	for row: u32 = 0; row < height; row += 1 {
+	for row: u32 = 0; row < copy_rows; row += 1 {
 		mem.copy(rawptr(&dst[row * aligned_row_pitch]), rawptr(&src[row * row_pitch]), int(row_pitch))
 	}
 
@@ -2380,16 +2773,39 @@ d3d12_release_compute_pipeline :: proc(pipeline: ^D3D12_Compute_Pipeline) {
 	pipeline^ = {}
 }
 
+d3d12_release_shader :: proc(shader: ^D3D12_Shader) {
+	if shader == nil {
+		return
+	}
+	delete(shader.vertex_bytecode)
+	delete(shader.pixel_bytecode)
+	delete(shader.compute_bytecode)
+	if shader.uniform_slots != nil {
+		free(shader.uniform_slots)
+	}
+	if shader.view_slots != nil {
+		free(shader.view_slots)
+	}
+	if shader.sampler_slots != nil {
+		free(shader.sampler_slots)
+	}
+	shader^ = {}
+}
+
 d3d12_release_swapchain_views :: proc(state: ^D3D12_State) {
 	for i in 0..<D3D12_FRAME_COUNT {
 		if state.backbuffers[i].backbuffer != nil {
 			state.backbuffers[i].backbuffer.Release(state.backbuffers[i].backbuffer)
-			state.backbuffers[i] = {}
+			state.backbuffers[i].backbuffer = nil
+			state.backbuffers[i].rtv = {}
+			state.backbuffers[i].state = {}
 		}
-	}
-	if state.default_depth != nil {
-		state.default_depth.Release(state.default_depth)
-		state.default_depth = nil
+		if state.backbuffers[i].default_depth != nil {
+			state.backbuffers[i].default_depth.Release(state.backbuffers[i].default_depth)
+			state.backbuffers[i].default_depth = nil
+			state.backbuffers[i].default_depth_dsv = {}
+			state.backbuffers[i].default_depth_state = {}
+		}
 	}
 }
 
@@ -2405,9 +2821,7 @@ d3d12_release_state :: proc(state: ^D3D12_State) {
 		d3d12_release_compute_pipeline(&pipeline)
 	}
 	for _, &shader in state.shaders {
-		delete(shader.vertex_bytecode)
-		delete(shader.pixel_bytecode)
-		delete(shader.compute_bytecode)
+		d3d12_release_shader(&shader)
 	}
 	for _, &buffer in state.buffers {
 		d3d12_release_buffer(&buffer)
@@ -2415,7 +2829,9 @@ d3d12_release_state :: proc(state: ^D3D12_State) {
 	for _, &image in state.images {
 		d3d12_release_image(&image)
 	}
-	d3d12_release_buffer(&state.uniform_upload)
+	for i in 0..<D3D12_FRAME_COUNT {
+		d3d12_release_buffer(&state.backbuffers[i].uniform_upload)
+	}
 	delete(state.pipelines)
 	delete(state.compute_pipelines)
 	delete(state.shaders)
@@ -2428,6 +2844,8 @@ d3d12_release_state :: proc(state: ^D3D12_State) {
 	if state.draw_signature != nil { state.draw_signature.Release(state.draw_signature) }
 	if state.draw_indexed_signature != nil { state.draw_indexed_signature.Release(state.draw_indexed_signature) }
 	if state.dispatch_signature != nil { state.dispatch_signature.Release(state.dispatch_signature) }
+	if state.timestamp_readback != nil { state.timestamp_readback.Release(state.timestamp_readback) }
+	if state.timestamp_heap != nil { state.timestamp_heap.Release(state.timestamp_heap) }
 	if state.gpu_samplers.heap != nil { state.gpu_samplers.heap.Release(state.gpu_samplers.heap) }
 	if state.gpu_cbv_srv_uav.heap != nil { state.gpu_cbv_srv_uav.heap.Release(state.gpu_cbv_srv_uav.heap) }
 	if state.cpu_samplers.heap != nil { state.cpu_samplers.heap.Release(state.cpu_samplers.heap) }
@@ -2438,7 +2856,11 @@ d3d12_release_state :: proc(state: ^D3D12_State) {
 	if state.fence_event != nil { _ = win32.CloseHandle(state.fence_event) }
 	if state.fence != nil { state.fence.Release(state.fence) }
 	if state.cmd != nil { state.cmd.Release(state.cmd) }
-	if state.allocator != nil { state.allocator.Release(state.allocator) }
+	for i in 0..<D3D12_FRAME_COUNT {
+		if state.backbuffers[i].allocator != nil {
+			state.backbuffers[i].allocator.Release(state.backbuffers[i].allocator)
+		}
+	}
 	if state.queue != nil { state.queue.Release(state.queue) }
 	if state.device != nil { state.device.Release(state.device) }
 	if state.factory != nil { state.factory.Release(state.factory) }
@@ -2456,6 +2878,14 @@ d3d12_dxgi_format :: proc(format: Pixel_Format) -> dxgi.FORMAT {
 		return .R32G32B32A32_FLOAT
 	case .R32F:
 		return .R32_FLOAT
+	case .BC1_RGBA:
+		return .BC1_UNORM
+	case .BC3_RGBA:
+		return .BC3_UNORM
+	case .BC5_RG:
+		return .BC5_UNORM
+	case .BC7_RGBA:
+		return .BC7_UNORM
 	case .D24S8:
 		return .D24_UNORM_S8_UINT
 	case .D32F:
@@ -2492,6 +2922,8 @@ d3d12_vertex_format :: proc(format: Vertex_Format) -> dxgi.FORMAT {
 	switch format {
 	case .Float32:
 		return .R32_FLOAT
+	case .Float16x2:
+		return .R16G16_FLOAT
 	case .Float32x2:
 		return .R32G32_FLOAT
 	case .Float32x3:
@@ -2500,6 +2932,10 @@ d3d12_vertex_format :: proc(format: Vertex_Format) -> dxgi.FORMAT {
 		return .R32G32B32A32_FLOAT
 	case .Uint8x4_Norm:
 		return .R8G8B8A8_UNORM
+	case .Uint16x4_Norm:
+		return .R16G16B16A16_UNORM
+	case .Sint16x2_Norm:
+		return .R16G16_SNORM
 	case .Invalid:
 		return .UNKNOWN
 	}
@@ -2708,7 +3144,26 @@ d3d12_color_write_mask :: proc(mask: u8) -> u8 {
 	return result
 }
 
-d3d12_filter :: proc(min_filter, mag_filter, mip_filter: Filter) -> d3d12.FILTER {
+d3d12_filter :: proc(min_filter, mag_filter, mip_filter: Filter, comparison: bool = false) -> d3d12.FILTER {
+	if comparison {
+		if min_filter == .Linear && mag_filter == .Linear && mip_filter == .Linear {
+			return .COMPARISON_MIN_MAG_MIP_LINEAR
+		}
+		if min_filter == .Linear && mag_filter == .Linear {
+			return .COMPARISON_MIN_MAG_LINEAR_MIP_POINT
+		}
+		if min_filter == .Linear {
+			return .COMPARISON_MIN_LINEAR_MAG_MIP_POINT
+		}
+		if mag_filter == .Linear {
+			return .COMPARISON_MIN_POINT_MAG_LINEAR_MIP_POINT
+		}
+		if mip_filter == .Linear {
+			return .COMPARISON_MIN_MAG_POINT_MIP_LINEAR
+		}
+		return .COMPARISON_MIN_MAG_MIP_POINT
+	}
+
 	if min_filter == .Linear && mag_filter == .Linear && mip_filter == .Linear {
 		return .MIN_MAG_MIP_LINEAR
 	}
@@ -2914,7 +3369,11 @@ d3d12_create_dsv_descriptor :: proc(state: ^D3D12_State, image: D3D12_Image, vie
 	state.device.CreateDepthStencilView(state.device, image.resource, &desc, view.cpu_handle)
 }
 
-d3d12_build_root_signature :: proc(ctx: ^Context, state: ^D3D12_State, shader: D3D12_Shader, root: ^D3D12_Root_Info, compute: bool) -> bool {
+d3d12_build_root_signature :: proc(ctx: ^Context, state: ^D3D12_State, shader: ^D3D12_Shader, root: ^D3D12_Root_Info, compute: bool) -> bool {
+	if shader == nil || shader.uniform_slots == nil || shader.view_slots == nil || shader.sampler_slots == nil {
+		set_backend_error(ctx, "gfx.d3d12: shader binding slot tables are not initialized")
+		return false
+	}
 	root^ = {}
 	for stage in Shader_Stage {
 		if compute && stage != .Compute {
@@ -2922,28 +3381,28 @@ d3d12_build_root_signature :: proc(ctx: ^Context, state: ^D3D12_State, shader: D
 		}
 		if !compute && stage == .Compute {
 			continue
-		}
-		stage_index := int(stage)
-		for group in 0..<MAX_BINDING_GROUPS {
-			for slot in 0..<MAX_UNIFORM_BLOCKS {
-				binding := shader.uniform_slots[stage_index][group][slot]
-				if !binding.active {
-					continue
-				}
-				d3d12_add_resource_root_entry(root, .Uniform, stage, u32(group), u32(slot), binding)
 			}
-			for slot in 0..<MAX_RESOURCE_VIEWS {
-				binding := shader.view_slots[stage_index][group][slot]
-				if !binding.active {
-					continue
+			stage_index := int(stage)
+			for group in 0..<MAX_BINDING_GROUPS {
+				for slot in 0..<MAX_UNIFORM_BLOCKS {
+					binding := shader.uniform_slots^[stage_index][group][slot]
+					if !binding.active {
+						continue
+					}
+					d3d12_add_resource_root_entry(root, .Uniform, stage, u32(group), u32(slot), binding)
 				}
-				d3d12_add_resource_root_entry(root, .View, stage, u32(group), u32(slot), binding)
-			}
-			for slot in 0..<MAX_SAMPLERS {
-				binding := shader.sampler_slots[stage_index][group][slot]
-				if !binding.active {
-					continue
+				for slot in 0..<MAX_RESOURCE_VIEWS {
+					binding := shader.view_slots^[stage_index][group][slot]
+					if !binding.active {
+						continue
+					}
+					d3d12_add_resource_root_entry(root, .View, stage, u32(group), u32(slot), binding)
 				}
+				for slot in 0..<MAX_SAMPLERS {
+					binding := shader.sampler_slots^[stage_index][group][slot]
+					if !binding.active {
+						continue
+					}
 				d3d12_add_sampler_root_entry(root, stage, u32(group), u32(slot), binding)
 			}
 		}
@@ -3124,33 +3583,45 @@ d3d12_root_sampler_exists :: proc(root: ^D3D12_Root_Info, native_slot, native_sp
 	return false
 }
 
-d3d12_bind_graphics_resource_tables :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Pipeline, bindings: Bindings) -> bool {
+d3d12_bind_graphics_resource_tables :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Pipeline, bindings: ^Bindings) -> bool {
 	root := &pipeline.root
 	resource_start: u32
+	resource_table_changed := false
 	if root.has_resource_table {
-		resource_start = state.gpu_cbv_srv_uav.next
-		if !d3d12_copy_resource_descriptors(ctx, state, root, bindings, resource_start) {
-			return false
+		if d3d12_graphics_resource_table_valid(state, root, bindings) {
+			resource_start = state.graphics_resource_table_start
+		} else {
+			resource_start = state.gpu_cbv_srv_uav.next
+			if !d3d12_copy_resource_descriptors(ctx, state, root, bindings, resource_start) {
+				return false
+			}
+			d3d12_store_graphics_resource_table(state, root, bindings, resource_start)
+			resource_table_changed = true
 		}
 	}
 	sampler_start: u32
+	sampler_table_changed := false
 	if root.has_sampler_table {
-		sampler_start = state.gpu_samplers.next
-		if !d3d12_copy_sampler_descriptors(ctx, state, root, bindings, sampler_start) {
-			return false
+		if !d3d12_graphics_sampler_table_valid(state, root, bindings) {
+			sampler_start = state.gpu_samplers.next
+			if !d3d12_copy_sampler_descriptors(ctx, state, root, bindings, sampler_start) {
+				return false
+			}
+			d3d12_store_graphics_sampler_table(state, root, bindings, sampler_start)
+			sampler_table_changed = true
 		}
 	}
-	if root.has_resource_table {
+	if root.has_resource_table && resource_table_changed {
 		state.cmd.SetGraphicsRootDescriptorTable(state.cmd, root.resource_root_index, d3d12_descriptor_gpu(state.gpu_cbv_srv_uav, resource_start))
 	}
-	if root.has_sampler_table {
+	if root.has_sampler_table && sampler_table_changed {
 		state.cmd.SetGraphicsRootDescriptorTable(state.cmd, root.sampler_root_index, d3d12_descriptor_gpu(state.gpu_samplers, sampler_start))
 	}
 	d3d12_record_bound_masks(state, pipeline.required)
 	return true
 }
 
-d3d12_bind_compute_resource_tables :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Compute_Pipeline, bindings: Bindings) -> bool {
+d3d12_bind_compute_resource_tables :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Compute_Pipeline, bindings: ^Bindings) -> bool {
 	root := &pipeline.root
 	resource_start: u32
 	if root.has_resource_table {
@@ -3176,14 +3647,24 @@ d3d12_bind_compute_resource_tables :: proc(ctx: ^Context, state: ^D3D12_State, p
 	return true
 }
 
-d3d12_copy_resource_descriptors :: proc(ctx: ^Context, state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: Bindings, table_start: u32) -> bool {
-	if state.gpu_cbv_srv_uav.next + root.resource_table_count > state.gpu_cbv_srv_uav.capacity {
+d3d12_copy_resource_descriptors :: proc(ctx: ^Context, state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: ^Bindings, table_start: u32) -> bool {
+	resource_limit := state.gpu_cbv_srv_uav.capacity
+	if state.gpu_cbv_srv_uav_frame_end != 0 {
+		resource_limit = state.gpu_cbv_srv_uav_frame_end
+	}
+	if state.gpu_cbv_srv_uav.next + root.resource_table_count > resource_limit {
 		set_backend_error(ctx, "gfx.d3d12: shader-visible resource descriptor heap exhausted")
 		return false
 	}
 	for i in 0..<int(root.resource_count) {
 		entry := root.resource_entries[i]
 		if !entry.active {
+			continue
+		}
+		if entry.kind == .View && entry.array_count > 1 && d3d12_view_entry_can_batch_copy(entry) {
+			if !d3d12_copy_view_descriptor_range(ctx, state, entry, bindings, table_start) {
+				return false
+			}
 			continue
 		}
 		for array_index: u32 = 0; array_index < entry.array_count; array_index += 1 {
@@ -3229,8 +3710,119 @@ d3d12_copy_resource_descriptors :: proc(ctx: ^Context, state: ^D3D12_State, root
 	return true
 }
 
-d3d12_copy_sampler_descriptors :: proc(ctx: ^Context, state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: Bindings, table_start: u32) -> bool {
-	if state.gpu_samplers.next + root.sampler_table_count > state.gpu_samplers.capacity {
+d3d12_view_entry_can_batch_copy :: proc(entry: D3D12_Root_Entry) -> bool {
+	return entry.kind == .View && entry.view_kind == .Sampled && entry.descriptor_type == .SRV
+}
+
+d3d12_bound_view_descriptor_can_copy :: proc(entry: D3D12_Root_Entry, view: D3D12_View) -> bool {
+	return d3d12_view_entry_can_batch_copy(entry) && view.kind == .Sampled && view.has_descriptor
+}
+
+d3d12_copy_view_descriptor_range :: proc(ctx: ^Context, state: ^D3D12_State, entry: D3D12_Root_Entry, bindings: ^Bindings, table_start: u32) -> bool {
+	source_handles: [MAX_RESOURCE_VIEWS]d3d12.CPU_DESCRIPTOR_HANDLE
+	source_sizes: [MAX_RESOURCE_VIEWS]u32
+
+	for array_index: u32 = 0; array_index < entry.array_count; array_index += 1 {
+		slot := entry.logical_slot + array_index
+		view := bindings.views[entry.group][slot]
+		view_info, view_ok := state.views[view]
+		if !view_ok || !view_info.has_descriptor {
+			set_validation_errorf(ctx, "gfx.d3d12: missing resource view group %d slot %d", entry.group, slot)
+			return false
+		}
+		if image_valid(view_info.image) {
+			if image_info, image_ok := &state.images[view_info.image]; image_ok {
+				d3d12_transition_image(state, image_info, d3d12_state_for_bound_view(entry, view_info))
+			}
+		}
+		if buffer_valid(view_info.buffer) {
+			if buffer_info, buffer_ok := &state.buffers[view_info.buffer]; buffer_ok {
+				d3d12_transition_buffer(state, buffer_info, d3d12_state_for_bound_view(entry, view_info))
+			}
+		}
+		if !d3d12_bound_view_descriptor_can_copy(entry, view_info) {
+			set_validation_errorf(ctx, "gfx.d3d12: resource view group %d slot %d cannot be copied into sampled descriptor range", entry.group, slot)
+			return false
+		}
+		source_handles[int(array_index)] = view_info.cpu_handle
+		source_sizes[int(array_index)] = 1
+	}
+
+	dest_handles := [?]d3d12.CPU_DESCRIPTOR_HANDLE{d3d12_descriptor_cpu(state.gpu_cbv_srv_uav, table_start + entry.table_offset)}
+	dest_sizes := [?]u32{entry.array_count}
+	state.device.CopyDescriptors(
+		state.device,
+		1,
+		raw_data(dest_handles[:]),
+		raw_data(dest_sizes[:]),
+		entry.array_count,
+		raw_data(source_handles[:]),
+		raw_data(source_sizes[:]),
+		.CBV_SRV_UAV,
+	)
+	return true
+}
+
+d3d12_uniform_binding_equal :: proc(a, b: D3D12_Uniform_Binding) -> bool {
+	return a.resource == b.resource && a.gpu_va == b.gpu_va && a.size == b.size
+}
+
+d3d12_graphics_resource_table_valid :: proc(state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: ^Bindings) -> bool {
+	if state == nil || root == nil || !state.graphics_resource_table_valid {
+		return false
+	}
+	if state.graphics_resource_pipeline != state.current_pipeline {
+		return false
+	}
+	for i in 0..<int(root.resource_count) {
+		entry := root.resource_entries[i]
+		if !entry.active { continue }
+		for array_index: u32 = 0; array_index < entry.array_count; array_index += 1 {
+			slot := entry.logical_slot + array_index
+			switch entry.kind {
+			case .Uniform:
+				current := state.uniform_bindings[entry.group][slot]
+				cached := state.graphics_resource_uniforms[entry.group][slot]
+				if !d3d12_uniform_binding_equal(current, cached) {
+					return false
+				}
+			case .View:
+				if state.graphics_resource_views[entry.group][slot] != bindings.views[entry.group][slot] {
+					return false
+				}
+			case .Sampler:
+			}
+		}
+	}
+	return true
+}
+
+d3d12_store_graphics_resource_table :: proc(state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: ^Bindings, table_start: u32) {
+	for i in 0..<int(root.resource_count) {
+		entry := root.resource_entries[i]
+		if !entry.active { continue }
+		for array_index: u32 = 0; array_index < entry.array_count; array_index += 1 {
+			slot := entry.logical_slot + array_index
+			switch entry.kind {
+			case .Uniform:
+				state.graphics_resource_uniforms[entry.group][slot] = state.uniform_bindings[entry.group][slot]
+			case .View:
+				state.graphics_resource_views[entry.group][slot] = bindings.views[entry.group][slot]
+			case .Sampler:
+			}
+		}
+	}
+	state.graphics_resource_table_start = table_start
+	state.graphics_resource_pipeline = state.current_pipeline
+	state.graphics_resource_table_valid = true
+}
+
+d3d12_copy_sampler_descriptors :: proc(ctx: ^Context, state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: ^Bindings, table_start: u32) -> bool {
+	sampler_limit := state.gpu_samplers.capacity
+	if state.gpu_samplers_frame_end != 0 {
+		sampler_limit = state.gpu_samplers_frame_end
+	}
+	if state.gpu_samplers.next + root.sampler_table_count > sampler_limit {
 		set_backend_error(ctx, "gfx.d3d12: shader-visible sampler descriptor heap exhausted")
 		return false
 	}
@@ -3252,6 +3844,40 @@ d3d12_copy_sampler_descriptors :: proc(ctx: ^Context, state: ^D3D12_State, root:
 	}
 	state.gpu_samplers.next += root.sampler_table_count
 	return true
+}
+
+d3d12_graphics_sampler_table_valid :: proc(state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: ^Bindings) -> bool {
+	if state == nil || root == nil || !state.graphics_sampler_table_valid {
+		return false
+	}
+	if state.graphics_sampler_pipeline != state.current_pipeline {
+		return false
+	}
+	for i in 0..<int(root.sampler_count) {
+		entry := root.sampler_entries[i]
+		if !entry.active { continue }
+		for array_index: u32 = 0; array_index < entry.array_count; array_index += 1 {
+			slot := entry.logical_slot + array_index
+			if state.graphics_sampler_bindings[entry.group][slot] != bindings.samplers[entry.group][slot] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+d3d12_store_graphics_sampler_table :: proc(state: ^D3D12_State, root: ^D3D12_Root_Info, bindings: ^Bindings, table_start: u32) {
+	for i in 0..<int(root.sampler_count) {
+		entry := root.sampler_entries[i]
+		if !entry.active { continue }
+		for array_index: u32 = 0; array_index < entry.array_count; array_index += 1 {
+			slot := entry.logical_slot + array_index
+			state.graphics_sampler_bindings[entry.group][slot] = bindings.samplers[entry.group][slot]
+		}
+	}
+	state.graphics_sampler_table_start = table_start
+	state.graphics_sampler_pipeline = state.current_pipeline
+	state.graphics_sampler_table_valid = true
 }
 
 d3d12_state_for_bound_view :: proc(entry: D3D12_Root_Entry, view: D3D12_View) -> d3d12.RESOURCE_STATES {
@@ -3302,7 +3928,7 @@ d3d12_write_bound_view_descriptor :: proc(ctx: ^Context, state: ^D3D12_State, en
 d3d12_record_bound_masks :: proc(state: ^D3D12_State, required: [3]D3D12_Binding_Masks) {
 	for stage in 0..<3 {
 		for group in 0..<MAX_BINDING_GROUPS {
-			state.current_bindings[stage].views[group] |= required[stage].views[group]
+			d3d12_or_view_group_masks(&state.current_bindings[stage], required[stage], group)
 			state.current_bindings[stage].samplers[group] |= required[stage].samplers[group]
 		}
 	}
@@ -3313,7 +3939,7 @@ d3d12_record_bound_resources_from_bindings :: proc(state: ^D3D12_State, bindings
 		for group in 0..<MAX_BINDING_GROUPS {
 			for view, slot in bindings.views[group] {
 				if view_valid(view) {
-					state.current_bindings[stage].views[group] |= d3d12_slot_mask(u32(slot))
+					d3d12_mark_view_bound(&state.current_bindings[stage], u32(group), u32(slot))
 				}
 			}
 			for sampler, slot in bindings.samplers[group] {
@@ -3340,7 +3966,11 @@ d3d12_validate_uniform_binding :: proc(ctx: ^Context, state: ^D3D12_State, group
 			set_validation_error(ctx, "gfx.d3d12: apply_uniforms requires an applied compute pipeline")
 			return false
 		}
-		info := pipeline.uniform_slots[int(Shader_Stage.Compute)][group][slot]
+		if pipeline.uniform_slots == nil {
+			set_validation_error(ctx, "gfx.d3d12: compute pipeline binding slot table is missing")
+			return false
+		}
+		info := pipeline.uniform_slots^[int(Shader_Stage.Compute)][group][slot]
 		if info.active {
 			found = true
 			expected_size = info.size
@@ -3352,7 +3982,11 @@ d3d12_validate_uniform_binding :: proc(ctx: ^Context, state: ^D3D12_State, group
 			return false
 		}
 		for stage in 0..<2 {
-			info := pipeline.uniform_slots[stage][group][slot]
+			if pipeline.uniform_slots == nil {
+				set_validation_error(ctx, "gfx.d3d12: graphics pipeline binding slot table is missing")
+				return false
+			}
+			info := pipeline.uniform_slots^[stage][group][slot]
 			if info.active {
 				found = true
 				expected_size = info.size
@@ -3393,7 +4027,7 @@ d3d12_required_masks_satisfied :: proc(ctx: ^Context, required, current: D3D12_B
 			set_validation_errorf(ctx, "gfx.d3d12: %s is missing required uniforms in group %d", op, group)
 			return false
 		}
-		if required.views[group] & ~current.views[group] != 0 {
+		if d3d12_missing_view_group_mask(required, current, group) {
 			set_validation_errorf(ctx, "gfx.d3d12: %s is missing required resource views in group %d", op, group)
 			return false
 		}
@@ -3406,11 +4040,11 @@ d3d12_required_masks_satisfied :: proc(ctx: ^Context, required, current: D3D12_B
 }
 
 d3d12_sync_graphics_root :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Pipeline) -> bool {
-	return d3d12_bind_graphics_resource_tables(ctx, state, pipeline, state.current_user_bindings)
+	return d3d12_bind_graphics_resource_tables(ctx, state, pipeline, &state.current_user_bindings)
 }
 
 d3d12_sync_compute_root :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Compute_Pipeline) -> bool {
-	return d3d12_bind_compute_resource_tables(ctx, state, pipeline, state.current_user_bindings)
+	return d3d12_bind_compute_resource_tables(ctx, state, pipeline, &state.current_user_bindings)
 }
 
 d3d12_validate_pipeline_pass_compatibility :: proc(ctx: ^Context, state: ^D3D12_State, pipeline: ^D3D12_Pipeline) -> bool {

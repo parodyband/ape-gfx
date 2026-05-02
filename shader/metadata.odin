@@ -8,7 +8,7 @@ PACKAGE_MAGIC :: u32(0x48535041) // "APSH"
 @(private)
 PACKAGE_VERSION_MIN :: u32(11)
 @(private)
-PACKAGE_VERSION :: u32(11)
+PACKAGE_VERSION :: u32(12)
 @(private)
 PACKAGE_HEADER_SIZE_V1 :: 16
 @(private)
@@ -33,6 +33,8 @@ PACKAGE_BINDING_RECORD_SIZE_V8 :: 56
 PACKAGE_BINDING_RECORD_SIZE_V9 :: 60
 @(private)
 PACKAGE_BINDING_RECORD_SIZE_V10 :: 64
+@(private)
+PACKAGE_BINDING_RECORD_SIZE_V12 :: 76
 @(private)
 PACKAGE_VERTEX_INPUT_RECORD_SIZE :: 20
 @(private)
@@ -115,6 +117,8 @@ Binding_Record :: struct {
 	storage_image_format: gfx.Pixel_Format,
 	storage_buffer_stride: u32,
 	variant: u32,
+	array_count: u32,
+	unsized: bool,
 }
 
 // Permutation_Axis_Kind mirrors the design-note enum for
@@ -351,6 +355,8 @@ shader_desc :: proc(pkg: ^Package, target: Backend_Target, label: string) -> (gf
 			slot = record.logical_slot,
 			native_slot = record.slot,
 			native_space = record.native_space,
+			array_count = record.array_count,
+			unsized = record.unsized,
 			name = name,
 			size = record.size,
 			view_kind = record.view_kind,
@@ -546,6 +552,10 @@ parse :: proc(bytes: []u8) -> (Package, bool) {
 			}
 			if version >= 10 {
 				record.variant = read_u32(bytes, offset + 60)
+			}
+			if version >= 12 {
+				record.array_count = read_u32(bytes, offset + 64)
+				record.unsized = read_u32(bytes, offset + 68) != 0
 			}
 
 			if !range_valid(bytes, u64(record.name_offset), u64(record.name_size)) ||
@@ -785,6 +795,9 @@ package_header_size :: proc(version: u32) -> int {
 @(private)
 package_binding_record_size :: proc(version: u32) -> int {
 	if version >= 5 {
+		if version >= 12 {
+			return PACKAGE_BINDING_RECORD_SIZE_V12
+		}
 		if version >= 10 {
 			return PACKAGE_BINDING_RECORD_SIZE_V10
 		}
@@ -861,7 +874,7 @@ to_gfx_binding_kind :: proc(kind: Binding_Kind) -> (gfx.Shader_Binding_Kind, boo
 @(private)
 vertex_format_valid :: proc(format: gfx.Vertex_Format) -> bool {
 	switch format {
-	case .Float32, .Float32x2, .Float32x3, .Float32x4, .Uint8x4_Norm:
+	case .Float32, .Float16x2, .Float32x2, .Float32x3, .Float32x4, .Uint8x4_Norm, .Uint16x4_Norm, .Sint16x2_Norm:
 		return true
 	case .Invalid:
 		return false
@@ -913,7 +926,7 @@ storage_image_format_valid :: proc(format: gfx.Pixel_Format) -> bool {
 	switch format {
 	case .Invalid, .RGBA32F, .R32F:
 		return true
-	case .RGBA8, .BGRA8, .RGBA16F, .D24S8, .D32F:
+	case .RGBA8, .BGRA8, .RGBA16F, .BC1_RGBA, .BC3_RGBA, .BC5_RG, .BC7_RGBA, .D24S8, .D32F:
 		return false
 	}
 

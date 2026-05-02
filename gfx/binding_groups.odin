@@ -258,6 +258,9 @@ validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_La
 			   other.kind == native.kind &&
 			   other.native_slot == native.native_slot &&
 			   other.native_space == native.native_space {
+				if binding_group_native_bindings_can_share_slot(desc, native, other) {
+					continue
+				}
 				set_validation_errorf(
 					ctx,
 					"gfx.validate_binding_group_layout_desc: duplicate native %s %s %s binding at slot %d space %d",
@@ -273,6 +276,31 @@ validate_binding_group_layout_desc :: proc(ctx: ^Context, desc: Binding_Group_La
 	}
 
 	return true
+}
+
+@(private)
+binding_group_native_bindings_can_share_slot :: proc(
+	desc: Binding_Group_Layout_Desc,
+	a, b: Binding_Group_Native_Binding_Desc,
+) -> bool {
+	if a.target != .D3D12 || b.target != .D3D12 || a.kind != .Resource_View || b.kind != .Resource_View {
+		return false
+	}
+	return binding_group_native_d3d12_resource_class(desc, a) != binding_group_native_d3d12_resource_class(desc, b)
+}
+
+@(private)
+binding_group_native_d3d12_resource_class :: proc(desc: Binding_Group_Layout_Desc, native: Binding_Group_Native_Binding_Desc) -> int {
+	for entry in desc.entries {
+		if !entry.active || entry.kind != native.kind || entry.slot != native.slot || !(native.stage in entry.stages) {
+			continue
+		}
+		if entry.resource_view.view_kind == .Sampled || entry.resource_view.access == .Read {
+			return 1 // SRV namespace.
+		}
+		return 2 // UAV namespace.
+	}
+	return 0
 }
 
 @(private)

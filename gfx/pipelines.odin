@@ -386,7 +386,7 @@ validate_pipeline_vertex_inputs :: proc(ctx: ^Context, shader_state: Shader_Stat
 			)
 			return false
 		}
-		if attr.format != input.format {
+		if !vertex_format_shader_compatible(attr.format, input.format) {
 			set_validation_errorf(
 				ctx,
 				"gfx.create_pipeline: pipeline vertex input %s%d format does not match shader reflection",
@@ -413,6 +413,28 @@ validate_pipeline_vertex_inputs :: proc(ctx: ^Context, shader_state: Shader_Stat
 	}
 
 	return true
+}
+
+@(private)
+vertex_format_shader_compatible :: proc(layout_format, shader_format: Vertex_Format) -> bool {
+	if layout_format == shader_format {
+		return true
+	}
+
+	// Normalized integer vertex formats are legal ways to feed float shader
+	// inputs on native APIs. Shader reflection only knows the shader-side
+	// float vector width, so allow narrower GPU fetch formats when they expand
+	// to the same float arity.
+	switch shader_format {
+	case .Float32x2:
+		return layout_format == .Float16x2 || layout_format == .Sint16x2_Norm
+	case .Float32x4:
+		return layout_format == .Uint8x4_Norm || layout_format == .Uint16x4_Norm
+	case .Invalid, .Float32, .Float16x2, .Float32x3, .Uint8x4_Norm, .Uint16x4_Norm, .Sint16x2_Norm:
+		return false
+	}
+
+	return false
 }
 
 @(private)
@@ -657,7 +679,7 @@ vertex_step_function_valid :: proc(value: Vertex_Step_Function) -> bool {
 @(private)
 vertex_format_valid :: proc(format: Vertex_Format) -> bool {
 	switch format {
-	case .Float32, .Float32x2, .Float32x3, .Float32x4, .Uint8x4_Norm:
+	case .Float32, .Float16x2, .Float32x2, .Float32x3, .Float32x4, .Uint8x4_Norm, .Uint16x4_Norm, .Sint16x2_Norm:
 		return true
 	case .Invalid:
 		return false
@@ -671,6 +693,8 @@ vertex_format_size :: proc(format: Vertex_Format) -> u32 {
 	switch format {
 	case .Float32:
 		return 4
+	case .Float16x2:
+		return 4
 	case .Float32x2:
 		return 8
 	case .Float32x3:
@@ -678,6 +702,10 @@ vertex_format_size :: proc(format: Vertex_Format) -> u32 {
 	case .Float32x4:
 		return 16
 	case .Uint8x4_Norm:
+		return 4
+	case .Uint16x4_Norm:
+		return 8
+	case .Sint16x2_Norm:
 		return 4
 	case .Invalid:
 		return 0

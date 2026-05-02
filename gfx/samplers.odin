@@ -68,6 +68,10 @@ validate_sampler_desc :: proc(ctx: ^Context, desc: Sampler_Desc) -> bool {
 		set_validation_error(ctx, "gfx.create_sampler: wrap_w is invalid")
 		return false
 	}
+	if !sampler_compare_func_valid(desc.compare) {
+		set_validation_error(ctx, "gfx.create_sampler: compare is invalid")
+		return false
+	}
 
 	return true
 }
@@ -82,10 +86,21 @@ filter_valid :: proc(value: Filter) -> bool {
 	return false
 }
 
+
 @(private)
 wrap_valid :: proc(value: Wrap) -> bool {
 	switch value {
 	case .Repeat, .Clamp_To_Edge, .Mirrored_Repeat:
+		return true
+	}
+
+	return false
+}
+
+@(private)
+sampler_compare_func_valid :: proc(value: Compare_Func) -> bool {
+	switch value {
+	case .Always, .Never, .Less, .Less_Equal, .Equal, .Greater_Equal, .Greater, .Not_Equal:
 		return true
 	}
 

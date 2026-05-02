@@ -254,9 +254,10 @@ apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Transient_
 // are indices; otherwise they are vertices.
 //
 // example:
-//   gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
-//   gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
-draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {
+//   gfx.draw(&ctx, 0, 3)                         // 3 vertices, 1 instance
+//   gfx.draw(&ctx, 0, index_count, 4)            // indexed, 4 instances
+//   gfx.draw(&ctx, first_index, count, 1, 0, v)  // indexed with base vertex
+draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1, base_instance: i32 = 0, base_vertex: i32 = 0) -> bool {
 	if !require_render_pass(ctx, "gfx.draw") {
 		return false
 	}
@@ -265,8 +266,12 @@ draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances:
 		set_validation_error(ctx, "gfx.draw: element and instance counts must be positive")
 		return false
 	}
+	if base_instance < 0 {
+		set_validation_error(ctx, "gfx.draw: base_instance must be non-negative")
+		return false
+	}
 
-	return backend_draw(ctx, base_element, num_elements, num_instances)
+	return backend_draw(ctx, base_element, num_elements, num_instances, base_instance, base_vertex)
 }
 
 // dispatch issues a compute dispatch with explicit thread-group counts.
@@ -335,6 +340,31 @@ draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: in
 	}
 
 	return backend_draw_indexed_indirect(ctx, indirect_buffer, offset, draw_count, stride)
+}
+
+// draw_indexed_indirect_count is the counted form of indexed indirect draw.
+// The GPU reads up to `max_draw_count` argument records, clamped by the u32
+// value in `count_buffer` at `count_offset`.
+draw_indexed_indirect_count :: proc(
+	ctx: ^Context,
+	indirect_buffer: Buffer,
+	offset: int,
+	count_buffer: Buffer,
+	count_offset: int,
+	max_draw_count: u32,
+	stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE,
+) -> bool {
+	if !require_render_pass(ctx, "gfx.draw_indexed_indirect_count") {
+		return false
+	}
+	if !validate_indirect_buffer(ctx, "gfx.draw_indexed_indirect_count", indirect_buffer, offset, max_draw_count, int(stride), DRAW_INDEXED_INDIRECT_ARGS_STRIDE, DRAW_INDEXED_INDIRECT_ARGS_SIZE) {
+		return false
+	}
+	if !validate_indirect_count_buffer(ctx, "gfx.draw_indexed_indirect_count", count_buffer, count_offset) {
+		return false
+	}
+
+	return backend_draw_indexed_indirect_count(ctx, indirect_buffer, offset, count_buffer, count_offset, max_draw_count, stride)
 }
 
 // dispatch_indirect issues one compute dispatch with thread-group counts
@@ -407,6 +437,39 @@ validate_indirect_buffer :: proc(ctx: ^Context, op: string, indirect_buffer: Buf
 		return false
 	}
 
+	return true
+}
+
+@(private)
+validate_indirect_count_buffer :: proc(ctx: ^Context, op: string, count_buffer: Buffer, count_offset: int) -> bool {
+	if !buffer_valid(count_buffer) {
+		set_validation_errorf(ctx, "%s: count buffer handle is invalid", op)
+		return false
+	}
+	if !require_resource(ctx, &ctx.buffer_pool, u64(count_buffer), op, "count buffer") {
+		return false
+	}
+	if count_offset < 0 {
+		set_validation_errorf(ctx, "%s: count_offset must be non-negative", op)
+		return false
+	}
+	if count_offset % INDIRECT_COUNT_OFFSET_ALIGNMENT != 0 {
+		set_validation_errorf(ctx, "%s: count_offset must be aligned to INDIRECT_COUNT_OFFSET_ALIGNMENT (%d bytes)", op, INDIRECT_COUNT_OFFSET_ALIGNMENT)
+		return false
+	}
+	buffer_state := query_buffer_state(ctx, count_buffer)
+	if !buffer_state.valid {
+		set_invalid_handle_errorf(ctx, "%s: count buffer handle is invalid", op)
+		return false
+	}
+	if !(.Indirect in buffer_state.usage) {
+		set_validation_errorf(ctx, "%s: count buffer requires Buffer_Usage_Flag.Indirect", op)
+		return false
+	}
+	if count_offset + size_of(u32) > buffer_state.size {
+		set_validation_errorf(ctx, "%s: count argument range exceeds buffer size", op)
+		return false
+	}
 	return true
 }
 
@@ -506,6 +569,15 @@ clear_pass_attachments :: proc(ctx: ^Context) {
 validate_pass_desc :: proc(ctx: ^Context, desc: Pass_Desc) -> bool {
 	if !validate_pass_action_desc(ctx, desc.action) {
 		return false
+	}
+
+	if desc.depth_only {
+		for attachment, slot in desc.color_attachments {
+			if view_valid(attachment) {
+				set_validation_errorf(ctx, "gfx.begin_pass: depth_only pass cannot bind color attachment slot %d", slot)
+				return false
+			}
+		}
 	}
 
 	has_color := false
@@ -820,7 +892,6 @@ clear_compute_pass_resource_writes :: proc(ctx: ^Context) {
 		return
 	}
 
-	ctx.compute_pass_resource_writes = {}
 	ctx.compute_pass_resource_write_count = 0
 }
 
@@ -854,7 +925,12 @@ validate_compute_bindings_against_pass_writes :: proc(ctx: ^Context, bindings: B
 			}
 
 			access := current_resource_binding_access(ctx, u32(group), u32(slot), view_state)
-			if !access.reads {
+			// Rebinding the same UAV across dispatches is a normal GPU-driven
+			// pattern for append/compact passes. This guard catches pure
+			// read-after-write hazards inside one compute pass; explicit UAV
+			// barriers are still the caller's tool when a later dispatch must
+			// consume data written by an earlier one.
+			if !access.reads || access.writes {
 				continue
 			}
 
@@ -895,7 +971,7 @@ validate_compute_write_tracking_capacity :: proc(ctx: ^Context, bindings: Bindin
 		}
 	}
 
-	if ctx.compute_pass_resource_write_count + new_write_count > MAX_COMPUTE_PASS_RESOURCE_WRITES {
+	if ctx.compute_pass_resource_write_count + new_write_count > len(ctx.compute_pass_resource_writes) {
 		set_validation_error(ctx, "gfx.dispatch: compute pass resource write tracking capacity exceeded")
 		return false
 	}
@@ -925,6 +1001,9 @@ record_compute_dispatch_writes :: proc(ctx: ^Context) {
 				continue
 			}
 
+			if ctx.compute_pass_resource_write_count >= len(ctx.compute_pass_resource_writes) {
+				return
+			}
 			ctx.compute_pass_resource_writes[ctx.compute_pass_resource_write_count] = view_state
 			ctx.compute_pass_resource_write_count += 1
 		}
@@ -1146,6 +1225,11 @@ bindings_have_shader_resources :: proc(bindings: Bindings) -> bool {
 
 @(private)
 validate_binding_resource_hazards :: proc(ctx: ^Context, bindings: Bindings) -> bool {
+	write_views: [MAX_BINDING_GROUPS * MAX_RESOURCE_VIEWS]View
+	write_groups: [MAX_BINDING_GROUPS * MAX_RESOURCE_VIEWS]int
+	write_slots: [MAX_BINDING_GROUPS * MAX_RESOURCE_VIEWS]int
+	write_count := 0
+
 	for group_views, group in bindings.views {
 		for view, slot in group_views {
 			if !view_valid(view) {
@@ -1162,34 +1246,50 @@ validate_binding_resource_hazards :: proc(ctx: ^Context, bindings: Bindings) -> 
 				return false
 			}
 
-			current_writes := view_state_writes_resource(view_state)
-			current_reads := view_state_reads_resource(view_state)
-			for other_group_views, other_group in bindings.views {
-				for other_view, other_slot in other_group_views {
-					if other_group > group || (other_group == group && other_slot >= slot) || !view_valid(other_view) {
-						continue
-					}
+			current_access := binding_resource_access_from_view_state(view_state)
+			if current_access.writes {
+				write_views[write_count] = view
+				write_groups[write_count] = group
+				write_slots[write_count] = slot
+				write_count += 1
+			}
+		}
+	}
 
-					other_state := query_view_state(ctx, other_view)
-					if !other_state.valid || !view_states_alias_resource(view_state, other_state) {
-						continue
-					}
+	if write_count == 0 {
+		return true
+	}
 
-					other_writes := view_state_writes_resource(other_state)
-					other_reads := view_state_reads_resource(other_state)
-					if current_writes && other_writes {
-						set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d and group %d slot %d write the same resource", other_group, other_slot, group, slot)
-						return false
-					}
-					if current_reads && other_writes {
-						set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d reads a resource written by group %d slot %d", group, slot, other_group, other_slot)
-						return false
-					}
-					if current_writes && other_reads {
-						set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d writes a resource read by group %d slot %d", group, slot, other_group, other_slot)
-						return false
-					}
+	for group_views, group in bindings.views {
+		for view, slot in group_views {
+			if !view_valid(view) {
+				continue
+			}
+
+			view_state := query_view_state(ctx, view)
+			if !view_state.valid {
+				continue
+			}
+
+			current_access := binding_resource_access_from_view_state(view_state)
+			if !current_access.reads && !current_access.writes {
+				continue
+			}
+
+			for i in 0..<write_count {
+				if write_groups[i] == group && write_slots[i] == slot {
+					continue
 				}
+				write_state := query_view_state(ctx, write_views[i])
+				if !write_state.valid || !view_states_alias_resource(view_state, write_state) {
+					continue
+				}
+				if current_access.writes {
+					set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d and group %d slot %d write the same resource", write_groups[i], write_slots[i], group, slot)
+					return false
+				}
+				set_validation_errorf(ctx, "gfx.apply_bindings: resource view group %d slot %d reads a resource written by group %d slot %d", group, slot, write_groups[i], write_slots[i])
+				return false
 			}
 		}
 	}

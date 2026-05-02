@@ -53,7 +53,7 @@ commit :: proc(ctx: ^gfx.Context) {...}
 ### `draw`
 
 ```odin
-draw :: proc(ctx: ^gfx.Context, base_element, element_count: i32) {...}
+draw :: proc(ctx: ^gfx.Context, base_element, element_count: i32, instance_count: i32 = 1, base_instance: i32 = 0) {...}
 ```
 
 ### `end_pass`

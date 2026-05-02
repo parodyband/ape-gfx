@@ -51,15 +51,16 @@ destroy_buffer :: proc(ctx: ^Context, buffer: Buffer) {
 	release_resource_id(&ctx.buffer_pool, u64(buffer))
 }
 
-// update_buffer writes CPU data into a Dynamic_Update or Stream_Update buffer.
+// update_buffer writes CPU data into a Dynamic_Update, Stream_Update, or
+// backend-supported Storage buffer.
 update_buffer :: proc(ctx: ^Context, desc: Buffer_Update_Desc) -> bool {
 	buffer_state, ok := validate_buffer_transfer(ctx, "gfx.update_buffer", desc.buffer, desc.offset, desc.data)
 	if !ok {
 		return false
 	}
 
-	if !(.Dynamic_Update in buffer_state.usage) && !(.Stream_Update in buffer_state.usage) {
-		set_validation_error(ctx, "gfx.update_buffer: buffer must use Dynamic_Update or Stream_Update")
+	if !(.Dynamic_Update in buffer_state.usage) && !(.Stream_Update in buffer_state.usage) && !(.Storage in buffer_state.usage) {
+		set_validation_error(ctx, "gfx.update_buffer: buffer must use Dynamic_Update, Stream_Update, or Storage")
 		return false
 	}
 
@@ -125,10 +126,6 @@ validate_buffer_desc :: proc(ctx: ^Context, desc: ^Buffer_Desc) -> bool {
 	}
 	if .Storage in desc.usage && update_count > 0 {
 		set_validation_error(ctx, "gfx.create_buffer: storage buffers are GPU-only for now and must not use update/lifetime flags")
-		return false
-	}
-	if .Indirect in desc.usage && (.Dynamic_Update in desc.usage || .Stream_Update in desc.usage) {
-		set_unsupported_error(ctx, "gfx.create_buffer: CPU-updatable indirect buffers are not supported yet; use {.Indirect, .Immutable} with initial data or {.Indirect, .Storage} for GPU-produced args")
 		return false
 	}
 	if .Immutable in desc.usage && !range_has_data(desc.data) {

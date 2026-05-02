@@ -279,7 +279,7 @@ null_apply_uniform_at :: proc(ctx: ^Context, group: u32, slot: int, slice: Trans
 	return true
 }
 
-null_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32) -> bool {
+null_draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32, base_instance: i32, base_vertex: i32) -> bool {
 	return true
 }
 
@@ -295,6 +295,11 @@ null_draw_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, 
 
 null_draw_indexed_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, draw_count: u32, stride: u32) -> bool {
 	set_unsupported_error(ctx, "gfx.null: draw_indexed_indirect is not supported")
+	return false
+}
+
+null_draw_indexed_indirect_count :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, count_buffer: Buffer, count_offset: int, max_draw_count: u32, stride: u32) -> bool {
+	set_unsupported_error(ctx, "gfx.null: draw_indexed_indirect_count is not supported")
 	return false
 }
 
@@ -314,6 +319,14 @@ null_end_compute_pass :: proc(ctx: ^Context) -> bool {
 
 null_commit :: proc(ctx: ^Context) -> bool {
 	return true
+}
+
+null_gpu_timing_supported :: proc(ctx: ^Context) -> bool {
+	return false
+}
+
+null_copy_gpu_timing_samples :: proc(ctx: ^Context, out: []Gpu_Timing_Sample) -> int {
+	return 0
 }
 
 null_create_transient_chunk :: proc(ctx: ^Context, role: Transient_Usage, capacity: int, label: string) -> (Buffer, rawptr, bool) {

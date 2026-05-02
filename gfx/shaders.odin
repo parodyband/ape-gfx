@@ -447,7 +447,7 @@ shader_storage_image_format_valid :: proc(value: Pixel_Format) -> bool {
 	switch value {
 	case .Invalid, .RGBA32F, .R32F:
 		return true
-	case .RGBA8, .BGRA8, .RGBA16F, .D24S8, .D32F:
+	case .RGBA8, .BGRA8, .RGBA16F, .BC1_RGBA, .BC3_RGBA, .BC5_RG, .BC7_RGBA, .D24S8, .D32F:
 		return false
 	}
 

@@ -1157,12 +1157,13 @@ sourced from an indirect-capable buffer (AAA roadmap item 11).
 ### `draw`
 
 ```odin
-draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1) -> bool {...}
+draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1, base_instance: i32 = 0) -> bool {...}
 ```
 
 draw issues a non-indexed or indexed draw depending on the active pipeline.
 When the active pipeline declares an index_type, base_element and num_elements
 are indices; otherwise they are vertices.
+base_instance selects the first instance ID/instance-stream element.
 example:
   gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
   gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
@@ -2624,10 +2625,10 @@ Sampler :: distinct u64
 ### `Sampler_Desc`
 
 ```odin
-Sampler_Desc :: struct {label: string, min_filter: Filter, mag_filter: Filter, mip_filter: Filter, wrap_u: Wrap, wrap_v: Wrap, wrap_w: Wrap}
+Sampler_Desc :: struct {label: string, min_filter: Filter, mag_filter: Filter, mip_filter: Filter, wrap_u: Wrap, wrap_v: Wrap, wrap_w: Wrap, compare: Compare_Func}
 ```
 
-Sampler_Desc creates a texture sampler state.
+Sampler_Desc creates a texture sampler state. `compare = .Always` creates a regular sampler; any other Compare_Func creates a comparison sampler for depth PCF / SampleCmp-style shader operations.
 
 ### `Semaphore_Signal`
 

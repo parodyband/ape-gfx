@@ -108,6 +108,15 @@ main :: proc() {
 	}
 	expect_error_info(&ctx, .Validation, "gfx.create_sampler: min_filter is invalid")
 
+	bad_compare_sampler, bad_compare_sampler_ok := gfx.create_sampler(&ctx, {
+		label = "bad compare sampler",
+		compare = gfx.Compare_Func(99),
+	})
+	if bad_compare_sampler_ok || gfx.sampler_valid(bad_compare_sampler) {
+		fail("sampler with invalid compare unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_sampler: compare is invalid")
+
 	group_layout: gfx.Binding_Group_Layout_Desc
 	group_layout.label = "valid generated-style binding group layout"
 	group_layout.entries[0] = {

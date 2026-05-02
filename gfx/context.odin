@@ -54,10 +54,13 @@ init :: proc(desc: Desc) -> (Context, bool) {
 		return ctx, false
 	}
 
+	ctx.compute_pass_resource_writes = make([]View_State, MAX_COMPUTE_PASS_RESOURCE_WRITES)
 	if !backend_init(&ctx) {
 		if ctx.last_error == "" {
 			set_validation_error(&ctx, "gfx.init: backend initialization failed")
 		}
+		delete(ctx.compute_pass_resource_writes)
+		ctx.compute_pass_resource_writes = nil
 		return ctx, false
 	}
 
@@ -102,6 +105,8 @@ shutdown :: proc(ctx: ^Context) {
 	backend_shutdown(ctx)
 	barrier_tracker_release(ctx)
 	delete_resource_pools(ctx)
+	delete(ctx.compute_pass_resource_writes)
+	ctx.compute_pass_resource_writes = nil
 	ctx.initialized = false
 }
 
