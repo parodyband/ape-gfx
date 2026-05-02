@@ -533,6 +533,46 @@ backend_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset
 	return false
 }
 
+backend_dispatch_mesh :: proc(ctx: ^Context, x, y, z: u32) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return true
+	case .D3D12:
+		return d3d12_dispatch_mesh(ctx, x, y, z)
+	case .Vulkan:
+		set_unsupported_error(ctx, "gfx.vulkan: dispatch_mesh not implemented")
+		return false
+	case .Auto:
+	}
+	return false
+}
+
+backend_begin_event :: proc(ctx: ^Context, name: string) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return true
+	case .D3D12:
+		return d3d12_begin_event(ctx, name)
+	case .Vulkan:
+		return true
+	case .Auto:
+	}
+	return false
+}
+
+backend_end_event :: proc(ctx: ^Context) -> bool {
+	switch ctx.backend {
+	case .Null:
+		return true
+	case .D3D12:
+		return d3d12_end_event(ctx)
+	case .Vulkan:
+		return true
+	case .Auto:
+	}
+	return false
+}
+
 backend_end_pass :: proc(ctx: ^Context) -> bool {
 	switch ctx.backend {
 	case .Null:

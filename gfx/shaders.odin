@@ -359,6 +359,10 @@ shader_state_from_desc :: proc(desc: Shader_Desc) -> Shader_State {
 			state.has_fragment = true
 		case .Compute:
 			state.has_compute = true
+		case .Mesh:
+			state.has_mesh = true
+		case .Amplification:
+			state.has_amplification = true
 		}
 	}
 
@@ -375,7 +379,7 @@ shader_state_from_desc :: proc(desc: Shader_Desc) -> Shader_State {
 @(private)
 shader_stage_valid :: proc(value: Shader_Stage) -> bool {
 	switch value {
-	case .Vertex, .Fragment, .Compute:
+	case .Vertex, .Fragment, .Compute, .Mesh, .Amplification:
 		return true
 	}
 
@@ -391,6 +395,10 @@ shader_stage_name :: proc(value: Shader_Stage) -> string {
 		return "fragment"
 	case .Compute:
 		return "compute"
+	case .Mesh:
+		return "mesh"
+	case .Amplification:
+		return "amplification"
 	}
 
 	return "invalid"

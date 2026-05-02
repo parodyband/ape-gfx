@@ -3,6 +3,7 @@ package gfx
 
 import "core:fmt"
 import "core:mem"
+import "core:dynlib"
 import d3d12 "vendor:directx/d3d12"
 import dxgi "vendor:directx/dxgi"
 import win32 "core:sys/windows"
@@ -107,15 +108,17 @@ D3D12_Binding_Slot :: struct {
 D3D12_Uniform_Slots :: [MAX_BINDING_GROUPS][MAX_UNIFORM_BLOCKS]D3D12_Binding_Slot
 D3D12_View_Slots :: [MAX_BINDING_GROUPS][MAX_RESOURCE_VIEWS]D3D12_Binding_Slot
 D3D12_Sampler_Slots :: [MAX_BINDING_GROUPS][MAX_SAMPLERS]D3D12_Binding_Slot
-D3D12_Stage_Uniform_Slots :: [3]D3D12_Uniform_Slots
-D3D12_Stage_View_Slots :: [3]D3D12_View_Slots
-D3D12_Stage_Sampler_Slots :: [3]D3D12_Sampler_Slots
+D3D12_Stage_Uniform_Slots :: [5]D3D12_Uniform_Slots
+D3D12_Stage_View_Slots :: [5]D3D12_View_Slots
+D3D12_Stage_Sampler_Slots :: [5]D3D12_Sampler_Slots
 
 D3D12_Shader :: struct {
 	vertex_bytecode: []u8,
 	pixel_bytecode:  []u8,
 	compute_bytecode: []u8,
-	required:        [3]D3D12_Binding_Masks,
+	mesh_bytecode: []u8,
+	amplification_bytecode: []u8,
+	required:        [5]D3D12_Binding_Masks,
 	uniform_slots:   ^D3D12_Stage_Uniform_Slots,
 	view_slots:      ^D3D12_Stage_View_Slots,
 	sampler_slots:   ^D3D12_Stage_Sampler_Slots,
@@ -173,7 +176,7 @@ D3D12_Pipeline :: struct {
 	vertex_strides:          [MAX_VERTEX_BUFFERS]u32,
 	has_index_buffer:        bool,
 	required_vertex_buffers: u32,
-	required:                [3]D3D12_Binding_Masks,
+	required:                [5]D3D12_Binding_Masks,
 	uniform_slots:           ^D3D12_Stage_Uniform_Slots,
 	view_slots:              ^D3D12_Stage_View_Slots,
 	sampler_slots:           ^D3D12_Stage_Sampler_Slots,
@@ -188,7 +191,7 @@ D3D12_Compute_Pipeline :: struct {
 	shader:               Shader,
 	pso:                  ^d3d12.IPipelineState,
 	root:                 D3D12_Root_Info,
-	required:             [3]D3D12_Binding_Masks,
+	required:             [5]D3D12_Binding_Masks,
 	uniform_slots:        ^D3D12_Stage_Uniform_Slots,
 	view_slots:           ^D3D12_Stage_View_Slots,
 	sampler_slots:        ^D3D12_Stage_Sampler_Slots,
@@ -254,7 +257,7 @@ D3D12_State :: struct {
 	current_user_bindings:    Bindings,
 	current_vertex_buffers:   u32,
 	current_index_buffer:     bool,
-	current_bindings:         [3]D3D12_Binding_Masks,
+	current_bindings:         [5]D3D12_Binding_Masks,
 	graphics_resource_table_valid: bool,
 	graphics_resource_table_start: u32,
 	graphics_resource_pipeline:    Pipeline,
@@ -861,6 +864,10 @@ d3d12_create_shader :: proc(ctx: ^Context, handle: Shader, desc: Shader_Desc) ->
 			shader_info.pixel_bytecode = bytes
 		case .Compute:
 			shader_info.compute_bytecode = bytes
+		case .Mesh:
+			shader_info.mesh_bytecode = bytes
+		case .Amplification:
+			shader_info.amplification_bytecode = bytes
 		}
 	}
 
@@ -932,7 +939,16 @@ d3d12_create_pipeline :: proc(ctx: ^Context, handle: Pipeline, desc: Pipeline_De
 		return false
 	}
 	shader_info, shader_ok := state.shaders[desc.shader]
-	if !shader_ok || len(shader_info.vertex_bytecode) == 0 || len(shader_info.pixel_bytecode) == 0 {
+	if !shader_ok {
+		set_invalid_handle_error(ctx, "gfx.d3d12: pipeline shader handle is invalid")
+		return false
+	}
+	// Mesh-shader path: when the bound shader compiled with [shader("mesh")], use the
+	// PIPELINE_STATE_STREAM_DESC code path. Vertex/pixel are not required for this case.
+	if len(shader_info.mesh_bytecode) > 0 {
+		return d3d12_create_mesh_pipeline(ctx, handle, desc, &shader_info)
+	}
+	if len(shader_info.vertex_bytecode) == 0 || len(shader_info.pixel_bytecode) == 0 {
 		set_invalid_handle_error(ctx, "gfx.d3d12: graphics pipeline shader is invalid")
 		return false
 	}
@@ -1022,6 +1038,158 @@ d3d12_create_pipeline :: proc(ctx: ^Context, handle: Pipeline, desc: Pipeline_De
 	pipeline_info.pso = cast(^d3d12.IPipelineState)pso_raw
 	d3d12_set_debug_name(cast(^d3d12.IObject)pipeline_info.pso, desc.label)
 	state.pipelines[handle] = pipeline_info
+	return true
+}
+
+// Mesh-shader PSO creation. Builds a manually-packed PIPELINE_STATE_STREAM_DESC because Odin's
+// d3d12 binding has no CD3DX12 helpers. Each subobject is one struct field whose first 8 bytes
+// hold the PIPELINE_STATE_SUBOBJECT_TYPE enum + padding, followed by the payload struct. Total
+// stream is the byte size of the struct, passed by pointer to IDevice2.CreatePipelineState.
+@(private="file")
+Mesh_Pipeline_Stream :: struct #align(8) {
+	root_sig_type:     u64,
+	root_sig:          ^d3d12.IRootSignature,
+	as_type:           u64,
+	as_bytecode:       d3d12.SHADER_BYTECODE,
+	ms_type:           u64,
+	ms_bytecode:       d3d12.SHADER_BYTECODE,
+	ps_type:           u64,
+	ps_bytecode:       d3d12.SHADER_BYTECODE,
+	rasterizer_type:   u64,
+	rasterizer:        d3d12.RASTERIZER_DESC,
+	depth_type:        u64,
+	depth:             d3d12.DEPTH_STENCIL_DESC,
+	rt_formats_type:   u64,
+	rt_formats:        d3d12.RT_FORMAT_ARRAY,
+	depth_format_type: u64,
+	depth_format:      dxgi.FORMAT,
+	_depth_format_pad: u32,
+	sample_desc_type:  u64,
+	sample_desc:       dxgi.SAMPLE_DESC,
+	sample_mask_type:  u64,
+	sample_mask:       u32,
+	_sample_mask_pad:  u32,
+	blend_type:        u64,
+	blend:             d3d12.BLEND_DESC,
+}
+
+d3d12_create_mesh_pipeline :: proc(ctx: ^Context, handle: Pipeline, desc: Pipeline_Desc, shader_info: ^D3D12_Shader) -> bool {
+	state := d3d12_state(ctx)
+	if state == nil || state.device == nil {
+		return false
+	}
+	if len(shader_info.mesh_bytecode) == 0 {
+		set_invalid_handle_error(ctx, "gfx.d3d12: mesh pipeline shader missing mesh stage")
+		return false
+	}
+	device2_raw: rawptr
+	hr_q := state.device.QueryInterface(state.device, d3d12.IDevice2_UUID, &device2_raw)
+	if d3d12_failed(hr_q) || device2_raw == nil {
+		d3d12_set_error_hr(ctx, "gfx.d3d12: mesh pipeline requires IDevice2 (Mesh Shader Tier 1)", hr_q)
+		return false
+	}
+	device2 := cast(^d3d12.IDevice2)device2_raw
+	defer (cast(^d3d12.IUnknown)device2).Release(cast(^d3d12.IUnknown)device2)
+
+	pipeline_info := D3D12_Pipeline {
+		shader = desc.shader,
+		topology = d3d12_primitive_topology(desc.primitive_type),
+		topology_type = d3d12_primitive_topology_type(desc.primitive_type),
+		index_format = d3d12_index_format(desc.index_type),
+		has_index_buffer = false, // mesh shaders don't use IA index buffer
+		required = shader_info.required,
+		uniform_slots = shader_info.uniform_slots,
+		view_slots = shader_info.view_slots,
+		sampler_slots = shader_info.sampler_slots,
+		has_binding_metadata = shader_info.has_binding_metadata,
+		depth_format = desc.depth.format,
+		depth_enabled = desc.depth.enabled,
+		depth_only = desc.depth_only,
+	}
+	for slot in 0..<MAX_COLOR_ATTACHMENTS {
+		pipeline_info.color_formats[slot] = desc.color_formats[slot]
+	}
+	if !pipeline_info.depth_only && pipeline_info.color_formats[0] == .Invalid {
+		pipeline_info.color_formats[0] = ctx.desc.swapchain_format
+	}
+	if !d3d12_build_root_signature(ctx, state, shader_info, &pipeline_info.root, false) {
+		d3d12_release_pipeline(&pipeline_info)
+		return false
+	}
+
+	stream: Mesh_Pipeline_Stream
+	stream.root_sig_type   = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.ROOT_SIGNATURE)
+	stream.root_sig        = pipeline_info.root.root_signature
+	stream.ms_type         = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.MS)
+	stream.ms_bytecode     = {pShaderBytecode = raw_data(shader_info.mesh_bytecode), BytecodeLength = d3d12.SIZE_T(len(shader_info.mesh_bytecode))}
+	stream.as_type         = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.AS)
+	if len(shader_info.amplification_bytecode) > 0 {
+		stream.as_bytecode = {pShaderBytecode = raw_data(shader_info.amplification_bytecode), BytecodeLength = d3d12.SIZE_T(len(shader_info.amplification_bytecode))}
+	}
+	stream.ps_type         = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.PS)
+	if len(shader_info.pixel_bytecode) > 0 {
+		stream.ps_bytecode = {pShaderBytecode = raw_data(shader_info.pixel_bytecode), BytecodeLength = d3d12.SIZE_T(len(shader_info.pixel_bytecode))}
+	}
+	stream.rasterizer_type = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.RASTERIZER)
+	stream.rasterizer      = d3d12_rasterizer_desc(desc.raster)
+	stream.depth_type      = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.DEPTH_STENCIL)
+	stream.depth           = d3d12_depth_stencil_desc(desc.depth)
+	stream.rt_formats_type = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.RENDER_TARGET_FORMATS)
+	num_rt: u32 = 0
+	if !pipeline_info.depth_only {
+		for format, slot in pipeline_info.color_formats {
+			if format == .Invalid { continue }
+			stream.rt_formats.RTFormats[slot] = d3d12_dxgi_format(format)
+			num_rt = u32(slot + 1)
+		}
+	}
+	stream.rt_formats.NumRenderTargets = num_rt
+	stream.depth_format_type = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.DEPTH_STENCIL_FORMAT)
+	if pipeline_info.depth_enabled {
+		stream.depth_format = d3d12_dxgi_format(pipeline_info.depth_format)
+	}
+	stream.sample_desc_type = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.SAMPLE_DESC)
+	stream.sample_desc      = {Count = 1, Quality = 0}
+	stream.sample_mask_type = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.SAMPLE_MASK)
+	stream.sample_mask      = 0xFFFFFFFF
+	stream.blend_type       = u64(d3d12.PIPELINE_STATE_SUBOBJECT_TYPE.BLEND)
+	stream.blend            = d3d12_blend_desc(desc)
+
+	stream_desc := d3d12.PIPELINE_STATE_STREAM_DESC{
+		SizeInBytes                   = size_of(Mesh_Pipeline_Stream),
+		pPipelineStateSubobjectStream = &stream,
+	}
+	pso_raw: rawptr
+	hr := device2.CreatePipelineState(device2, &stream_desc, d3d12.IPipelineState_UUID, &pso_raw)
+	if d3d12_failed(hr) || pso_raw == nil {
+		d3d12_release_pipeline(&pipeline_info)
+		d3d12_set_error_hr(ctx, "gfx.d3d12: CreatePipelineState (mesh) failed", hr)
+		return false
+	}
+	pipeline_info.pso = cast(^d3d12.IPipelineState)pso_raw
+	d3d12_set_debug_name(cast(^d3d12.IObject)pipeline_info.pso, desc.label)
+	state.pipelines[handle] = pipeline_info
+	return true
+}
+
+// d3d12_dispatch_mesh issues a hardware DispatchMesh through IGraphicsCommandList6. Caller has
+// already applied a mesh-shader pipeline. The (X, Y, Z) thread-group counts go directly to the
+// amplification (or mesh, if no AS) shader's first stage.
+d3d12_dispatch_mesh :: proc(ctx: ^Context, x, y, z: u32) -> bool {
+	state := d3d12_state(ctx)
+	if state == nil || state.cmd == nil {
+		set_backend_error(ctx, "gfx.d3d12: dispatch_mesh requires open command list")
+		return false
+	}
+	cmd6_raw: rawptr
+	hr := (cast(^d3d12.IUnknown)state.cmd).QueryInterface(cast(^d3d12.IUnknown)state.cmd, d3d12.IGraphicsCommandList6_UUID, &cmd6_raw)
+	if d3d12_failed(hr) || cmd6_raw == nil {
+		d3d12_set_error_hr(ctx, "gfx.d3d12: IGraphicsCommandList6 (DispatchMesh) unavailable", hr)
+		return false
+	}
+	cmd6 := cast(^d3d12.IGraphicsCommandList6)cmd6_raw
+	defer (cast(^d3d12.IUnknown)cmd6).Release(cast(^d3d12.IUnknown)cmd6)
+	cmd6.DispatchMesh(cmd6, x, y, z)
 	return true
 }
 
@@ -1654,6 +1822,90 @@ d3d12_dispatch_indirect :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: 
 	return true
 }
 
+// NVTX bindings — lazily loaded from nvToolsExt64_1.dll on first use. Captured natively by Nsight
+// Systems (`--trace=dx12,nvtx` or just letting nsys auto-detect). Cleaner path than PIX events
+// (which nsys 2026 doesn't seem to capture from command lists reliably).
+@(private="file")
+g_nvtx_lib_loaded :: bool
+@(private="file")
+g_nvtx_push: proc "system" (msg: cstring) -> i32
+@(private="file")
+g_nvtx_pop:  proc "system" () -> i32
+@(private="file")
+g_nvtx_init_attempted := false
+
+@(private="file")
+ensure_nvtx :: proc() {
+	if g_nvtx_init_attempted { return }
+	g_nvtx_init_attempted = true
+	lib, ok := dynlib.load_library("nvToolsExt64_1.dll")
+	if !ok { return }
+	if push_addr, push_ok := dynlib.symbol_address(lib, "nvtxRangePushA"); push_ok {
+		g_nvtx_push = transmute(proc "system" (msg: cstring) -> i32)push_addr
+	}
+	if pop_addr, pop_ok := dynlib.symbol_address(lib, "nvtxRangePop"); pop_ok {
+		g_nvtx_pop = transmute(proc "system" () -> i32)pop_addr
+	}
+}
+
+// d3d12_begin_event pushes BOTH a PIX3 ANSI marker on the command list AND an NVTX range. Nsight
+// Systems captures the NVTX side natively; PIX / RenderDoc see the command-list event.
+d3d12_begin_event :: proc(ctx: ^Context, name: string) -> bool {
+	ensure_nvtx()
+	if g_nvtx_push != nil {
+		// Stack-allocate a null-terminated copy. cstring needs null-termination; Odin strings aren't.
+		tmp: [256]u8
+		n := min(len(name), len(tmp) - 1)
+		for i in 0..<n { tmp[i] = name[i] }
+		tmp[n] = 0
+		g_nvtx_push(cstring(raw_data(tmp[:])))
+	}
+
+	state := d3d12_state(ctx)
+	if state == nil {
+		return false
+	}
+	if !d3d12_begin_commands(ctx, state) {
+		return false
+	}
+	if state.cmd == nil {
+		return false
+	}
+	PIX_EVENT_PIX3BLOB_VERSION :: u32(2)
+	PIXEvent_BeginEvent_OnContext_NoArgs :: u64(0x012)
+	PIXEventsStringIsAnsiBitShift :: u64(55)
+	PIXEventsStringIsShortcutBitShift :: u64(54)
+
+	buf: [256]u8
+	header := (PIXEvent_BeginEvent_OnContext_NoArgs & 0x3FF) << 10
+	color  := u64(0xFF000000)
+	// PIX3 ANSI string-section header: marks the following bytes as a null-terminated ANSI
+	// "format string" with no varargs. This was missing — without it, nsys captures the range
+	// timing but can't decode the name string.
+	string_header := (u64(1) << PIXEventsStringIsAnsiBitShift) | (u64(1) << PIXEventsStringIsShortcutBitShift)
+	for i in 0..<8 { buf[i]     = u8((header        >> u64(i * 8)) & 0xff) }
+	for i in 0..<8 { buf[8 + i] = u8((color         >> u64(i * 8)) & 0xff) }
+	for i in 0..<8 { buf[16 + i] = u8((string_header >> u64(i * 8)) & 0xff) }
+	name_len := min(len(name), len(buf) - 25)
+	for i in 0..<name_len { buf[24 + i] = name[i] }
+	buf[24 + name_len] = 0
+	total_size := u32(24 + name_len + 1)
+	state.cmd.BeginEvent(state.cmd, PIX_EVENT_PIX3BLOB_VERSION, raw_data(buf[:]), total_size)
+	return true
+}
+
+d3d12_end_event :: proc(ctx: ^Context) -> bool {
+	if g_nvtx_pop != nil {
+		g_nvtx_pop()
+	}
+	state := d3d12_state(ctx)
+	if state == nil || state.cmd == nil {
+		return false
+	}
+	state.cmd.EndEvent(state.cmd)
+	return true
+}
+
 d3d12_end_pass :: proc(ctx: ^Context) -> bool {
 	state := d3d12_state(ctx)
 	if state == nil {
@@ -1707,7 +1959,15 @@ d3d12_barrier :: proc(ctx: ^Context, desc: Barrier_Desc) -> bool {
 	}
 	for transition in desc.buffer_transitions {
 		if buffer_info, ok := &state.buffers[transition.buffer]; ok {
-			d3d12_transition_buffer(state, buffer_info, d3d12_resource_state(transition.to))
+			// Storage_Read_Write → Storage_Read_Write is a UAV-flush barrier (D3D12 has no
+			// state-change to do; the back-to-back UAV writes need an explicit UAV barrier so
+			// the next dispatch sees the prior dispatch's writes).
+			if transition.from == transition.to && (transition.from == .Storage_Read_Write ||
+			    transition.from == .Storage_Write || transition.from == .Storage_Read) {
+				d3d12_uav_barrier(state, buffer_info.resource)
+			} else {
+				d3d12_transition_buffer(state, buffer_info, d3d12_resource_state(transition.to))
+			}
 		}
 	}
 	return true
@@ -2440,6 +2700,8 @@ d3d12_resource_state :: proc(usage: Resource_Usage) -> d3d12.RESOURCE_STATES {
 		return {.COPY_DEST}
 	case .Indirect_Argument:
 		return {.INDIRECT_ARGUMENT}
+	case .Index_Buffer:
+		return {.INDEX_BUFFER}
 	}
 	return d3d12.RESOURCE_STATE_COMMON
 }
@@ -3925,7 +4187,7 @@ d3d12_write_bound_view_descriptor :: proc(ctx: ^Context, state: ^D3D12_State, en
 	return true
 }
 
-d3d12_record_bound_masks :: proc(state: ^D3D12_State, required: [3]D3D12_Binding_Masks) {
+d3d12_record_bound_masks :: proc(state: ^D3D12_State, required: [5]D3D12_Binding_Masks) {
 	for stage in 0..<3 {
 		for group in 0..<MAX_BINDING_GROUPS {
 			d3d12_or_view_group_masks(&state.current_bindings[stage], required[stage], group)

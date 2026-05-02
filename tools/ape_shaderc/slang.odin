@@ -24,9 +24,11 @@ SLANG_LANGUAGE_VERSION_2025 :: u32(2025)
 SLANG_PROFILE_UNKNOWN :: SlangProfileID(0)
 SLANG_TARGET_DXIL :: SlangCompileTarget(10)
 SLANG_TARGET_SPIRV :: SlangCompileTarget(6)
-SLANG_STAGE_VERTEX :: SlangStage(1)
-SLANG_STAGE_FRAGMENT :: SlangStage(5)
-SLANG_STAGE_COMPUTE :: SlangStage(6)
+SLANG_STAGE_VERTEX        :: SlangStage(1)
+SLANG_STAGE_FRAGMENT      :: SlangStage(5)
+SLANG_STAGE_COMPUTE       :: SlangStage(6)
+SLANG_STAGE_MESH          :: SlangStage(13)
+SLANG_STAGE_AMPLIFICATION :: SlangStage(14)
 SLANG_MATRIX_LAYOUT_ROW_MAJOR :: SlangMatrixLayoutMode(1)
 
 Slang_Type_Kind :: enum u32 {
@@ -485,9 +487,9 @@ probe_modern_slang_api :: proc(api: ^Slang_API) -> bool {
 	}
 	defer release_slang_unknown(cast(^ISlangUnknown)global_session)
 
-	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_0"))
+	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_5"))
 	if dxil_profile == SLANG_PROFILE_UNKNOWN {
-		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_6_0")
+		fmt.eprintln("ape_shaderc: Slang could not resolve profile sm_6_5")
 		return false
 	}
 
@@ -848,6 +850,10 @@ stage_for_slang_stage :: proc(stage: SlangStage) -> (Stage, bool) {
 		return .Fragment, true
 	case SLANG_STAGE_COMPUTE:
 		return .Compute, true
+	case SLANG_STAGE_MESH:
+		return .Mesh, true
+	case SLANG_STAGE_AMPLIFICATION:
+		return .Amplification, true
 	}
 	return .Vertex, false
 }
@@ -860,6 +866,10 @@ stage_name_for_slang_stage :: proc(stage: SlangStage) -> string {
 		return "fragment"
 	case SLANG_STAGE_COMPUTE:
 		return "compute"
+	case SLANG_STAGE_MESH:
+		return "mesh"
+	case SLANG_STAGE_AMPLIFICATION:
+		return "amplification"
 	}
 	return ""
 }

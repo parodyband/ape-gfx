@@ -21,10 +21,14 @@ Target :: enum u32 {
 	Vulkan_SPIRV,
 }
 
+// Mirrors ape-gfx Shader_Stage by integer order. The on-disk shader package serializes the
+// stage enum value as u32, so any divergence from the gfx enum here breaks the loader.
 Stage :: enum u32 {
 	Vertex,
 	Fragment,
 	Compute,
+	Mesh,
+	Amplification,
 }
 
 Shader_Kind :: enum {
@@ -425,7 +429,7 @@ create_modern_slang_context :: proc(slang: ^Slang_API) -> (Modern_Slang_Context,
 		return {}, false
 	}
 
-	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_0"))
+	dxil_profile := global_session.vtable.findProfile(global_session, cstring("sm_6_5"))
 	spirv_profile := global_session.vtable.findProfile(global_session, cstring("glsl_450"))
 	if dxil_profile == SLANG_PROFILE_UNKNOWN || spirv_profile == SLANG_PROFILE_UNKNOWN {
 		fmt.eprintln("ape_shaderc: failed to resolve modern Slang target profiles")
@@ -796,6 +800,10 @@ slang_stage_for_stage :: proc(stage: Stage) -> (SlangStage, bool) {
 		return SLANG_STAGE_FRAGMENT, true
 	case .Compute:
 		return SLANG_STAGE_COMPUTE, true
+	case .Mesh:
+		return SLANG_STAGE_MESH, true
+	case .Amplification:
+		return SLANG_STAGE_AMPLIFICATION, true
 	}
 
 	return 0, false
@@ -3567,6 +3575,10 @@ stage_odin :: proc(stage: Stage) -> string {
 		return "Fragment"
 	case .Compute:
 		return "Compute"
+	case .Mesh:
+		return "Mesh"
+	case .Amplification:
+		return "Amplification"
 	}
 
 	return "Vertex"
@@ -3591,6 +3603,10 @@ stage_prefix :: proc(stage: Stage) -> string {
 		return "FS"
 	case .Compute:
 		return "CS"
+	case .Mesh:
+		return "MS"
+	case .Amplification:
+		return "AS"
 	}
 
 	return "STAGE"

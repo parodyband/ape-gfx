@@ -341,7 +341,7 @@ resource_usage_legal_for_image :: proc(usage: Resource_Usage, image_state: Image
 	     .Color_Target, .Depth_Target_Read, .Depth_Target_Write,
 	     .Copy_Source, .Copy_Dest, .Present:
 		return true
-	case .Indirect_Argument:
+	case .Indirect_Argument, .Index_Buffer:
 		return false
 	}
 	return false
@@ -350,7 +350,7 @@ resource_usage_legal_for_image :: proc(usage: Resource_Usage, image_state: Image
 @(private)
 resource_usage_legal_for_buffer :: proc(usage: Resource_Usage) -> bool {
 	switch usage {
-	case .None, .Storage_Read, .Storage_Write, .Storage_Read_Write, .Copy_Source, .Copy_Dest, .Indirect_Argument:
+	case .None, .Storage_Read, .Storage_Write, .Storage_Read_Write, .Copy_Source, .Copy_Dest, .Indirect_Argument, .Index_Buffer:
 		return true
 	case .Sampled, .Color_Target, .Depth_Target_Read, .Depth_Target_Write, .Present:
 		return false

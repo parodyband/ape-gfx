@@ -216,6 +216,7 @@ Resource_Usage :: enum {
 	Copy_Source,
 	Copy_Dest,
 	Indirect_Argument,
+	Index_Buffer,
 	Present,
 }
 
@@ -354,6 +355,8 @@ Shader_Stage :: enum {
 	Vertex,
 	Fragment,
 	Compute,
+	Mesh,
+	Amplification,
 }
 
 // Shader_Stage_Set is a bit set of shader stages used by reflected layouts.
@@ -923,7 +926,7 @@ Shader_Vertex_Input_Desc :: struct {
 // Shader_Desc creates a backend shader object from compiled stage bytecode and metadata.
 Shader_Desc :: struct {
 	label: string,
-	stages: [3]Shader_Stage_Desc,
+	stages: [5]Shader_Stage_Desc,
 	has_binding_metadata: bool,
 	bindings: [MAX_SHADER_BINDINGS]Shader_Binding_Desc,
 	has_vertex_input_metadata: bool,
@@ -1052,6 +1055,8 @@ Shader_State :: struct {
 	has_vertex: bool,
 	has_fragment: bool,
 	has_compute: bool,
+	has_mesh: bool,
+	has_amplification: bool,
 	has_binding_metadata: bool,
 	bindings: [MAX_SHADER_BINDINGS]Shader_Binding_Desc,
 	has_vertex_input_metadata: bool,

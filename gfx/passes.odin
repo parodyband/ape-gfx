@@ -367,6 +367,34 @@ draw_indexed_indirect_count :: proc(
 	return backend_draw_indexed_indirect_count(ctx, indirect_buffer, offset, count_buffer, count_offset, max_draw_count, stride)
 }
 
+// dispatch_mesh issues an `ID3D12GraphicsCommandList6::DispatchMesh` (or backend equivalent).
+// The active pipeline must have been created from a Shader containing a `[shader("mesh")]`
+// (and optionally `[shader("amplification")]`) entry point. Thread-group counts go straight to
+// the amplification (or mesh, if no AS) first stage. Use to replace ExecuteIndirect at cluster
+// granularity — the amplification shader culls clusters and dispatches one mesh-shader workgroup
+// per visible cluster, removing the per-indirect-entry hardware fixed cost.
+dispatch_mesh :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {
+	if !require_render_pass(ctx, "gfx.dispatch_mesh") {
+		return false
+	}
+	if group_count_x == 0 || group_count_y == 0 || group_count_z == 0 {
+		set_validation_error(ctx, "gfx.dispatch_mesh: thread group counts must be positive")
+		return false
+	}
+	return backend_dispatch_mesh(ctx, group_count_x, group_count_y, group_count_z)
+}
+
+// begin_event / end_event push and pop a debug-marker range on the active command list. Picked
+// up by Nsight Systems (--trace=dx12), PIX, and RenderDoc to label per-pass GPU work in the
+// timeline. Cheap — just an ID3D12GraphicsCommandList::BeginEvent call. No-op on Null backend.
+begin_event :: proc(ctx: ^Context, name: string) -> bool {
+	return backend_begin_event(ctx, name)
+}
+
+end_event :: proc(ctx: ^Context) -> bool {
+	return backend_end_event(ctx)
+}
+
 // dispatch_indirect issues one compute dispatch with thread-group counts
 // sourced from an indirect-capable buffer (AAA roadmap item 11).
 //
