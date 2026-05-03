@@ -21,9 +21,12 @@ FrameUniforms :: struct {
 	ape_lighting_params: [4]f32,
 	ape_indirect_tint: [4]f32,
 	ape_specular_mip_info: [4]f32,
+	ape_gi_bounds_min: [4]f32,
+	ape_gi_bounds_extent: [4]f32,
+	ape_gi_grid_params: [4]f32,
 }
 
-SIZE_FrameUniforms :: 496
+SIZE_FrameUniforms :: 544
 ALIGN_FrameUniforms :: 16
 #assert(size_of(FrameUniforms) == SIZE_FrameUniforms)
 OFFSET_FrameUniforms_ape_view_proj :: 0
@@ -74,6 +77,15 @@ SIZE_FrameUniforms_ape_indirect_tint :: 16
 OFFSET_FrameUniforms_ape_specular_mip_info :: 480
 SIZE_FrameUniforms_ape_specular_mip_info :: 16
 #assert(offset_of(FrameUniforms, ape_specular_mip_info) == OFFSET_FrameUniforms_ape_specular_mip_info)
+OFFSET_FrameUniforms_ape_gi_bounds_min :: 496
+SIZE_FrameUniforms_ape_gi_bounds_min :: 16
+#assert(offset_of(FrameUniforms, ape_gi_bounds_min) == OFFSET_FrameUniforms_ape_gi_bounds_min)
+OFFSET_FrameUniforms_ape_gi_bounds_extent :: 512
+SIZE_FrameUniforms_ape_gi_bounds_extent :: 16
+#assert(offset_of(FrameUniforms, ape_gi_bounds_extent) == OFFSET_FrameUniforms_ape_gi_bounds_extent)
+OFFSET_FrameUniforms_ape_gi_grid_params :: 528
+SIZE_FrameUniforms_ape_gi_grid_params :: 16
+#assert(offset_of(FrameUniforms, ape_gi_grid_params) == OFFSET_FrameUniforms_ape_gi_grid_params)
 
 VERTEX_STRIDE :: 36
 ATTR_POSITION_OFFSET :: 0
@@ -212,6 +224,15 @@ VIEW_ACCESS_ibl_resources_brdf_lut :: gfx.Shader_Resource_Access.Read
 D3D12_FS_SMP_ibl_resources_ibl_sampler :: 0
 D3D12_FS_SMP_ibl_resources_ibl_sampler_SPACE :: 2
 SMP_ibl_resources_ibl_sampler :: 0
+GROUP_3 :: 3
+D3D12_FS_VIEW_gi_resources_sh_volume :: 0
+D3D12_FS_VIEW_gi_resources_sh_volume_SPACE :: 3
+VIEW_gi_resources_sh_volume :: 0
+VIEW_KIND_gi_resources_sh_volume :: gfx.View_Kind.Sampled
+VIEW_ACCESS_gi_resources_sh_volume :: gfx.Shader_Resource_Access.Read
+D3D12_FS_SMP_gi_resources_gi_sampler :: 0
+D3D12_FS_SMP_gi_resources_gi_sampler_SPACE :: 3
+SMP_gi_resources_gi_sampler :: 0
 VK_VS_UB_FrameUniforms :: 0
 VK_VS_UB_FrameUniforms_SPACE :: 0
 VK_VS_VIEW_object_data :: 1
@@ -246,8 +267,12 @@ VK_FS_VIEW_ibl_resources_brdf_lut :: 2
 VK_FS_VIEW_ibl_resources_brdf_lut_SPACE :: 2
 VK_FS_SMP_ibl_resources_ibl_sampler :: 3
 VK_FS_SMP_ibl_resources_ibl_sampler_SPACE :: 2
+VK_FS_VIEW_gi_resources_sh_volume :: 0
+VK_FS_VIEW_gi_resources_sh_volume_SPACE :: 3
+VK_FS_SMP_gi_resources_gi_sampler :: 1
+VK_FS_SMP_gi_resources_gi_sampler_SPACE :: 3
 
-BINDING_RECORD_COUNT :: 34
+BINDING_RECORD_COUNT :: 38
 
 Binding_Uniform_Block_Desc :: struct {
 	size: u32,
@@ -289,7 +314,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 496,
+			size = 544,
 		},
 	}
 	records[1] = {
@@ -340,7 +365,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 496,
+			size = 544,
 		},
 	}
 	records[4] = {
@@ -560,6 +585,36 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		unsized = false,
 	}
 	records[17] = {
+		target = gfx.Backend.D3D12,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		name = cstring("gi_resources.sh_volume"),
+		group = 3,
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 3,
+		array_count = 1,
+		unsized = false,
+		resource_view = {
+			view_kind = gfx.View_Kind.Sampled,
+			access = gfx.Shader_Resource_Access.Read,
+			storage_image_format = gfx.Pixel_Format.Invalid,
+			storage_buffer_stride = 0,
+		},
+	}
+	records[18] = {
+		target = gfx.Backend.D3D12,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		name = cstring("gi_resources.gi_sampler"),
+		group = 3,
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 3,
+		array_count = 1,
+		unsized = false,
+	}
+	records[19] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
@@ -571,10 +626,10 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 496,
+			size = 544,
 		},
 	}
-	records[18] = {
+	records[20] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -592,7 +647,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 96,
 		},
 	}
-	records[19] = {
+	records[21] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Vertex,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -610,7 +665,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 16,
 		},
 	}
-	records[20] = {
+	records[22] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Uniform_Block,
@@ -622,10 +677,10 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 496,
+			size = 544,
 		},
 	}
-	records[21] = {
+	records[23] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -643,7 +698,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[22] = {
+	records[24] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -661,7 +716,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[23] = {
+	records[25] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -679,7 +734,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[24] = {
+	records[26] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -697,7 +752,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[25] = {
+	records[27] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
@@ -709,7 +764,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 	}
-	records[26] = {
+	records[28] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -727,7 +782,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[27] = {
+	records[29] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -745,7 +800,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[28] = {
+	records[30] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -763,7 +818,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[29] = {
+	records[31] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
@@ -775,7 +830,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 	}
-	records[30] = {
+	records[32] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -793,7 +848,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[31] = {
+	records[33] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -811,7 +866,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[32] = {
+	records[34] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Resource_View,
@@ -829,7 +884,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 			storage_buffer_stride = 0,
 		},
 	}
-	records[33] = {
+	records[35] = {
 		target = gfx.Backend.Vulkan,
 		stage = gfx.Shader_Stage.Fragment,
 		kind = gfx.Shader_Binding_Kind.Sampler,
@@ -838,6 +893,36 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		logical_slot = 0,
 		native_slot = 3,
 		native_space = 2,
+		array_count = 1,
+		unsized = false,
+	}
+	records[36] = {
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Resource_View,
+		name = cstring("gi_resources.sh_volume"),
+		group = 3,
+		logical_slot = 0,
+		native_slot = 0,
+		native_space = 3,
+		array_count = 1,
+		unsized = false,
+		resource_view = {
+			view_kind = gfx.View_Kind.Sampled,
+			access = gfx.Shader_Resource_Access.Read,
+			storage_image_format = gfx.Pixel_Format.Invalid,
+			storage_buffer_stride = 0,
+		},
+	}
+	records[37] = {
+		target = gfx.Backend.Vulkan,
+		stage = gfx.Shader_Stage.Fragment,
+		kind = gfx.Shader_Binding_Kind.Sampler,
+		name = cstring("gi_resources.gi_sampler"),
+		group = 3,
+		logical_slot = 0,
+		native_slot = 1,
+		native_space = 3,
 		array_count = 1,
 		unsized = false,
 	}
@@ -858,7 +943,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 			unsized = false,
 			name = "FrameUniforms",
 			uniform_block = {
-				size = 496,
+				size = 544,
 			},
 		}
 	}
@@ -1099,6 +1184,34 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 			name = "ibl_resources.ibl_sampler",
 		}
 	}
+	if group == 3 {
+		desc.entries[0] = {
+			active = true,
+			stages = {.Fragment},
+			kind = gfx.Shader_Binding_Kind.Resource_View,
+			slot = 0,
+			array_count = 1,
+			unsized = false,
+			name = "gi_resources.sh_volume",
+			resource_view = {
+				view_kind = gfx.View_Kind.Sampled,
+				access = gfx.Shader_Resource_Access.Read,
+				storage_image_format = gfx.Pixel_Format.Invalid,
+				storage_buffer_stride = 0,
+			},
+		}
+	}
+	if group == 3 {
+		desc.entries[1] = {
+			active = true,
+			stages = {.Fragment},
+			kind = gfx.Shader_Binding_Kind.Sampler,
+			slot = 0,
+			array_count = 1,
+			unsized = false,
+			name = "gi_resources.gi_sampler",
+		}
+	}
 	if group == 0 {
 		desc.native_bindings[0] = {
 			active = true,
@@ -1320,6 +1433,32 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 			unsized = false,
 		}
 	}
+	if group == 3 {
+		desc.native_bindings[0] = {
+			active = true,
+			target = gfx.Backend.D3D12,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Resource_View,
+			slot = 0,
+			native_slot = 0,
+			native_space = 3,
+			array_count = 1,
+			unsized = false,
+		}
+	}
+	if group == 3 {
+		desc.native_bindings[1] = {
+			active = true,
+			target = gfx.Backend.D3D12,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Sampler,
+			slot = 0,
+			native_slot = 0,
+			native_space = 3,
+			array_count = 1,
+			unsized = false,
+		}
+	}
 	if group == 0 {
 		desc.native_bindings[9] = {
 			active = true,
@@ -1537,6 +1676,32 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 			slot = 0,
 			native_slot = 3,
 			native_space = 2,
+			array_count = 1,
+			unsized = false,
+		}
+	}
+	if group == 3 {
+		desc.native_bindings[2] = {
+			active = true,
+			target = gfx.Backend.Vulkan,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Resource_View,
+			slot = 0,
+			native_slot = 0,
+			native_space = 3,
+			array_count = 1,
+			unsized = false,
+		}
+	}
+	if group == 3 {
+		desc.native_bindings[3] = {
+			active = true,
+			target = gfx.Backend.Vulkan,
+			stage = gfx.Shader_Stage.Fragment,
+			kind = gfx.Shader_Binding_Kind.Sampler,
+			slot = 0,
+			native_slot = 1,
+			native_space = 3,
 			array_count = 1,
 			unsized = false,
 		}
@@ -1782,4 +1947,32 @@ set_group_sampler_ibl_resources_ibl_sampler :: proc(group: ^gfx.Binding_Group_De
 		return
 	}
 	group.samplers[SMP_ibl_resources_ibl_sampler] = sampler
+}
+
+set_view_gi_resources_sh_volume :: proc(bindings: ^gfx.Bindings, view: gfx.View) {
+	if bindings == nil {
+		return
+	}
+	bindings.views[GROUP_3][VIEW_gi_resources_sh_volume] = view
+}
+
+set_group_view_gi_resources_sh_volume :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View) {
+	if group == nil {
+		return
+	}
+	group.views[VIEW_gi_resources_sh_volume] = view
+}
+
+set_sampler_gi_resources_gi_sampler :: proc(bindings: ^gfx.Bindings, sampler: gfx.Sampler) {
+	if bindings == nil {
+		return
+	}
+	bindings.samplers[GROUP_3][SMP_gi_resources_gi_sampler] = sampler
+}
+
+set_group_sampler_gi_resources_gi_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler) {
+	if group == nil {
+		return
+	}
+	group.samplers[SMP_gi_resources_gi_sampler] = sampler
 }
