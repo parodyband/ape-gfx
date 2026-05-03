@@ -123,6 +123,12 @@ INDIRECT_ARGS_OFFSET_ALIGNMENT is the required byte alignment of the
 `gfx.dispatch_indirect`. 16 bytes is the strictest of the supported
 planned backends, so a value that satisfies this constant is valid everywhere.
 
+### `INDIRECT_COUNT_OFFSET_ALIGNMENT`
+
+```odin
+INDIRECT_COUNT_OFFSET_ALIGNMENT :: 4
+```
+
 ### `Image_Invalid`
 
 ```odin
@@ -168,6 +174,12 @@ matching upper bound for groups, so heap and group budgets compose.
 MAX_COLOR_ATTACHMENTS :: 8
 ```
 
+### `MAX_GPU_TIMING_SAMPLES`
+
+```odin
+MAX_GPU_TIMING_SAMPLES :: 64
+```
+
 ### `MAX_IMAGE_MIPS`
 
 ```odin
@@ -189,7 +201,7 @@ negative-as-unsigned counts before they reach the backend.
 ### `MAX_RESOURCE_VIEWS`
 
 ```odin
-MAX_RESOURCE_VIEWS :: 32
+MAX_RESOURCE_VIEWS :: 1024
 ```
 
 ### `MAX_SAMPLERS`
@@ -536,6 +548,16 @@ example:
   gfx.dispatch(&ctx, 64, 1, 1)
   gfx.end_compute_pass(&ctx)
 
+### `begin_event`
+
+```odin
+begin_event :: proc(ctx: ^Context, name: string) -> bool {...}
+```
+
+begin_event / end_event push and pop a debug-marker range on the active command list. Picked
+up by Nsight Systems (--trace=dx12), PIX, and RenderDoc to label per-pass GPU work in the
+timeline. Cheap — just an ID3D12GraphicsCommandList::BeginEvent call. No-op on Null backend.
+
 ### `begin_pass`
 
 ```odin
@@ -795,6 +817,15 @@ compute_pipeline_valid :: proc(pipeline: Compute_Pipeline) -> bool {...}
 ```
 
 compute_pipeline_valid reports whether a Compute_Pipeline handle is nonzero.
+
+### `copy_gpu_timing_samples`
+
+```odin
+copy_gpu_timing_samples :: proc(ctx: ^Context, out: []Gpu_Timing_Sample) -> int {...}
+```
+
+copy_gpu_timing_samples copies the most recently committed frame's GPU pass
+timings into out and returns the number written.
 
 ### `create_binding_group`
 
@@ -1154,19 +1185,32 @@ sourced from an indirect-capable buffer (AAA roadmap item 11).
 `indirect_buffer` must have been created with `Buffer_Usage_Flag.Indirect`.
 `offset` is the byte offset of the `Dispatch_Indirect_Args` record.
 
+### `dispatch_mesh`
+
+```odin
+dispatch_mesh :: proc(ctx: ^Context, group_count_x: u32 = 1, group_count_y: u32 = 1, group_count_z: u32 = 1) -> bool {...}
+```
+
+dispatch_mesh issues an `ID3D12GraphicsCommandList6::DispatchMesh` (or backend equivalent).
+The active pipeline must have been created from a Shader containing a `[shader("mesh")]`
+(and optionally `[shader("amplification")]`) entry point. Thread-group counts go straight to
+the amplification (or mesh, if no AS) first stage. Use to replace ExecuteIndirect at cluster
+granularity — the amplification shader culls clusters and dispatches one mesh-shader workgroup
+per visible cluster, removing the per-indirect-entry hardware fixed cost.
+
 ### `draw`
 
 ```odin
-draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1, base_instance: i32 = 0) -> bool {...}
+draw :: proc(ctx: ^Context, base_element: i32, num_elements: i32, num_instances: i32 = 1, base_instance: i32 = 0, base_vertex: i32 = 0) -> bool {...}
 ```
 
 draw issues a non-indexed or indexed draw depending on the active pipeline.
 When the active pipeline declares an index_type, base_element and num_elements
 are indices; otherwise they are vertices.
-base_instance selects the first instance ID/instance-stream element.
 example:
-  gfx.draw(&ctx, 0, 3)              // 3 vertices, 1 instance
-  gfx.draw(&ctx, 0, index_count, 4) // indexed, 4 instances
+  gfx.draw(&ctx, 0, 3)                         // 3 vertices, 1 instance
+  gfx.draw(&ctx, 0, index_count, 4)            // indexed, 4 instances
+  gfx.draw(&ctx, first_index, count, 1, 0, v)  // indexed with base vertex
 
 ### `draw_indexed_indirect`
 
@@ -1183,6 +1227,16 @@ record; `draw_count` records are read at `stride` bytes apart.
 padding so each record offset stays aligned. The active
 pipeline must declare an `index_type` and a valid index buffer must be
 bound through `apply_bindings`.
+
+### `draw_indexed_indirect_count`
+
+```odin
+draw_indexed_indirect_count :: proc(ctx: ^Context, indirect_buffer: Buffer, offset: int, count_buffer: Buffer, count_offset: int, max_draw_count: u32, stride: u32 = DRAW_INDEXED_INDIRECT_ARGS_STRIDE) -> bool {...}
+```
+
+draw_indexed_indirect_count is the counted form of indexed indirect draw.
+The GPU reads up to `max_draw_count` argument records, clamped by the u32
+value in `count_buffer` at `count_offset`.
 
 ### `draw_indirect`
 
@@ -1205,6 +1259,12 @@ end_compute_pass :: proc(ctx: ^Context) -> bool {...}
 
 end_compute_pass finishes the active compute pass.
 
+### `end_event`
+
+```odin
+end_event :: proc(ctx: ^Context) -> bool {...}
+```
+
 ### `end_pass`
 
 ```odin
@@ -1223,6 +1283,15 @@ finish_command_list seals a Command_List for submission.
 Called on the recording thread after the last `cmd_end_*_pass`. After this
 returns true the list is in state `Finished` and may transfer to another
 thread for submission.
+
+### `gpu_timing_supported`
+
+```odin
+gpu_timing_supported :: proc(ctx: ^Context) -> bool {...}
+```
+
+gpu_timing_supported reports whether the backend records GPU pass timestamps.
+Unsupported backends simply return false; this is an optional diagnostics path.
 
 ### `image_valid`
 
@@ -1634,7 +1703,8 @@ example:
 update_buffer :: proc(ctx: ^Context, desc: Buffer_Update_Desc) -> bool {...}
 ```
 
-update_buffer writes CPU data into a Dynamic_Update or Stream_Update buffer.
+update_buffer writes CPU data into a Dynamic_Update, Stream_Update, or
+backend-supported Storage buffer.
 
 ### `update_image`
 
@@ -1816,7 +1886,7 @@ fixed arrays only; `unsized = true` is rejected at layout creation until the
 ### `Binding_Group_Native_Binding_Desc`
 
 ```odin
-Binding_Group_Native_Binding_Desc :: struct {active: bool, target: Backend, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, native_space: u32}
+Binding_Group_Native_Binding_Desc :: struct {active: bool, target: Backend, stage: Shader_Stage, kind: Shader_Binding_Kind, slot: u32, native_slot: u32, native_space: u32, array_count: u32, unsized: bool}
 ```
 
 Binding_Group_Native_Binding_Desc maps one logical binding entry to a backend native slot.
@@ -2252,6 +2322,15 @@ Filter :: enum {Nearest, Linear}
 
 Filter selects nearest or linear sampling for a Sampler.
 
+### `Gpu_Timing_Sample`
+
+```odin
+Gpu_Timing_Sample :: struct {label: string, duration_ms: f32}
+```
+
+Gpu_Timing_Sample is one resolved GPU timestamp interval from the most
+recently committed frame. Samples are emitted by render/compute pass labels.
+
 ### `Image`
 
 ```odin
@@ -2358,7 +2437,7 @@ Layout_Desc groups vertex buffer layouts and attributes for a graphics pipeline.
 ### `Limits`
 
 ```odin
-Limits :: struct {max_vertex_buffers: int, max_vertex_attributes: int, max_color_attachments: int, max_resource_views: int, max_samplers: int, max_uniform_blocks: int, max_binding_groups: int, max_shader_bindings: int, max_image_mips: int, max_image_dimension_2d: int, max_image_array_layers: int, max_image_sample_count: int, max_compute_thread_groups_per_dimension: int}
+Limits :: struct {max_vertex_buffers: int, max_vertex_attributes: int, max_color_attachments: int, max_resource_views: int, max_samplers: int, max_uniform_blocks: int, max_binding_groups: int, max_shader_bindings: int, max_image_mips: int, max_image_dimension_2d: int, max_image_dimension_3d: int, max_image_array_layers: int, max_image_sample_count: int, max_compute_thread_groups_per_dimension: int}
 ```
 
 Limits reports public API limits plus backend-specific limits when queried from a Context.
@@ -2392,10 +2471,13 @@ transform exposed for inspection.
 ### `Pass_Desc`
 
 ```odin
-Pass_Desc :: struct {label: string, color_attachments: [MAX_COLOR_ATTACHMENTS]View, depth_stencil_attachment: View, action: Pass_Action}
+Pass_Desc :: struct {label: string, color_attachments: [MAX_COLOR_ATTACHMENTS]View, depth_stencil_attachment: View, action: Pass_Action, depth_only: bool}
 ```
 
 Pass_Desc begins a render pass. With no explicit attachments, the pass targets the context's implicit window swapchain.
+`depth_only` opts the pass out of the swapchain color fallback so the pass binds only the
+(explicit or default) depth attachment. Pair with a `Pipeline_Desc.depth_only` pipeline.
+Setting `depth_only` together with any `color_attachments` slot is rejected by validation.
 
 ### `Pipeline`
 
@@ -2428,7 +2510,7 @@ Pipeline_Layout_Desc composes generated binding group layouts for one pipeline f
 ### `Pixel_Format`
 
 ```odin
-Pixel_Format :: enum {Invalid, RGBA8, BGRA8, RGBA16F, RGBA32F, R32F, D24S8, D32F}
+Pixel_Format :: enum {Invalid, RGBA8, BGRA8, RGBA16F, RGBA32F, R32F, BC1_RGBA, BC3_RGBA, BC5_RG, BC7_RGBA, D24S8, D32F}
 ```
 
 Pixel_Format describes image, view, attachment, and storage image formats.
@@ -2529,7 +2611,7 @@ Render_Target_Desc creates the common image/view bundle for one offscreen render
 ### `Resource_Usage`
 
 ```odin
-Resource_Usage :: enum {None, Sampled, Storage_Read, Storage_Write, Storage_Read_Write, Color_Target, Depth_Target_Read, Depth_Target_Write, Copy_Source, Copy_Dest, Indirect_Argument, Present}
+Resource_Usage :: enum {None, Sampled, Storage_Read, Storage_Write, Storage_Read_Write, Color_Target, Depth_Target_Read, Depth_Target_Write, Copy_Source, Copy_Dest, Indirect_Argument, Index_Buffer, Present}
 ```
 
 Resource_Usage names the GPU role a Buffer or Image subresource is in at a
@@ -2628,7 +2710,9 @@ Sampler :: distinct u64
 Sampler_Desc :: struct {label: string, min_filter: Filter, mag_filter: Filter, mip_filter: Filter, wrap_u: Wrap, wrap_v: Wrap, wrap_w: Wrap, compare: Compare_Func}
 ```
 
-Sampler_Desc creates a texture sampler state. `compare = .Always` creates a regular sampler; any other Compare_Func creates a comparison sampler for depth PCF / SampleCmp-style shader operations.
+Sampler_Desc creates a texture sampler state. `compare = .Always` creates a
+regular sampler; any other Compare_Func creates a comparison sampler for
+depth PCF / SampleCmp-style shader operations.
 
 ### `Semaphore_Signal`
 
@@ -2682,7 +2766,7 @@ Shader_Binding_Kind identifies reflected shader binding categories.
 ### `Shader_Desc`
 
 ```odin
-Shader_Desc :: struct {label: string, stages: [3]Shader_Stage_Desc, has_binding_metadata: bool, bindings: [MAX_SHADER_BINDINGS]Shader_Binding_Desc, has_vertex_input_metadata: bool, vertex_inputs: [MAX_VERTEX_ATTRIBUTES]Shader_Vertex_Input_Desc}
+Shader_Desc :: struct {label: string, stages: [5]Shader_Stage_Desc, has_binding_metadata: bool, bindings: [MAX_SHADER_BINDINGS]Shader_Binding_Desc, has_vertex_input_metadata: bool, vertex_inputs: [MAX_VERTEX_ATTRIBUTES]Shader_Vertex_Input_Desc}
 ```
 
 Shader_Desc creates a backend shader object from compiled stage bytecode and metadata.
@@ -2698,7 +2782,7 @@ Shader_Resource_Access describes reflected read/write intent for resource views.
 ### `Shader_Stage`
 
 ```odin
-Shader_Stage :: enum {Vertex, Fragment, Compute}
+Shader_Stage :: enum {Vertex, Fragment, Compute, Mesh, Amplification}
 ```
 
 Shader_Stage identifies one compiled shader stage inside a Shader_Desc.
@@ -2934,7 +3018,7 @@ Vertex_Buffer_Layout describes stride and stepping for one vertex buffer slot.
 ### `Vertex_Format`
 
 ```odin
-Vertex_Format :: enum {Invalid, Float32, Float32x2, Float32x3, Float32x4, Uint8x4_Norm}
+Vertex_Format :: enum {Invalid, Float32, Float32x2, Float32x3, Float32x4, Uint8x4_Norm, Uint16x4_Norm, Sint16x2_Norm, Float16x2}
 ```
 
 Vertex_Format describes one vertex attribute element.

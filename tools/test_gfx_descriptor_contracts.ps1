@@ -217,6 +217,71 @@ main :: proc() {
 		fail("array image did not preserve array_count")
 	}
 
+	volume_pixels := [32]u8{}
+	volume_image, volume_image_ok := gfx.create_image(&ctx, {
+		label = "sampled volume texture",
+		kind = .Image_3D,
+		usage = {.Texture, .Immutable},
+		width = 2,
+		height = 2,
+		depth = 2,
+		format = .RGBA8,
+		data = gfx.range(volume_pixels[:]),
+	})
+	if !volume_image_ok || !gfx.image_valid(volume_image) {
+		fmt.eprintln("valid volume image failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, volume_image)
+
+	volume_state := gfx.query_image_state(&ctx, volume_image)
+	if !volume_state.valid || volume_state.kind != .Image_3D || volume_state.depth != 2 || volume_state.array_count != 1 || volume_state.sample_count != 1 {
+		fail("valid volume image did not report expected image state")
+	}
+
+	volume_array_image, volume_array_image_ok := gfx.create_image(&ctx, {
+		label = "volume array",
+		kind = .Image_3D,
+		usage = {.Texture},
+		width = 2,
+		height = 2,
+		depth = 2,
+		array_count = 2,
+		format = .RGBA8,
+	})
+	if volume_array_image_ok || gfx.image_valid(volume_array_image) {
+		fail("3D array image unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Validation, "gfx.create_image: Image_3D array_count must be 1")
+
+	volume_attachment_image, volume_attachment_image_ok := gfx.create_image(&ctx, {
+		label = "volume attachment",
+		kind = .Image_3D,
+		usage = {.Color_Attachment},
+		width = 2,
+		height = 2,
+		depth = 2,
+		format = .RGBA8,
+	})
+	if volume_attachment_image_ok || gfx.image_valid(volume_attachment_image) {
+		fail("3D attachment image unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Unsupported, "gfx.create_image: Image_3D attachments are not supported yet")
+
+	volume_storage_image, volume_storage_image_ok := gfx.create_image(&ctx, {
+		label = "volume storage",
+		kind = .Image_3D,
+		usage = {.Storage_Image},
+		width = 2,
+		height = 2,
+		depth = 2,
+		format = .RGBA8,
+	})
+	if volume_storage_image_ok || gfx.image_valid(volume_storage_image) {
+		fail("3D storage image unexpectedly succeeded")
+	}
+	expect_error_info(&ctx, .Unsupported, "gfx.create_image: Image_3D storage images are not supported yet")
+
 	if gfx.query_features(&ctx).msaa_render_targets {
 		msaa_image, msaa_image_ok := gfx.create_image(&ctx, {
 			label = "msaa image",
@@ -313,6 +378,21 @@ main :: proc() {
 	view_state := gfx.query_view_state(&ctx, sampled_view)
 	if !view_state.valid || view_state.kind != .Sampled || view_state.image != texture_image {
 		fail("valid sampled view did not report expected state")
+	}
+
+	volume_view, volume_view_ok := gfx.create_view(&ctx, {
+		label = "sampled volume view",
+		texture = {image = volume_image},
+	})
+	if !volume_view_ok || !gfx.view_valid(volume_view) {
+		fmt.eprintln("valid sampled volume view failed: ", gfx.last_error(&ctx))
+		os.exit(1)
+	}
+	defer gfx.destroy(&ctx, volume_view)
+
+	volume_view_state := gfx.query_view_state(&ctx, volume_view)
+	if !volume_view_state.valid || volume_view_state.kind != .Sampled || volume_view_state.image != volume_image {
+		fail("valid sampled volume view did not report expected state")
 	}
 
 	render_target, render_target_ok := gfx.create_render_target(&ctx, {

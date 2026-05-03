@@ -28,8 +28,24 @@ create_image :: proc(ctx: ^Context, desc: Image_Desc) -> (Image, bool) {
 
 	array_count := image_desc_array_count(desc)
 	sample_count := image_desc_sample_count(desc)
+	depth := image_desc_depth(desc)
 	limits := backend_query_limits(ctx)
-	if limits.max_image_dimension_2d > 0 {
+	if desc.kind == .Image_3D {
+		if limits.max_image_dimension_3d > 0 {
+			if int(desc.width) > limits.max_image_dimension_3d {
+				set_validation_errorf(ctx, "gfx.create_image: width exceeds backend 3D image dimension limit (%d)", limits.max_image_dimension_3d)
+				return Image_Invalid, false
+			}
+			if int(desc.height) > limits.max_image_dimension_3d {
+				set_validation_errorf(ctx, "gfx.create_image: height exceeds backend 3D image dimension limit (%d)", limits.max_image_dimension_3d)
+				return Image_Invalid, false
+			}
+			if int(depth) > limits.max_image_dimension_3d {
+				set_validation_errorf(ctx, "gfx.create_image: depth exceeds backend 3D image dimension limit (%d)", limits.max_image_dimension_3d)
+				return Image_Invalid, false
+			}
+		}
+	} else if limits.max_image_dimension_2d > 0 {
 		if int(desc.width) > limits.max_image_dimension_2d {
 			set_validation_errorf(ctx, "gfx.create_image: width exceeds backend 2D image dimension limit (%d)", limits.max_image_dimension_2d)
 			return Image_Invalid, false
@@ -161,16 +177,19 @@ query_image_state :: proc(ctx: ^Context, image: Image) -> Image_State {
 
 @(private)
 validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
-	if desc.kind != .Image_2D {
-		set_unsupported_error(ctx, "gfx.create_image: only Image_2D is supported for now")
-		return false
-	}
 	if desc.depth < 0 {
 		set_validation_error(ctx, "gfx.create_image: depth must be non-negative")
 		return false
 	}
-	if desc.depth > 1 {
-		set_unsupported_error(ctx, "gfx.create_image: Image_2D depth must be 1 when specified")
+	switch desc.kind {
+	case .Image_2D:
+		if desc.depth > 1 {
+			set_unsupported_error(ctx, "gfx.create_image: Image_2D depth must be 1 when specified")
+			return false
+		}
+	case .Image_3D:
+	case .Cube:
+		set_unsupported_error(ctx, "gfx.create_image: Cube images are not supported yet")
 		return false
 	}
 	if desc.format == .Invalid {
@@ -197,6 +216,8 @@ validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
 		set_validation_error(ctx, "gfx.create_image: sample_count must be positive when specified")
 		return false
 	}
+	array_count := image_desc_array_count(desc)
+	sample_count := image_desc_sample_count(desc)
 	if !validate_image_usage(ctx, desc.usage) {
 		return false
 	}
@@ -207,6 +228,32 @@ validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
 	has_dynamic := image_usage_has_dynamic_update(desc.usage)
 	has_immutable := .Immutable in desc.usage
 	has_mip_data := image_desc_has_mip_data(desc)
+	if desc.kind == .Image_3D {
+		if array_count != 1 {
+			set_validation_error(ctx, "gfx.create_image: Image_3D array_count must be 1")
+			return false
+		}
+		if sample_count != 1 {
+			set_validation_error(ctx, "gfx.create_image: Image_3D sample_count must be 1")
+			return false
+		}
+		if has_color || has_depth {
+			set_unsupported_error(ctx, "gfx.create_image: Image_3D attachments are not supported yet")
+			return false
+		}
+		if has_storage {
+			set_unsupported_error(ctx, "gfx.create_image: Image_3D storage images are not supported yet")
+			return false
+		}
+		if has_dynamic {
+			set_unsupported_error(ctx, "gfx.create_image: Image_3D dynamic updates are not implemented yet")
+			return false
+		}
+		if pixel_format_is_compressed(desc.format) {
+			set_unsupported_error(ctx, "gfx.create_image: compressed Image_3D textures are not supported yet")
+			return false
+		}
+	}
 	if has_depth && !pixel_format_is_depth(desc.format) {
 		set_validation_error(ctx, "gfx.create_image: depth-stencil images require a depth format")
 		return false
@@ -277,6 +324,7 @@ validate_image_desc :: proc(ctx: ^Context, desc: Image_Desc) -> bool {
 			Image_Subresource_Data{data = desc.data},
 			u32(desc.width),
 			u32(desc.height),
+			1,
 			desc.format,
 			"requires pixel data",
 		) {
@@ -344,6 +392,10 @@ validate_initial_image_data :: proc(ctx: ^Context, desc: Image_Desc, mip_count: 
 
 		mip_width := mip_dimension(u32(desc.width), u32(mip))
 		mip_height := mip_dimension(u32(desc.height), u32(mip))
+		mip_depth := u32(1)
+		if desc.kind == .Image_3D {
+			mip_depth = mip_dimension(u32(image_desc_depth(desc)), u32(mip))
+		}
 		row_pitch := image_mip_row_pitch(mip_data, desc.format, mip_width)
 		min_row_pitch := pixel_format_row_pitch(desc.format, mip_width)
 		if row_pitch < min_row_pitch {
@@ -351,11 +403,18 @@ validate_initial_image_data :: proc(ctx: ^Context, desc: Image_Desc, mip_count: 
 			return false
 		}
 
-		required_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(pixel_format_row_count(desc.format, mip_height)))
-		if mip_data.slice_pitch > 0 && int(mip_data.slice_pitch) < required_size {
+		slice_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(pixel_format_row_count(desc.format, mip_height)))
+		if mip_data.slice_pitch > 0 && int(mip_data.slice_pitch) < slice_size {
 			set_validation_errorf(ctx, "gfx.create_image: immutable image mip %d slice pitch is too small", mip)
 			return false
 		}
+		required_size := image_data_required_size_3d(
+			int(row_pitch),
+			int(min_row_pitch),
+			int(pixel_format_row_count(desc.format, mip_height)),
+			int(mip_depth),
+			int(mip_data.slice_pitch),
+		)
 		if mip_data.data.size < required_size {
 			set_validation_errorf(ctx, "gfx.create_image: immutable image mip %d data range is too small", mip)
 			return false
@@ -448,6 +507,7 @@ validate_image_update_desc :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bo
 		mip_data,
 		update_width,
 		update_height,
+		1,
 		image_state.format,
 		"requires pixel data",
 	)
@@ -505,6 +565,7 @@ validate_image_data_range :: proc(
 	label: string,
 	mip_data: Image_Subresource_Data,
 	width, height: u32,
+	depth: u32,
 	format: Pixel_Format,
 	missing_data_message: string,
 ) -> bool {
@@ -528,11 +589,18 @@ validate_image_data_range :: proc(
 		return false
 	}
 
-	required_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(pixel_format_row_count(format, height)))
-	if mip_data.slice_pitch > 0 && int(mip_data.slice_pitch) < required_size {
+	slice_size := image_data_required_size(int(row_pitch), int(min_row_pitch), int(pixel_format_row_count(format, height)))
+	if mip_data.slice_pitch > 0 && int(mip_data.slice_pitch) < slice_size {
 		set_validation_errorf(ctx, "%s: %s slice pitch is too small", op, label)
 		return false
 	}
+	required_size := image_data_required_size_3d(
+		int(row_pitch),
+		int(min_row_pitch),
+		int(pixel_format_row_count(format, height)),
+		int(depth),
+		int(mip_data.slice_pitch),
+	)
 	if mip_data.data.size < required_size {
 		set_validation_errorf(ctx, "%s: %s data range is too small", op, label)
 		return false
@@ -613,6 +681,23 @@ image_data_required_size :: proc(row_pitch, min_row_pitch, height: int) -> int {
 		return 0
 	}
 	return row_pitch * (height - 1) + min_row_pitch
+}
+
+@(private)
+image_data_required_size_3d :: proc(row_pitch, min_row_pitch, height, depth, slice_pitch: int) -> int {
+	if depth <= 0 {
+		return 0
+	}
+
+	slice_size := image_data_required_size(row_pitch, min_row_pitch, height)
+	if depth == 1 {
+		return slice_size
+	}
+	effective_slice_pitch := slice_pitch
+	if effective_slice_pitch <= 0 {
+		effective_slice_pitch = slice_size
+	}
+	return effective_slice_pitch * (depth - 1) + slice_size
 }
 
 @(private)

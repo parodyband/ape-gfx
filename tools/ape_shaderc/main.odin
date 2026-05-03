@@ -2066,11 +2066,12 @@ resource_view_metadata_from_type_json :: proc(type_value: json.Value, binding_ki
 	base_shape, base_shape_ok := json_string_field(type_object, "baseShape")
 	if type_kind == "resource" && base_shape_ok {
 		if resource_shape_is_texture(base_shape) {
-			if !resource_shape_is_supported_texture(base_shape) {
-				fmt.eprintln("ape_shaderc: unsupported resource texture shape in generated bindings; only Texture2D/RWTexture2D are supported today")
+			is_storage := binding_kind == "unorderedAccess" || access == .Write || access == .Read_Write
+			if !resource_shape_is_supported_texture(base_shape, is_storage) {
+				fmt.eprintln("ape_shaderc: unsupported resource texture shape in generated bindings; Texture2D/RWTexture2D and sampled Texture3D are supported today")
 				return .Sampled, access, .Invalid, 0, false
 			}
-			if binding_kind == "unorderedAccess" || access == .Write || access == .Read_Write {
+			if is_storage {
 				format, format_ok := storage_image_format_from_type_json(type_object)
 				if !format_ok {
 					return .Storage_Image, access, .Invalid, 0, false
@@ -2291,8 +2292,14 @@ resource_shape_is_texture :: proc(shape: string) -> bool {
 	return string_has_prefix(shape, "texture")
 }
 
-resource_shape_is_supported_texture :: proc(shape: string) -> bool {
-	return shape == "texture2D"
+resource_shape_is_supported_texture :: proc(shape: string, storage: bool) -> bool {
+	if shape == "texture2D" {
+		return true
+	}
+	if shape == "texture3D" {
+		return !storage
+	}
+	return false
 }
 
 resource_shape_is_buffer :: proc(shape: string) -> bool {

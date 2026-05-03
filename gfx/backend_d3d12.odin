@@ -21,6 +21,7 @@ D3D12_TEXTURE_DATA_PITCH_ALIGNMENT :: 256
 D3D12_CONSTANT_BUFFER_ALIGNMENT :: 256
 D3D12_IMMEDIATE_UNIFORM_CAPACITY :: 4 * 1024 * 1024
 D3D12_DEFAULT_2D_IMAGE_LIMIT :: 16384
+D3D12_DEFAULT_3D_IMAGE_LIMIT :: 2048
 D3D12_MAX_SAMPLE_COUNT :: 8
 D3D12_DEBUG_NAME_MAX_UTF16 :: 256
 D3D12_GPU_TIMESTAMP_QUERY_CAPACITY :: u32(MAX_GPU_TIMING_SAMPLES * 2)
@@ -55,6 +56,7 @@ D3D12_Image :: struct {
 	usage:        Image_Usage,
 	width:        u32,
 	height:       u32,
+	depth:        u32,
 	mip_count:    u32,
 	array_count:  u32,
 	sample_count: u32,
@@ -362,6 +364,7 @@ d3d12_query_features :: proc(ctx: ^Context) -> Features {
 d3d12_query_limits :: proc(ctx: ^Context) -> Limits {
 	limits := api_limits()
 	limits.max_image_dimension_2d = D3D12_DEFAULT_2D_IMAGE_LIMIT
+	limits.max_image_dimension_3d = D3D12_DEFAULT_3D_IMAGE_LIMIT
 	limits.max_image_array_layers = 2048
 	limits.max_image_sample_count = D3D12_MAX_SAMPLE_COUNT
 	limits.max_compute_thread_groups_per_dimension = 65535
@@ -547,6 +550,7 @@ d3d12_create_image :: proc(ctx: ^Context, handle: Image, desc: Image_Desc) -> bo
 		usage = desc.usage,
 		width = u32(desc.width),
 		height = u32(desc.height),
+		depth = u32(image_desc_depth(desc)),
 		mip_count = u32(image_desc_mip_count(desc)),
 		array_count = u32(image_desc_array_count(desc)),
 		sample_count = u32(image_desc_sample_count(desc)),
@@ -638,7 +642,7 @@ d3d12_update_image :: proc(ctx: ^Context, desc: Image_Update_Desc) -> bool {
 	if row_pitch == 0 {
 		row_pitch = pixel_format_row_pitch(image_info.format, update_width)
 	}
-	return d3d12_upload_image_region(ctx, state, image_info, u32(desc.mip_level), u32(desc.array_layer), u32(desc.x), u32(desc.y), update_width, update_height, desc.data, row_pitch)
+	return d3d12_upload_image_region(ctx, state, image_info, u32(desc.mip_level), u32(desc.array_layer), u32(desc.x), u32(desc.y), 0, update_width, update_height, 1, desc.data, row_pitch, 0)
 }
 
 d3d12_resolve_image :: proc(ctx: ^Context, desc: Image_Resolve_Desc) -> bool {
@@ -675,7 +679,7 @@ d3d12_query_image_state :: proc(ctx: ^Context, handle: Image) -> Image_State {
 			usage = image_info.usage,
 			width = i32(image_info.width),
 			height = i32(image_info.height),
-			depth = 1,
+			depth = i32(image_info.depth),
 			mip_count = i32(image_info.mip_count),
 			array_count = i32(image_info.array_count),
 			sample_count = i32(image_info.sample_count),
@@ -2783,14 +2787,22 @@ d3d12_image_resource_desc :: proc(info: D3D12_Image) -> d3d12.RESOURCE_DESC {
 	if .Storage_Image in info.usage {
 		flags += {.ALLOW_UNORDERED_ACCESS}
 	}
+	dimension := d3d12.RESOURCE_DIMENSION.TEXTURE2D
+	depth_or_array_size := u16(info.array_count)
+	sample_desc := dxgi.SAMPLE_DESC{Count = info.sample_count, Quality = 0}
+	if info.kind == .Image_3D {
+		dimension = .TEXTURE3D
+		depth_or_array_size = u16(info.depth)
+		sample_desc = dxgi.SAMPLE_DESC{Count = 1, Quality = 0}
+	}
 	return {
-		Dimension = .TEXTURE2D,
+		Dimension = dimension,
 		Width = u64(info.width),
 		Height = info.height,
-		DepthOrArraySize = u16(info.array_count),
+		DepthOrArraySize = depth_or_array_size,
 		MipLevels = u16(info.mip_count),
 		Format = d3d12_resource_format(info.format, info.usage),
-		SampleDesc = dxgi.SAMPLE_DESC{Count = info.sample_count, Quality = 0},
+		SampleDesc = sample_desc,
 		Layout = .UNKNOWN,
 		Flags = flags,
 	}
@@ -2901,29 +2913,50 @@ d3d12_upload_initial_image_data :: proc(ctx: ^Context, state: ^D3D12_State, imag
 		mip_data := image_mip_data(desc, mip)
 		width := mip_dimension(image.width, u32(mip))
 		height := mip_dimension(image.height, u32(mip))
+		depth := u32(1)
+		if image.kind == .Image_3D {
+			depth = mip_dimension(image.depth, u32(mip))
+		}
 		row_pitch := image_mip_row_pitch(mip_data, image.format, width)
-		if !d3d12_upload_image_region(ctx, state, image, u32(mip), 0, 0, 0, width, height, mip_data.data, row_pitch) {
+		slice_pitch := u32(0)
+		if mip_data.slice_pitch > 0 {
+			slice_pitch = u32(mip_data.slice_pitch)
+		}
+		if !d3d12_upload_image_region(ctx, state, image, u32(mip), 0, 0, 0, 0, width, height, depth, mip_data.data, row_pitch, slice_pitch) {
 			return false
 		}
 	}
 	return true
 }
 
-d3d12_upload_image_region :: proc(ctx: ^Context, state: ^D3D12_State, image: ^D3D12_Image, mip_level, array_layer, x, y, width, height: u32, data: Range, row_pitch: u32) -> bool {
+d3d12_upload_image_region :: proc(ctx: ^Context, state: ^D3D12_State, image: ^D3D12_Image, mip_level, array_layer, x, y, z, width, height, depth: u32, data: Range, row_pitch, slice_pitch: u32) -> bool {
 	if !d3d12_begin_commands(ctx, state) {
 		return false
 	}
 	aligned_row_pitch := u32(align_up(int(row_pitch), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT))
 	copy_rows := pixel_format_row_count(image.format, height)
-	upload_size := int(aligned_row_pitch) * int(copy_rows)
+	copy_depth := depth
+	if copy_depth == 0 {
+		copy_depth = 1
+	}
+	upload_slice_pitch := aligned_row_pitch * copy_rows
+	source_slice_pitch := slice_pitch
+	if source_slice_pitch == 0 {
+		source_slice_pitch = u32(image_data_required_size(int(row_pitch), int(pixel_format_row_pitch(image.format, width)), int(copy_rows)))
+	}
+	upload_size := int(upload_slice_pitch) * int(copy_depth)
 	upload: D3D12_Buffer
 	if !d3d12_create_upload_buffer(ctx, state, &upload, upload_size, "image upload") {
 		return false
 	}
 	dst := cast([^]u8)upload.mapped
 	src := cast([^]u8)data.ptr
-	for row: u32 = 0; row < copy_rows; row += 1 {
-		mem.copy(rawptr(&dst[row * aligned_row_pitch]), rawptr(&src[row * row_pitch]), int(row_pitch))
+	for slice: u32 = 0; slice < copy_depth; slice += 1 {
+		for row: u32 = 0; row < copy_rows; row += 1 {
+			dst_offset := int(slice * upload_slice_pitch + row * aligned_row_pitch)
+			src_offset := int(slice * source_slice_pitch + row * row_pitch)
+			mem.copy(rawptr(&dst[dst_offset]), rawptr(&src[src_offset]), int(row_pitch))
+		}
 	}
 
 	footprint := d3d12.PLACED_SUBRESOURCE_FOOTPRINT {
@@ -2932,7 +2965,7 @@ d3d12_upload_image_region :: proc(ctx: ^Context, state: ^D3D12_State, image: ^D3
 			Format = d3d12_dxgi_format(image.format),
 			Width = width,
 			Height = height,
-			Depth = 1,
+			Depth = copy_depth,
 			RowPitch = aligned_row_pitch,
 		},
 	}
@@ -2942,13 +2975,16 @@ d3d12_upload_image_region :: proc(ctx: ^Context, state: ^D3D12_State, image: ^D3
 		PlacedFootprint = footprint,
 	}
 	subresource := mip_level + array_layer * image.mip_count
+	if image.kind == .Image_3D {
+		subresource = mip_level
+	}
 	dst_loc := d3d12.TEXTURE_COPY_LOCATION {
 		pResource = image.resource,
 		Type = .SUBRESOURCE_INDEX,
 		SubresourceIndex = subresource,
 	}
 	d3d12_transition_image(state, image, {.COPY_DEST})
-	state.cmd.CopyTextureRegion(state.cmd, &dst_loc, x, y, 0, &src_loc, nil)
+	state.cmd.CopyTextureRegion(state.cmd, &dst_loc, x, y, z, &src_loc, nil)
 	d3d12_transition_image(state, image, d3d12_post_write_image_state(image.usage))
 	append(&state.pending_uploads, upload.resource)
 	upload.resource = nil
@@ -3490,7 +3526,14 @@ d3d12_write_sampled_image_descriptor :: proc(state: ^D3D12_State, image: D3D12_I
 		Format = d3d12_srv_format(view.format),
 		Shader4ComponentMapping = d3d12_default_component_mapping(),
 	}
-	if image.sample_count > 1 {
+	if image.kind == .Image_3D {
+		desc.ViewDimension = .TEXTURE3D
+		desc.Texture3D = {
+			MostDetailedMip = view.mip_level,
+			MipLevels = mip_count,
+			ResourceMinLODClamp = 0,
+		}
+	} else if image.sample_count > 1 {
 		desc.ViewDimension = .TEXTURE2DMS
 	} else if image.array_count > 1 {
 		desc.ViewDimension = .TEXTURE2DARRAY

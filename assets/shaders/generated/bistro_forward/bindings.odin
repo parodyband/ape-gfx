@@ -18,10 +18,12 @@ FrameUniforms :: struct {
 	ape_shadow_map_size: [4]f32,
 	ape_shadow_settings: [4]f32,
 	ape_pbr_defaults: [4]f32,
+	ape_lighting_params: [4]f32,
+	ape_indirect_tint: [4]f32,
 	ape_specular_mip_info: [4]f32,
 }
 
-SIZE_FrameUniforms :: 464
+SIZE_FrameUniforms :: 496
 ALIGN_FrameUniforms :: 16
 #assert(size_of(FrameUniforms) == SIZE_FrameUniforms)
 OFFSET_FrameUniforms_ape_view_proj :: 0
@@ -63,7 +65,13 @@ SIZE_FrameUniforms_ape_shadow_settings :: 16
 OFFSET_FrameUniforms_ape_pbr_defaults :: 432
 SIZE_FrameUniforms_ape_pbr_defaults :: 16
 #assert(offset_of(FrameUniforms, ape_pbr_defaults) == OFFSET_FrameUniforms_ape_pbr_defaults)
-OFFSET_FrameUniforms_ape_specular_mip_info :: 448
+OFFSET_FrameUniforms_ape_lighting_params :: 448
+SIZE_FrameUniforms_ape_lighting_params :: 16
+#assert(offset_of(FrameUniforms, ape_lighting_params) == OFFSET_FrameUniforms_ape_lighting_params)
+OFFSET_FrameUniforms_ape_indirect_tint :: 464
+SIZE_FrameUniforms_ape_indirect_tint :: 16
+#assert(offset_of(FrameUniforms, ape_indirect_tint) == OFFSET_FrameUniforms_ape_indirect_tint)
+OFFSET_FrameUniforms_ape_specular_mip_info :: 480
 SIZE_FrameUniforms_ape_specular_mip_info :: 16
 #assert(offset_of(FrameUniforms, ape_specular_mip_info) == OFFSET_FrameUniforms_ape_specular_mip_info)
 
@@ -281,7 +289,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 464,
+			size = 496,
 		},
 	}
 	records[1] = {
@@ -332,7 +340,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 464,
+			size = 496,
 		},
 	}
 	records[4] = {
@@ -563,7 +571,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 464,
+			size = 496,
 		},
 	}
 	records[18] = {
@@ -614,7 +622,7 @@ binding_records :: proc() -> [BINDING_RECORD_COUNT]Binding_Record_Desc {
 		array_count = 1,
 		unsized = false,
 		uniform_block = {
-			size = 464,
+			size = 496,
 		},
 	}
 	records[21] = {
@@ -850,7 +858,7 @@ binding_group_layout_desc :: proc(group: u32 = 0, label: string = "") -> gfx.Bin
 			unsized = false,
 			name = "FrameUniforms",
 			uniform_block = {
-				size = 464,
+				size = 496,
 			},
 		}
 	}

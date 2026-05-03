@@ -235,6 +235,16 @@ validate_image_view_desc :: proc(ctx: ^Context, desc: View_Desc, kind: View_Kind
 		set_validation_error(ctx, "gfx.create_view: view layer range is invalid")
 		return false
 	}
+	if image_state.kind == .Image_3D {
+		if kind != .Sampled {
+			set_unsupported_error(ctx, "gfx.create_view: Image_3D only supports sampled views for now")
+			return false
+		}
+		if base_layer != 0 || layer_count != 1 {
+			set_validation_error(ctx, "gfx.create_view: Image_3D views do not support array layers")
+			return false
+		}
+	}
 
 	switch kind {
 	case .Sampled:

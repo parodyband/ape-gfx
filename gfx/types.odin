@@ -316,6 +316,7 @@ Limits :: struct {
 	max_shader_bindings: int,
 	max_image_mips: int,
 	max_image_dimension_2d: int,
+	max_image_dimension_3d: int,
 	max_image_array_layers: int,
 	max_image_sample_count: int,
 	max_compute_thread_groups_per_dimension: int,

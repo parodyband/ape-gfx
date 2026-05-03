@@ -322,6 +322,7 @@ struct Material_Params
 {
 	Texture2D<float4> diffuse_texture;
 	SamplerState diffuse_sampler;
+	Texture3D<float4> volume_texture;
 };
 
 struct Shadow_Params
@@ -346,8 +347,9 @@ VS_Output vs_main(VS_Input input)
 float4 fs_main(VS_Output input) : SV_Target
 {
 	float4 color = material.diffuse_texture.Sample(material.diffuse_sampler, input.uv);
+	float4 volume = material.volume_texture.Sample(material.diffuse_sampler, float3(input.uv, 0.5));
 	float shadow = shadow_resources.shadow_map.Sample(shadow_resources.shadow_sampler, input.uv);
-	return color * tint * shadow;
+	return lerp(color, volume, 0.05) * tint * shadow;
 }
 `
 	if strings.contains(source, "register(") || strings.contains(source, "register (") {
@@ -373,22 +375,27 @@ float4 fs_main(VS_Output input) : SV_Target
 		"GROUP_2 :: 2",
 		"UB_FrameUniforms :: 0",
 		"VIEW_material_diffuse_texture :: 0",
+		"VIEW_material_volume_texture :: 1",
 		"SMP_material_diffuse_sampler :: 0",
 		"VIEW_shadow_resources_shadow_map :: 0",
 		"SMP_shadow_resources_shadow_sampler :: 0",
 		"D3D12_FS_VIEW_material_diffuse_texture :: 0",
+		"D3D12_FS_VIEW_material_volume_texture :: 1",
 		"D3D12_FS_SMP_material_diffuse_sampler :: 0",
 		"D3D12_FS_VIEW_material_diffuse_texture_SPACE :: 1",
+		"D3D12_FS_VIEW_material_volume_texture_SPACE :: 1",
 		"D3D12_FS_SMP_material_diffuse_sampler_SPACE :: 1",
 		"D3D12_FS_VIEW_shadow_resources_shadow_map :: 0",
 		"D3D12_FS_SMP_shadow_resources_shadow_sampler :: 0",
 		"D3D12_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2",
 		"D3D12_FS_SMP_shadow_resources_shadow_sampler_SPACE :: 2",
 		"VK_FS_VIEW_material_diffuse_texture_SPACE :: 1",
+		"VK_FS_VIEW_material_volume_texture_SPACE :: 1",
 		"VK_FS_SMP_material_diffuse_sampler_SPACE :: 1",
 		"VK_FS_VIEW_shadow_resources_shadow_map_SPACE :: 2",
 		"VK_FS_SMP_shadow_resources_shadow_sampler_SPACE :: 2",
 		`name = cstring("material.diffuse_texture")`,
+		`name = cstring("material.volume_texture")`,
 		"group = 1,",
 		`name = cstring("shadow_resources.shadow_map")`,
 		"group = 2,",
@@ -398,10 +405,12 @@ float4 fs_main(VS_Output input) : SV_Target
 		"desc.group_layouts[2] = group_2",
 		"desc.group = group",
 		"set_group_view_material_diffuse_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
+		"set_group_view_material_volume_texture :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
 		"set_group_sampler_material_diffuse_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler)",
 		"set_group_view_shadow_resources_shadow_map :: proc(group: ^gfx.Binding_Group_Desc, view: gfx.View)",
 		"set_group_sampler_shadow_resources_shadow_sampler :: proc(group: ^gfx.Binding_Group_Desc, sampler: gfx.Sampler)",
 		"bindings.views[GROUP_1][VIEW_material_diffuse_texture] = view",
+		"bindings.views[GROUP_1][VIEW_material_volume_texture] = view",
 		"bindings.views[GROUP_2][VIEW_shadow_resources_shadow_map] = view",
 	}
 	if !assert_contains_all(generated, expected[:], "generated ParameterBlock metadata") {
@@ -551,6 +560,9 @@ test_shaderc_storage_resource_metadata :: proc(ctx: ^Shader_Test_Context) -> boo
 	}
 
 	if !expect_shaderc_failure(ctx, test_dir, "invalid_storage_image_format", .Compute, "unsupported storage image result type", INVALID_STORAGE_IMAGE_FORMAT) {
+		return false
+	}
+	if !expect_shaderc_failure(ctx, test_dir, "invalid_storage_texture3d", .Compute, "unsupported resource texture shape", INVALID_STORAGE_TEXTURE3D) {
 		return false
 	}
 
@@ -1317,5 +1329,15 @@ INVALID_STORAGE_IMAGE_FORMAT :: `RWTexture2D<float2> bad_output : register(u0);
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
 {
 	bad_output[dispatch_id.xy] = float2(1.0, 0.0);
+}
+`
+
+INVALID_STORAGE_TEXTURE3D :: `RWTexture3D<float4> bad_volume : register(u0);
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID)
+{
+	bad_volume[dispatch_id] = float4(1.0, 0.0, 0.0, 1.0);
 }
 `

@@ -9,7 +9,7 @@ package gfx_app
 		aspect_fit_half_extents_in_bounds :: proc(view_width, view_height, content_width, content_height: i32, max_half_width, max_half_height: f32) -> (half_width, half_height: f32) {...}
 		begin_pass :: proc(ctx: ^gfx.Context, desc: gfx.Pass_Desc) {...}
 		commit :: proc(ctx: ^gfx.Context) {...}
-		draw :: proc(ctx: ^gfx.Context, base_element, element_count: i32, instance_count: i32 = 1, base_instance: i32 = 0) {...}
+		draw :: proc(ctx: ^gfx.Context, base_element, element_count: i32, instance_count: i32 = 1, base_instance: i32 = 0, base_vertex: i32 = 0) {...}
 		end_pass :: proc(ctx: ^gfx.Context) {...}
 		load_texture_asset :: proc(path: string) -> (: Texture_Asset, : bool) {...}
 		must :: proc(ok: bool, message: string) {...}
